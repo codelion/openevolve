@@ -40,24 +40,75 @@ from openevolve import OpenEvolve
 
 # Initialize the system
 evolve = OpenEvolve(
-    initial_program="path/to/initial_program.py",
-    evaluation_function="path/to/evaluator.py",
-    config="path/to/config.yaml"
+    initial_program_path="path/to/initial_program.py",
+    evaluation_file="path/to/evaluator.py",
+    config_path="path/to/config.yaml"
 )
 
 # Run the evolution
-best_program = evolve.run(iterations=1000)
-print(f"Best program found: {best_program.path}")
-print(f"Score: {best_program.score}")
+best_program = await evolve.run(iterations=1000)
+print(f"Best program metrics:")
+for name, value in best_program.metrics.items():
+    print(f"  {name}: {value:.4f}")
 ```
+
+### Command-Line Usage
+
+OpenEvolve can also be run from the command line:
+
+```bash
+python openevolve-run.py path/to/initial_program.py path/to/evaluator.py --config path/to/config.yaml --iterations 1000
+```
+
+## Configuration
+
+OpenEvolve is highly configurable. You can specify configuration options in a YAML file:
+
+```yaml
+# Example configuration
+max_iterations: 1000
+llm:
+  primary_model: "gemini-2.0-flash-lite"
+  secondary_model: "gemini-2.0-flash"
+  temperature: 0.7
+database:
+  population_size: 500
+  num_islands: 5
+```
+
+Sample configuration files are available in the `configs/` directory:
+- `default_config.yaml`: Comprehensive configuration with all available options
+- `matrix_multiplication_config.yaml`: Configuration optimized for matrix multiplication
+- `min_max_distance_config.yaml`: Configuration for geometric optimization
+
+See the [Configuration Guide](configs/default_config.yaml) for a full list of options.
 
 ## Examples
 
 See the `examples/` directory for complete examples of using OpenEvolve on various problems:
-- Matrix multiplication optimization
-- Packing problems
-- Algorithmic discovery
-- Scheduling optimization
+
+### Matrix Multiplication Optimization
+Evolves more efficient matrix multiplication algorithms:
+```bash
+cd examples/matrix_multiplication
+python optimize.py --iterations 100
+```
+
+### Min-Max Distance Optimization
+Finds optimal point configurations that minimize the ratio of maximum to minimum distances:
+```bash
+cd examples/min_max_distance
+python optimize.py --iterations 150 --num-points 16
+```
+
+## Preparing Your Own Problems
+
+To use OpenEvolve for your own problems:
+
+1. **Mark code sections** to evolve with `# EVOLVE-BLOCK-START` and `# EVOLVE-BLOCK-END` comments
+2. **Create an evaluation function** that returns a dictionary of metrics
+3. **Configure OpenEvolve** with appropriate parameters
+4. **Run the evolution** process
 
 ## Citation
 

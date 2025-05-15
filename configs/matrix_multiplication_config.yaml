@@ -1,0 +1,69 @@
+# Matrix Multiplication Optimization Configuration
+# This is a specific configuration for optimizing matrix multiplication algorithms
+
+# General settings
+max_iterations: 100                   # Number of iterations for this optimization task
+checkpoint_interval: 10               # Save checkpoints every 10 iterations
+log_level: "INFO"                     # Standard logging level
+random_seed: 42                       # Fixed seed for reproducibility
+
+# Evolution settings
+diff_based_evolution: true            # Use targeted code modifications
+allow_full_rewrites: false            # Don't allow full rewrites for this task
+max_code_length: 5000                 # Limit code length to avoid excessive complexity
+
+# LLM configuration
+llm:
+  primary_model: "gemini-2.0-flash-lite"  # Faster model for most generations
+  primary_model_weight: 0.8
+  secondary_model: "gemini-2.0-flash"     # More powerful model for occasional insights
+  secondary_model_weight: 0.2
+  
+  # Higher temperature encourages more creative optimizations
+  temperature: 0.8
+  top_p: 0.95
+  max_tokens: 4096
+
+# Prompt configuration
+prompt:
+  system_message: "You are an expert algorithmic optimization engineer specializing in numerical computing and matrix operations. Your task is to optimize matrix multiplication algorithms for better performance while maintaining correctness."
+  
+  # Include more top programs to learn from previous successful optimizations
+  num_top_programs: 4
+  num_diverse_programs: 2
+  
+  # Template variations specific to algorithm optimization
+  template_variations:
+    improvement_focus:
+      - "Focus on loop ordering and memory access patterns."
+      - "Consider algorithmic improvements like block-based multiplication."
+      - "Think about SIMD and vectorization opportunities."
+      - "Look for ways to reduce cache misses and improve locality."
+
+# Database configuration
+database:
+  # Smaller population for this focused task
+  population_size: 200
+  archive_size: 20
+  num_islands: 3
+  
+  # More exploitation since we're optimizing a well-known algorithm
+  elite_selection_ratio: 0.2
+  exploitation_ratio: 0.8
+  exploration_ratio: 0.1
+  
+  # Use performance and complexity as feature dimensions
+  feature_dimensions:
+    - "performance"
+    - "complexity"
+
+# Evaluator configuration
+evaluator:
+  # Strict cascade evaluation for matrix multiplication
+  cascade_evaluation: true
+  cascade_thresholds:
+    - 1.0                            # First stage: must be 100% correct
+    - 0.5                            # Second stage: reasonable performance
+  
+  # Parallel evaluation for faster iteration
+  parallel_evaluations: 8

@@ -1,0 +1,108 @@
+# OpenEvolve Default Configuration
+# This file contains all available configuration options with sensible defaults
+# You can use this as a template for your own configuration
+
+# General settings
+max_iterations: 1000                  # Maximum number of evolution iterations
+checkpoint_interval: 50               # Save checkpoints every N iterations
+log_level: "INFO"                     # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+log_dir: null                         # Custom directory for logs (default: output_dir/logs)
+random_seed: null                     # Random seed for reproducibility (null = random)
+
+# Evolution settings
+diff_based_evolution: true            # Use diff-based evolution (true) or full rewrites (false)
+allow_full_rewrites: false            # Allow occasional full rewrites even in diff-based mode
+max_code_length: 10000                # Maximum allowed code length in characters
+
+# LLM configuration
+llm:
+  # Primary model (used most frequently)
+  primary_model: "gemini-2.0-flash-lite"
+  primary_model_weight: 0.8           # Sampling weight for primary model
+
+  # Secondary model (used for occasional high-quality generations)
+  secondary_model: "gemini-2.0-flash"
+  secondary_model_weight: 0.2         # Sampling weight for secondary model
+
+  # API configuration
+  api_base: "https://api.openai.com/v1"  # Base URL for API (change for non-OpenAI models)
+  api_key: null                       # API key (defaults to OPENAI_API_KEY env variable)
+
+  # Generation parameters
+  temperature: 0.7                    # Temperature for generation (higher = more creative)
+  top_p: 0.95                         # Top-p sampling parameter
+  max_tokens: 4096                    # Maximum tokens to generate
+
+  # Request parameters
+  timeout: 60                         # Timeout for API requests in seconds
+  retries: 3                          # Number of retries for failed requests
+  retry_delay: 5                      # Delay between retries in seconds
+
+# Prompt configuration
+prompt:
+  template_dir: null                  # Custom directory for prompt templates
+  system_message: "You are an expert coder helping to improve programs through evolution."
+
+  # Number of examples to include in the prompt
+  num_top_programs: 3                 # Number of top-performing programs to include
+  num_diverse_programs: 2             # Number of diverse programs to include
+
+  # Template stochasticity
+  use_template_stochasticity: true    # Use random variations in templates for diversity
+  template_variations:                # Different phrasings for parts of the template
+    improvement_suggestion:
+      - "Here's how we could improve this code:"
+      - "I suggest the following improvements:"
+      - "We can enhance this code by:"
+
+  # Meta-prompting (experimental)
+  use_meta_prompting: false           # Use LLM to generate parts of the prompt
+  meta_prompt_weight: 0.1             # Weight for meta-prompting influence
+
+# Database configuration
+database:
+  # General settings
+  db_path: null                       # Path to persist database (null = in-memory only)
+  in_memory: true                     # Keep database in memory for faster access
+
+  # Evolutionary parameters
+  population_size: 1000               # Maximum number of programs to keep in memory
+  archive_size: 100                   # Size of elite archive
+  num_islands: 5                      # Number of islands for island model
+
+  # Selection parameters
+  elite_selection_ratio: 0.1          # Ratio of elite programs to select
+  exploration_ratio: 0.2              # Ratio of exploration vs exploitation
+  exploitation_ratio: 0.7             # Ratio of exploitation vs random selection
+  diversity_metric: "edit_distance"   # Diversity metric (edit_distance, feature_based)
+
+  # Feature map dimensions for MAP-Elites
+  feature_dimensions:                 # Dimensions for MAP-Elites feature map
+    - "score"                         # Performance score
+    - "complexity"                    # Code complexity (length)
+  feature_bins: 10                    # Number of bins per dimension
+
+# Evaluator configuration
+evaluator:
+  # General settings
+  timeout: 300                        # Maximum evaluation time in seconds
+  max_retries: 3                      # Maximum number of retries for evaluation
+
+  # Resource limits
+  memory_limit_mb: null               # Memory limit for evaluation (null = no limit)
+  cpu_limit: null                     # CPU limit for evaluation (null = no limit)
+
+  # Evaluation strategies
+  cascade_evaluation: true            # Use cascade evaluation to filter bad solutions early
+  cascade_thresholds:                 # Thresholds for advancing to next evaluation stage
+    - 0.5                             # First stage threshold
+    - 0.75                            # Second stage threshold
+    - 0.9                             # Third stage threshold
+
+  # Parallel evaluation
+  parallel_evaluations: 4             # Number of parallel evaluations
+  distributed: false                  # Use distributed evaluation
+
+  # LLM-based feedback (experimental)
+  use_llm_feedback: false             # Use LLM to evaluate code quality
+  llm_feedback_weight: 0.1            # Weight for LLM feedback in final score
