@@ -44,3 +44,4 @@ htmlcov/
 
 # Misc
 .DS_Store
+.venv
