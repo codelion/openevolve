@@ -35,31 +35,6 @@ class OpenEvolve:
     LLM ensemble, evaluator, and program database.
     """
     
-    # Mapping of language identifiers to their conventional file extensions
-    LANGUAGE_TO_EXTENSION = {
-        "python": "py",
-        "javascript": "js",
-        "typescript": "ts",
-        "java": "java",
-        "c": "c",
-        "cpp": "cpp",
-        "csharp": "cs",
-        "go": "go",
-        "rust": "rs",
-        "php": "php",
-        "ruby": "rb",
-        "swift": "swift",
-        "kotlin": "kt",
-        "scala": "scala",
-        "r": "r",
-        "shell": "sh",
-        "sql": "sql",
-        "html": "html",
-        "css": "css",
-        "yaml": "yaml",
-        "json": "json",
-    }
-    
     def __init__(
         self,
         initial_program_path: str,
@@ -89,6 +64,16 @@ class OpenEvolve:
         self.initial_program_path = initial_program_path
         self.initial_program_code = self._load_initial_program()
         self.language = extract_code_language(self.initial_program_code)
+        
+        # Extract file extension from initial program
+        self.file_extension = os.path.splitext(initial_program_path)[1]
+        if not self.file_extension:
+            # Default to .py if no extension found
+            self.file_extension = ".py"
+        else:
+            # Make sure it starts with a dot
+            if not self.file_extension.startswith("."):
+                self.file_extension = f".{self.file_extension}"
         
         # Initialize components
         self.llm_ensemble = LLMEnsemble(self.config.llm)
@@ -347,11 +332,10 @@ class OpenEvolve:
         best_dir = os.path.join(self.output_dir, "best")
         os.makedirs(best_dir, exist_ok=True)
         
-        # Convert language name to proper file extension
-        extension = self.LANGUAGE_TO_EXTENSION.get(program.language.lower(), program.language)
+        # Use the extension from the initial program file
+        filename = f"best_program{self.file_extension}"
+        code_path = os.path.join(best_dir, filename)
         
-        # Save the program code
-        code_path = os.path.join(best_dir, f"best_program.{extension}")
         with open(code_path, "w") as f:
             f.write(program.code)
         
