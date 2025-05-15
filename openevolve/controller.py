@@ -40,10 +40,16 @@ class OpenEvolve:
         initial_program_path: str,
         evaluation_file: str,
         config_path: Optional[str] = None,
+        config: Optional[Config] = None,
         output_dir: Optional[str] = None,
     ):
         # Load configuration
-        self.config = load_config(config_path)
+        if config is not None:
+            # Use provided Config object directly
+            self.config = config
+        else:
+            # Load from file or use defaults
+            self.config = load_config(config_path)
         
         # Set up output directory
         self.output_dir = output_dir or os.path.join(

@@ -26,6 +26,7 @@ async def main():
     parser.add_argument("--iterations", type=int, default=100, help="Number of iterations")
     parser.add_argument("--output", type=str, default="output", help="Output directory")
     parser.add_argument("--num-points", type=int, default=16, help="Number of points")
+    parser.add_argument("--config", type=str, help="Path to configuration file")
     args = parser.parse_args()
     
     # Set up paths
@@ -52,6 +53,7 @@ async def main():
     config.max_iterations = args.iterations
     config.llm.primary_model = "gemini-2.0-flash-lite"
     config.llm.secondary_model = "gemini-2.0-flash"
+    config.llm.api_base = "https://generativelanguage.googleapis.com/v1beta/openai/"
     config.diff_based_evolution = True
     config.allow_full_rewrites = False
     
@@ -67,10 +69,12 @@ async def main():
     with open(evaluation_file, "w") as f:
         f.write(eval_content)
     
-    # Initialize OpenEvolve
+    # Initialize OpenEvolve with the custom config
     openevolve = OpenEvolve(
         initial_program_path=str(initial_program_path),
         evaluation_file=str(evaluation_file),
+        config=config,  # Pass config object directly
+        config_path=args.config,  # Also pass config_path if provided (lower priority)
         output_dir=str(output_dir),
     )
     

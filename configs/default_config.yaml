@@ -25,7 +25,7 @@ llm:
   secondary_model_weight: 0.2         # Sampling weight for secondary model
 
   # API configuration
-  api_base: "https://api.openai.com/v1"  # Base URL for API (change for non-OpenAI models)
+  api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"  # Base URL for API (change for non-OpenAI models)
   api_key: null                       # API key (defaults to OPENAI_API_KEY env variable)
 
   # Generation parameters
