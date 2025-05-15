@@ -35,6 +35,31 @@ class OpenEvolve:
     LLM ensemble, evaluator, and program database.
     """
     
+    # Mapping of language identifiers to their conventional file extensions
+    LANGUAGE_TO_EXTENSION = {
+        "python": "py",
+        "javascript": "js",
+        "typescript": "ts",
+        "java": "java",
+        "c": "c",
+        "cpp": "cpp",
+        "csharp": "cs",
+        "go": "go",
+        "rust": "rs",
+        "php": "php",
+        "ruby": "rb",
+        "swift": "swift",
+        "kotlin": "kt",
+        "scala": "scala",
+        "r": "r",
+        "shell": "sh",
+        "sql": "sql",
+        "html": "html",
+        "css": "css",
+        "yaml": "yaml",
+        "json": "json",
+    }
+    
     def __init__(
         self,
         initial_program_path: str,
@@ -322,8 +347,11 @@ class OpenEvolve:
         best_dir = os.path.join(self.output_dir, "best")
         os.makedirs(best_dir, exist_ok=True)
         
+        # Convert language name to proper file extension
+        extension = self.LANGUAGE_TO_EXTENSION.get(program.language.lower(), program.language)
+        
         # Save the program code
-        code_path = os.path.join(best_dir, f"best_program.{self.language}")
+        code_path = os.path.join(best_dir, f"best_program.{extension}")
         with open(code_path, "w") as f:
             f.write(program.code)
         
