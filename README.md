@@ -78,28 +78,12 @@ database:
 
 Sample configuration files are available in the `configs/` directory:
 - `default_config.yaml`: Comprehensive configuration with all available options
-- `matrix_multiplication_config.yaml`: Configuration optimized for matrix multiplication
-- `min_max_distance_config.yaml`: Configuration for geometric optimization
 
 See the [Configuration Guide](configs/default_config.yaml) for a full list of options.
 
 ## Examples
 
 See the `examples/` directory for complete examples of using OpenEvolve on various problems:
-
-### Matrix Multiplication Optimization
-Evolves more efficient matrix multiplication algorithms:
-```bash
-cd examples/matrix_multiplication
-python optimize.py --iterations 100
-```
-
-### Min-Max Distance Optimization
-Finds optimal point configurations that minimize the ratio of maximum to minimum distances:
-```bash
-cd examples/min_max_distance
-python optimize.py --iterations 150 --num-points 16
-```
 
 ## Preparing Your Own Problems
 
