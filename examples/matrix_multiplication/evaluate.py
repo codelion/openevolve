@@ -193,25 +193,27 @@ def evaluate_performance(matrix_multiply) -> float:
     ]
     
     # Define baseline times for the naive triple-loop implementation
-    # These are the reference times that our initial implementation should achieve
+    # Calibrating based on typical performance of the naive implementation
+    # These should be adjusted based on the actual machine running the benchmarks
     baseline_times = {
-        "2x2x2": 0.0001,
-        "3x3x3": 0.0003,
-        "4x4x4": 0.0007,
-        "5x5x5": 0.0015,
-        "3x4x5": 0.0007,
-        "4x3x5": 0.0007,
+        "2x2x2": 0.00010,  # Small matrix, very fast
+        "3x3x3": 0.00030,  # Still quite small
+        "4x4x4": 0.00070,  # Medium sized 
+        "5x5x5": 0.00150,  # Larger matrix
+        "3x4x5": 0.00070,  # Rectangular matrices 
+        "4x3x5": 0.00070,  # Rectangular matrices
     }
     
     # Define target speedups (what we're aiming for)
     # Based on Strassen's algorithm and other optimized approaches
+    # We make these more ambitious to encourage more optimization
     target_speedups = {
-        "2x2x2": 1.5,  # 50% faster than naive
-        "3x3x3": 1.7,  # 70% faster than naive
-        "4x4x4": 2.0,  # 2x faster than naive
-        "5x5x5": 2.2,  # 2.2x faster than naive
-        "3x4x5": 1.7,  # 70% faster than naive
-        "4x3x5": 1.7,  # 70% faster than naive
+        "2x2x2": 3.0,   # 3x faster than naive
+        "3x3x3": 3.5,   # 3.5x faster than naive
+        "4x4x4": 4.0,   # 4x faster than naive - Strassen's algorithm should be able to achieve this
+        "5x5x5": 4.5,   # 4.5x faster than naive
+        "3x4x5": 3.5,   # 3.5x faster than naive
+        "4x3x5": 3.5,   # 3.5x faster than naive
     }
     
     # Run benchmark
@@ -263,7 +265,7 @@ def evaluate_performance(matrix_multiply) -> float:
         # If speedup equals baseline, score is 0.2
         # If speedup is between baseline and target, score is 0.2-0.8
         # If speedup reaches target, score is 0.8
-        # If speedup exceeds target, score is 0.8-1.0
+        # If speedup exceeds target, score INCREASES BEYOND 0.8 proportionally
         if speedup < 1.0:
             target_percentages[size] = 0.2 * speedup
         elif speedup < target:
@@ -271,16 +273,35 @@ def evaluate_performance(matrix_multiply) -> float:
             progress = (speedup - 1.0) / (target - 1.0)
             target_percentages[size] = 0.2 + 0.6 * progress
         else:
-            # Speedup reached or exceeded target
-            bonus = min((speedup - target) / target, 0.5)  # Cap bonus at 0.5
+            # Speedup reached or exceeded target - NO CAP ON BONUS
+            # This allows scores above 1.0 for exceptional performance
+            bonus = (speedup - target) / target
             target_percentages[size] = 0.8 + 0.2 * bonus
     
     # Calculate overall score (average of target percentages)
     if not target_percentages:
         return 0.0
     
-    # Calculate average score
-    avg_score = sum(target_percentages.values()) / len(target_percentages)
+    # Calculate weighted average score - giving more weight to larger matrices
+    # This encourages optimizations that work well on bigger matrices
+    weights = {
+        "2x2x2": 0.10,
+        "3x3x3": 0.15,
+        "4x4x4": 0.20,
+        "5x5x5": 0.25,
+        "3x4x5": 0.15,
+        "4x3x5": 0.15
+    }
+    
+    weighted_score = 0.0
+    total_weight = 0.0
+    
+    for size, score in target_percentages.items():
+        weight = weights.get(size, 1.0) 
+        weighted_score += score * weight
+        total_weight += weight
+    
+    avg_score = weighted_score / total_weight if total_weight > 0 else 0.0
     
     # Log detailed results for debugging
     logger.info(f"Performance results:")

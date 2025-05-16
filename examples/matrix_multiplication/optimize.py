@@ -54,6 +54,9 @@ async def main():
     config.diff_based_evolution = True
     config.allow_full_rewrites = False
     
+    # Set database to use performance as the primary metric for comparing programs
+    config.database.feature_dimensions = ["performance", "complexity"]
+    
     # Create specialized template for matrix multiplication
     from openevolve.prompt.templates import TemplateManager
     
@@ -80,11 +83,12 @@ async def main():
             kwargs['template_key'] = template_key
             return original_build_prompt(self, *args, **kwargs)
     
-    # Apply the patch
-    PromptSampler.build_prompt = custom_build_prompt
+    # Increase temperature and max_tokens for more creative, complete solutions
+    config.llm.temperature = 1.0
+    config.llm.max_tokens = 4096
     
-    # Increase temperature for more creative solutions
-    config.llm.temperature = 0.9
+    # Configure evaluator to prioritize performance
+    config.evaluator.metrics_to_use = ["performance"]
     
     # Initialize OpenEvolve with the custom config
     openevolve = OpenEvolve(

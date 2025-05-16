@@ -12,10 +12,21 @@ Focus on making targeted changes that will increase the program's performance me
 """
 
 # Matrix multiplication system template
-MATMUL_SYSTEM_TEMPLATE = """You are an expert algorithm engineer specialized in numerical computing and matrix operations.
-Your task is to optimize matrix multiplication algorithms for better performance while maintaining correctness.
-Apply techniques like loop reordering, blocking, recursion, and mathematical insights to reduce the number of operations.
-Focus on making improvements for smaller matrix sizes (2x2 to 5x5) where algorithmic innovations like Strassen's algorithm can make a difference.
+MATMUL_SYSTEM_TEMPLATE = """You are an expert algorithm engineer specialized in numerical computing and matrix operations with a deep expertise in matrix multiplication optimizations.
+
+Your task is to optimize matrix multiplication algorithms for better performance while maintaining correctness. You're familiar with advanced techniques including:
+
+1. Strassen's algorithm, which reduces 7 multiplications instead of 8 for 2x2 matrices
+2. Winograd's variant, which minimizes additions in Strassen's algorithm
+3. The Coppersmith-Winograd algorithm and its theoretical improvements
+4. Memory access pattern optimizations (loop reordering, cache-oblivious algorithms)
+5. Low-level optimizations (loop unrolling, SIMD-friendly code, elimination of unnecessary operations)
+6. Special case optimizations for specific matrix dimensions
+7. Advanced mathematical decompositions like tensor methods
+
+Focus particularly on optimizing small matrix sizes (2x2 to 5x5) where algorithmic innovations can make a significant difference versus hardware-level optimizations. Apply insights from linear algebra to reduce the total number of operations required.
+
+The goal is to achieve the maximum possible speedup while maintaining 100% correctness of the output compared to the standard implementation.
 """
 
 # User message template for diff-based evolution
@@ -77,15 +88,23 @@ MATMUL_DIFF_USER_TEMPLATE = """# Matrix Multiplication Optimization Task
 
 # Task
 Optimize the matrix multiplication algorithm for better performance while maintaining correctness.
-Focus on smaller matrix sizes (2x2 to 5x5) where algorithmic innovations can make a significant difference.
+Your goal is to achieve the maximum possible speedup for matrix sizes from 2x2 to 5x5.
 
-Consider these optimization strategies:
-1. Loop reordering for better cache locality
-2. Loop unrolling to reduce loop overhead
-3. Blocking/tiling for better memory access patterns
-4. Algorithmic improvements like Strassen's algorithm for recursive decomposition
-5. Special case handling for specific matrix sizes
-6. Vectorization hints and SIMD-friendly operations
+The evaluation metrics show how much your implementation is faster than the naive algorithm. Higher values are better. The optimization techniques you should consider include:
+
+## Algorithm-level optimizations (highest impact):
+1. Implement Strassen's algorithm for 2x2, 4x4 matrices (reduces operations from O(n³) to O(n²·⁸¹))
+2. Create specialized functions for specific matrix sizes (2x2, 3x3, 4x4, 5x5)
+3. Recursive decomposition with custom base cases
+4. Winograd's variant that minimizes the number of additions
+5. Tensor-based decompositions for further reducing scalar multiplications
+
+## Implementation-level optimizations:
+1. Loop reordering for better cache locality (k-i-j instead of i-j-k)
+2. Loop unrolling to reduce loop overhead and enable compiler optimizations
+3. Memory access pattern improvements (array layout, temporary storage)
+4. Complete elimination of unnecessary operations and checks
+5. Smart bounds checking and early termination for special cases
 
 You MUST use the exact SEARCH/REPLACE diff format shown below to indicate changes:
 
@@ -95,22 +114,85 @@ You MUST use the exact SEARCH/REPLACE diff format shown below to indicate change
 # New replacement code
 >>>>>>> REPLACE
 
-Example of valid diff format:
+Examples of good changes include:
+
+1. Implementing Strassen for 2x2 matrices:
 <<<<<<< SEARCH
-for i in range(m):
-    for j in range(p):
-        for k in range(n):
-            C[i, j] += A[i, k] * B[k, j]
-=======
-# Reorder loops for better memory access pattern
-for i in range(m):
-    for k in range(n):
+def matrix_multiply(A: np.ndarray, B: np.ndarray) -> np.ndarray:
+    m, n = A.shape
+    n2, p = B.shape
+    
+    if n != n2:
+        raise ValueError(f"Incompatible matrix shapes: {{A.shape}} and {{B.shape}}")
+    
+    # Initialize result matrix with zeros
+    C = np.zeros((m, p), dtype=A.dtype)
+    
+    # Naive triple-loop implementation
+    for i in range(m):
         for j in range(p):
-            C[i, j] += A[i, k] * B[k, j]
+            for k in range(n):
+                C[i, j] += A[i, k] * B[k, j]
+    
+    return C
+=======
+def matrix_multiply(A: np.ndarray, B: np.ndarray) -> np.ndarray:
+    m, n = A.shape
+    n2, p = B.shape
+    
+    if n != n2:
+        raise ValueError(f"Incompatible matrix shapes: {{A.shape}} and {{B.shape}}")
+    
+    # Special case for 2x2 matrices using Strassen's algorithm
+    if m == 2 and n == 2 and p == 2:
+        return strassen_2x2(A, B)
+    
+    # Initialize result matrix with zeros
+    C = np.zeros((m, p), dtype=A.dtype)
+    
+    # Optimized loop ordering for better cache locality
+    for i in range(m):
+        for k in range(n):
+            A_ik = A[i, k]
+            for j in range(p):
+                C[i, j] += A_ik * B[k, j]
+    
+    return C
+
+def strassen_2x2(A: np.ndarray, B: np.ndarray) -> np.ndarray:
+    # Strassen's algorithm for 2x2 matrices
+    # This reduces multiplications from 8 to 7
+    
+    # Extract elements
+    a11, a12 = A[0, 0], A[0, 1]
+    a21, a22 = A[1, 0], A[1, 1]
+    b11, b12 = B[0, 0], B[0, 1]
+    b21, b22 = B[1, 0], B[1, 1]
+    
+    # Compute the 7 products needed in Strassen's algorithm
+    m1 = (a11 + a22) * (b11 + b22)
+    m2 = (a21 + a22) * b11
+    m3 = a11 * (b12 - b22)
+    m4 = a22 * (b21 - b11)
+    m5 = (a11 + a12) * b22
+    m6 = (a21 - a11) * (b11 + b12)
+    m7 = (a12 - a22) * (b21 + b22)
+    
+    # Compute the result matrix elements
+    c11 = m1 + m4 - m5 + m7
+    c12 = m3 + m5
+    c21 = m2 + m4
+    c22 = m1 - m2 + m3 + m6
+    
+    # Construct the result matrix
+    C = np.zeros((2, 2), dtype=A.dtype)
+    C[0, 0], C[0, 1] = c11, c12
+    C[1, 0], C[1, 1] = c21, c22
+    
+    return C
 >>>>>>> REPLACE
 
-You can suggest multiple changes. Each SEARCH section must exactly match code in the current program.
-Explain the reasoning behind your optimizations.
+Explain your reasoning and clearly state which specific optimizations you're implementing. Be creative but thorough in your approach to achieve the maximum possible speedup.
 """
 
 # User message template for full rewrite
