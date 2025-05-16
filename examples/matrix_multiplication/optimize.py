@@ -77,55 +77,55 @@ async def main():
     
     # System message focusing on tensor decomposition and optimization
     system_template = """You are an expert in computational mathematics, numerical optimization, and algorithm design. 
-Your task is to optimize a tensor decomposition algorithm for discovering efficient matrix multiplication.
+Your task is to carefully optimize a tensor decomposition algorithm for discovering efficient matrix multiplication.
 
 When matrix multiplication is viewed as a tensor problem, the goal is to find a minimum-rank decomposition
 of the corresponding 3D tensor. Each term in the decomposition corresponds to a scalar multiplication in 
 the algorithm, so minimizing the rank directly leads to faster matrix multiplication.
 
-Your focus should be on targeted, specific improvements to the tensor decomposition optimization process. 
-Make small, focused changes rather than rewriting large sections. Key areas to consider include:
+Your focus should be on making ONE targeted, specific improvement. Code quality is critical - buggy
+code will fail evaluation and waste computing resources. Pay special attention to:
 
-1. Loss function improvements (regularization terms that encourage specific properties)
-2. Adding noise injection or annealing schedules to avoid local minima
-3. Improving initialization strategies for better convergence
-4. Numerical stability enhancements for complex-valued operations
-5. Techniques to encourage integer or half-integer coefficients
+1. Variable scope and references - don't use variables before they're defined
+2. Make only small, focused changes rather than large rewrites
+3. Test your change carefully, ensuring it will work when added to the existing code
+4. Respect the class structure and function interfaces
 
-The best algorithms from the literature for various matrix sizes include:
-- 2x2 matrices: Strassen's algorithm (7 multiplications)
-- 3x3 matrices: Laderman's algorithm (23 multiplications) 
-- 4x4 matrices: Recursive Strassen (49 multiplications, improved to 48 with complex values)
+The best matrix multiplication algorithms in the literature include Strassen's algorithm (7 multiplications
+for 2x2) and Laderman's algorithm (23 multiplications for 3x3).
 
-Focus on making 1-3 specific, high-impact changes rather than comprehensive rewrites.
+Make only ONE specific, high-impact change rather than multiple modifications.
 """
     
-    # User message template for tensor decomposition optimization (shortened for compatibility)
+    # User message template for tensor decomposition optimization (focused and clear)
     user_template = """
-Improve the tensor decomposition algorithm below with 1-3 specific changes.
+Focus on fixing ONE specific issue or making ONE targeted improvement in this tensor decomposition algorithm.
 
-CURRENT CODE:
+CODE:
 {current_program}
 
 METRICS:
 {metrics}
 
-FOCUS AREAS:
-{improvement_areas}
+FOCUS AREA: Make ONE change to improve the algorithm, focusing on either:
+1. The loss function to guide optimization better
+2. Initialization strategy for faster convergence 
+3. Adding regularization for integer/half-integer coefficients
 
-Make targeted changes using this format:
+Use SEARCH/REPLACE (keep the search section SHORT):
 
 <<<<<<< SEARCH
-// exact code to match (keep short)
+// exact code to match (small section only)
 =======
 // improved code
 >>>>>>> REPLACE
 
-RULES:
-1. Each SEARCH block must exactly match existing code
-2. Focus on 1-3 specific changes only
-3. Explain each change briefly
-4. Avoid large rewrites
+IMPORTANT RULES:
+1. Make only ONE change and explain it briefly
+2. Ensure the SEARCH block EXACTLY matches existing code
+3. NEVER use variables before they're defined
+4. Don't reference u_factors, v_factors, or w_factors outside _initialize_decomposition, _loss_fn, etc.
+5. ALWAYS test your change mentally to ensure it would work
 """
     
     # Add the templates to OpenEvolve's template manager

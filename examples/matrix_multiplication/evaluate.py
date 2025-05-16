@@ -8,6 +8,7 @@ import importlib.util
 import logging
 import sys
 import time
+import traceback
 from typing import Dict, List, Tuple, Any
 
 import numpy as np
@@ -49,6 +50,17 @@ def evaluate(program_path: str) -> Dict[str, float]:
     Returns:
         Dictionary of metric name to score
     """
+    # First perform basic validation
+    stage1_result = evaluate_stage1(program_path)
+    
+    # If validation fails, return early
+    if stage1_result["correctness"] < 0.8:
+        return {
+            "correctness": stage1_result["correctness"], 
+            "rank_quality": 0.0, 
+            "time_efficiency": 0.0
+        }
+    
     # Import the program
     try:
         spec = importlib.util.spec_from_file_location("program_module", program_path)
@@ -97,7 +109,7 @@ def evaluate(program_path: str) -> Dict[str, float]:
 
 def evaluate_stage1(program_path: str) -> Dict[str, float]:
     """
-    First stage of evaluation: test correctness
+    First stage of evaluation: basic validation and test correctness
     
     Args:
         program_path: Path to the program file
@@ -105,6 +117,34 @@ def evaluate_stage1(program_path: str) -> Dict[str, float]:
     Returns:
         Dictionary of metric name to score
     """
+    # First, perform static code analysis and basic validation
+    try:
+        with open(program_path, 'r') as f:
+            code_content = f.read()
+        
+        # Basic syntax check
+        try:
+            compile(code_content, program_path, 'exec')
+        except SyntaxError as e:
+            logger.error(f"Syntax error in program: {str(e)}")
+            return {"correctness": 0.0}
+        
+        # Check for common issues
+        if "TensorDecomposition" not in code_content:
+            logger.error("Program does not contain 'TensorDecomposition' class")
+            return {"correctness": 0.0}
+        
+        # Look for variable reference issues (e.g., 'u_factors' being used before definition)
+        if "u_factors" in code_content and "_initialize_decomposition" in code_content:
+            # Very basic check - not exhaustive but catches simple issues
+            if code_content.find("u_factors") < code_content.find("_initialize_decomposition"):
+                if "def _initialize_decomposition" in code_content:
+                    logger.error("Possible reference to 'u_factors' before initialization")
+                    return {"correctness": 0.0}
+    except Exception as e:
+        logger.error(f"Error during static code validation: {str(e)}")
+        return {"correctness": 0.0}
+    
     # Import the program
     try:
         spec = importlib.util.spec_from_file_location("program_module", program_path)
@@ -113,20 +153,50 @@ def evaluate_stage1(program_path: str) -> Dict[str, float]:
         
         module = importlib.util.module_from_spec(spec)
         sys.modules["program_module"] = module
-        spec.loader.exec_module(module)
         
+        # Use a safety wrapper to catch any import-time errors
+        try:
+            spec.loader.exec_module(module)
+        except Exception as e:
+            logger.error(f"Error during module execution: {str(e)}")
+            traceback.print_exc()
+            return {"correctness": 0.0}
+        
+        # Check for the required class
         if not hasattr(module, "TensorDecomposition"):
-            raise AttributeError(f"Program does not contain a 'TensorDecomposition' class")
+            logger.error("Program does not contain a 'TensorDecomposition' class")
+            return {"correctness": 0.0}
         
+        # Check basic class structure
         TensorDecomposition = module.TensorDecomposition
+        required_methods = ["__init__", "optimize", "_initialize_decomposition"]
+        for method in required_methods:
+            if not hasattr(TensorDecomposition, method):
+                logger.error(f"TensorDecomposition class missing required method: {method}")
+                return {"correctness": 0.0}
+        
+        # Try to instantiate the class with minimal parameters
+        try:
+            test_instance = TensorDecomposition(target_shape=(2, 2, 2), rank=7)
+        except Exception as e:
+            logger.error(f"Failed to instantiate TensorDecomposition: {str(e)}")
+            traceback.print_exc()
+            return {"correctness": 0.0}
+        
     except Exception as e:
         logger.error(f"Error importing program: {str(e)}")
+        traceback.print_exc()
         return {"correctness": 0.0}
     
-    # Test correctness
-    correctness_score = evaluate_correctness(TensorDecomposition)
-    
-    return {"correctness": correctness_score}
+    # If we get here, the basic validation passed
+    # Now perform a simple correctness test
+    try:
+        correctness_score = evaluate_correctness(TensorDecomposition)
+        return {"correctness": correctness_score}
+    except Exception as e:
+        logger.error(f"Error in correctness evaluation: {str(e)}")
+        traceback.print_exc()
+        return {"correctness": 0.0}
 
 
 def evaluate_correctness(TensorDecomposition) -> float:
