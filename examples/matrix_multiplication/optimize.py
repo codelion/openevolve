@@ -50,7 +50,6 @@ async def main():
     config = Config()
     config.max_iterations = args.iterations
     
-    # Use more powerful models from the 3 family for this complex task
     config.llm.primary_model = "gemini-2.0-flash-lite"
     config.llm.secondary_model = "gemini-2.0-flash"
     config.llm.api_base = "https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -59,12 +58,10 @@ async def main():
     config.diff_based_evolution = True
     config.allow_full_rewrites = False
     
-    # Increase context and max tokens for detailed tensor decomposition work
-    config.llm.max_context_tokens = 16000
-    config.llm.max_tokens = 8000
-    
-    # Higher temperature for more creative solutions
-    config.llm.temperature = 0.9
+    # Configure system for complex code evolution
+    config.llm.max_tokens = 4000  # Reduced to encourage more focused responses
+    config.max_code_length = 15000  # Increased to handle our complex code
+    config.llm.temperature = 0.7  # Slightly reduced for more focused responses
     
     # Set database to use rank_quality as the primary metric for comparing programs
     config.database.feature_dimensions = ["rank_quality", "correctness", "time_efficiency"]
@@ -86,61 +83,49 @@ When matrix multiplication is viewed as a tensor problem, the goal is to find a 
 of the corresponding 3D tensor. Each term in the decomposition corresponds to a scalar multiplication in 
 the algorithm, so minimizing the rank directly leads to faster matrix multiplication.
 
-You should focus on:
-1. Improving the optimization process to find lower-rank decompositions
-2. Adding techniques like regularization, noise injection, and scheduling
-3. Modifying the loss function to better guide the optimization
-4. Enhancing numerical stability for complex-valued operations
-5. Finding ways to ensure solutions have simple (integer or half-integer) coefficients
-6. Properly handling real vs. complex-valued decompositions
+Your focus should be on targeted, specific improvements to the tensor decomposition optimization process. 
+Make small, focused changes rather than rewriting large sections. Key areas to consider include:
+
+1. Loss function improvements (regularization terms that encourage specific properties)
+2. Adding noise injection or annealing schedules to avoid local minima
+3. Improving initialization strategies for better convergence
+4. Numerical stability enhancements for complex-valued operations
+5. Techniques to encourage integer or half-integer coefficients
 
 The best algorithms from the literature for various matrix sizes include:
 - 2x2 matrices: Strassen's algorithm (7 multiplications)
 - 3x3 matrices: Laderman's algorithm (23 multiplications) 
 - 4x4 matrices: Recursive Strassen (49 multiplications, improved to 48 with complex values)
 
-For matrices with dimensions other than powers of 2, custom algorithms with fewer multiplications
-than the naive approach are possible but require sophisticated optimization techniques.
-
-When proposing changes, focus on the algorithm's mathematical and optimization aspects, not on 
-micro-optimizations of the code. Significant improvements usually come from changing the approach
-to finding the decomposition rather than the implementation details.
+Focus on making 1-3 specific, high-impact changes rather than comprehensive rewrites.
 """
     
-    # User message template for tensor decomposition optimization
+    # User message template for tensor decomposition optimization (shortened for compatibility)
     user_template = """
-I'm working on optimizing tensor decomposition for discovering efficient matrix multiplication algorithms, 
-as described in the AlphaEvolve paper. Below is the current implementation and its performance.
+Improve the tensor decomposition algorithm below with 1-3 specific changes.
 
-This is the implementation we're trying to improve:
-
+CURRENT CODE:
 {current_program}
 
-The current program achieves these metrics:
+METRICS:
 {metrics}
 
-Areas that need improvement:
+FOCUS AREAS:
 {improvement_areas}
 
-Evolution history:
-{evolution_history}
-
-Please suggest improvements to make the tensor decomposition algorithm find lower-rank decompositions or
-converge faster to valid solutions. Focus on:
-- Optimization techniques (loss functions, regularization, schedules)
-- Initialization strategies for better convergence
-- Methods to encourage sparse, structured, or low-integer coefficient solutions
-- Numerical stability improvements
-
-Provide specific code changes using SEARCH/REPLACE blocks as follows:
+Make targeted changes using this format:
 
 <<<<<<< SEARCH
-// code to be replaced
+// exact code to match (keep short)
 =======
-// new improved code
+// improved code
 >>>>>>> REPLACE
 
-Your changes should be well-reasoned and backed by mathematical intuition.
+RULES:
+1. Each SEARCH block must exactly match existing code
+2. Focus on 1-3 specific changes only
+3. Explain each change briefly
+4. Avoid large rewrites
 """
     
     # Add the templates to OpenEvolve's template manager
