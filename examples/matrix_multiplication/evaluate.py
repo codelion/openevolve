@@ -1,23 +1,47 @@
 """
-Evaluation function for matrix multiplication optimization
+Evaluation function for matrix multiplication tensor decomposition
 
 This file defines the evaluation function that OpenEvolve will use to
-score matrix multiplication implementations.
+score tensor decomposition implementations for matrix multiplication.
 """
 import importlib.util
 import logging
 import sys
 import time
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
 
 import numpy as np
+import torch
 
 logger = logging.getLogger(__name__)
 
+# Target shapes to evaluate
+TARGET_SHAPES = [
+    (2, 2, 2),  # Classic 2x2 matrix multiplication 
+    (3, 3, 3),  # 3x3 matrix multiplication
+    (4, 4, 4),  # 4x4 matrix multiplication (Strassen gives 49 multiplications)
+    (4, 4, 5),  # Rectangular matrices
+]
+
+# Known best ranks for each shape (from literature)
+BEST_KNOWN_RANKS = {
+    (2, 2, 2): 7,    # Strassen's algorithm
+    (3, 3, 3): 23,   # Laderman's algorithm
+    (4, 4, 4): 49,   # Recursive Strassen (paper found 48 with complex values)
+    (4, 4, 5): 62,   # From the AlphaEvolve paper
+}
+
+# Maximum rank to try for each shape (to prevent excessive computation)
+MAX_RANKS = {
+    (2, 2, 2): 10,
+    (3, 3, 3): 30,
+    (4, 4, 4): 60,
+    (4, 4, 5): 75
+}
 
 def evaluate(program_path: str) -> Dict[str, float]:
     """
-    Evaluate a matrix multiplication implementation
+    Evaluate a tensor decomposition implementation for matrix multiplication
     
     Args:
         program_path: Path to the program file
@@ -35,27 +59,39 @@ def evaluate(program_path: str) -> Dict[str, float]:
         sys.modules["program_module"] = module
         spec.loader.exec_module(module)
         
-        if not hasattr(module, "matrix_multiply"):
-            raise AttributeError(f"Program does not contain a 'matrix_multiply' function")
+        if not hasattr(module, "TensorDecomposition"):
+            raise AttributeError(f"Program does not contain a 'TensorDecomposition' class")
         
-        matrix_multiply = module.matrix_multiply
+        TensorDecomposition = module.TensorDecomposition
     except Exception as e:
         logger.error(f"Error importing program: {str(e)}")
-        return {"correctness": 0.0, "performance": 0.0}
+        return {"correctness": 0.0, "rank_quality": 0.0, "time_efficiency": 0.0}
     
-    # Test correctness
-    correctness_score = evaluate_correctness(matrix_multiply)
+    # Test correctness of the decomposition
+    correctness_score = evaluate_correctness(TensorDecomposition)
     
     # If correctness fails, return early
-    if correctness_score < 1.0:
-        return {"correctness": correctness_score, "performance": 0.0}
+    if correctness_score < 0.8:  # Allow some numerical issues
+        return {
+            "correctness": correctness_score, 
+            "rank_quality": 0.0, 
+            "time_efficiency": 0.0
+        }
     
-    # Test performance
-    performance_score = evaluate_performance(matrix_multiply)
+    # Test rank quality (how low a rank we can achieve)
+    rank_quality_score = evaluate_rank_quality(TensorDecomposition)
+    
+    # Test time efficiency (how fast we can find a good decomposition)
+    time_efficiency_score = evaluate_time_efficiency(TensorDecomposition)
+    
+    # Overall score weighted heavily towards rank quality
+    overall_score = 0.2 * correctness_score + 0.6 * rank_quality_score + 0.2 * time_efficiency_score
     
     return {
         "correctness": correctness_score,
-        "performance": performance_score,
+        "rank_quality": rank_quality_score,
+        "time_efficiency": time_efficiency_score,
+        "overall_score": overall_score,
     }
 
 
@@ -79,235 +115,279 @@ def evaluate_stage1(program_path: str) -> Dict[str, float]:
         sys.modules["program_module"] = module
         spec.loader.exec_module(module)
         
-        if not hasattr(module, "matrix_multiply"):
-            raise AttributeError(f"Program does not contain a 'matrix_multiply' function")
+        if not hasattr(module, "TensorDecomposition"):
+            raise AttributeError(f"Program does not contain a 'TensorDecomposition' class")
         
-        matrix_multiply = module.matrix_multiply
+        TensorDecomposition = module.TensorDecomposition
     except Exception as e:
         logger.error(f"Error importing program: {str(e)}")
         return {"correctness": 0.0}
     
     # Test correctness
-    correctness_score = evaluate_correctness(matrix_multiply)
+    correctness_score = evaluate_correctness(TensorDecomposition)
     
     return {"correctness": correctness_score}
 
 
-def evaluate_stage2(program_path: str) -> Dict[str, float]:
+def evaluate_correctness(TensorDecomposition) -> float:
     """
-    Second stage of evaluation: test performance
+    Test the correctness of a tensor decomposition implementation
     
     Args:
-        program_path: Path to the program file
-        
-    Returns:
-        Dictionary of metric name to score
-    """
-    # Import the program
-    try:
-        spec = importlib.util.spec_from_file_location("program_module", program_path)
-        if spec is None or spec.loader is None:
-            raise ImportError(f"Failed to load spec from {program_path}")
-        
-        module = importlib.util.module_from_spec(spec)
-        sys.modules["program_module"] = module
-        spec.loader.exec_module(module)
-        
-        if not hasattr(module, "matrix_multiply"):
-            raise AttributeError(f"Program does not contain a 'matrix_multiply' function")
-        
-        matrix_multiply = module.matrix_multiply
-    except Exception as e:
-        logger.error(f"Error importing program: {str(e)}")
-        return {"performance": 0.0}
-    
-    # Test performance
-    performance_score = evaluate_performance(matrix_multiply)
-    
-    return {"performance": performance_score}
-
-
-def evaluate_correctness(matrix_multiply) -> float:
-    """
-    Test the correctness of a matrix multiplication implementation
-    
-    Args:
-        matrix_multiply: Function to evaluate
+        TensorDecomposition: Class to evaluate
         
     Returns:
         Correctness score (0.0 to 1.0)
     """
-    # Define test cases focused on smaller matrices (as in the paper)
-    test_sizes = [
-        (2, 2, 2),
-        (2, 3, 2),
-        (3, 3, 3),
-        (3, 4, 5),
-        (4, 4, 4),
-        (4, 5, 3),
-        (5, 5, 5),
+    # Define small test cases that are quick to evaluate
+    test_cases = [
+        {"shape": (2, 2, 2), "rank": 7},  # Should work with Strassen's algorithm
+        {"shape": (2, 3, 2), "rank": 11}, # Should be possible
     ]
     
     passed = 0
-    total = len(test_sizes)
+    total = len(test_cases)
+    reconstruction_errors = []
     
-    for m, n, p in test_sizes:
+    for case in test_cases:
         try:
-            # Create random matrices
-            A = np.random.rand(m, n)
-            B = np.random.rand(n, p)
+            shape = case["shape"]
+            rank = case["rank"]
             
-            # Calculate reference result
-            reference = np.matmul(A, B)
+            # Create and optimize tensor decomposition
+            td = TensorDecomposition(target_shape=shape, rank=rank, 
+                                   config={"training_steps": 1000})
+            result = td.optimize(rng_seed=42)
             
-            # Calculate result with the implementation
-            result = matrix_multiply(A, B)
+            # Check reconstruction error
+            error = result["reconstruction_error"]
+            reconstruction_errors.append(error)
             
-            # Check if results are close
-            if np.allclose(reference, result, rtol=1e-5, atol=1e-8):
+            # If error is small enough, consider it a pass
+            if error < 1e-2:  # Relaxed threshold for numerical stability
                 passed += 1
+                
         except Exception as e:
-            logger.warning(f"Error in correctness test for sizes {(m, n, p)}: {str(e)}")
+            logger.warning(f"Error in correctness test for case {case}: {str(e)}")
     
-    return passed / total
+    # Calculate score based on passes and errors
+    pass_score = passed / total if total > 0 else 0.0
+    
+    # If we have any errors, also factor in their magnitude
+    if reconstruction_errors:
+        avg_error = sum(reconstruction_errors) / len(reconstruction_errors)
+        error_score = max(0, 1.0 - min(1.0, avg_error * 10))  # Scale error up
+        
+        # Combine scores (weighted more towards passing tests)
+        return 0.7 * pass_score + 0.3 * error_score
+    else:
+        return pass_score
 
 
-def evaluate_performance(matrix_multiply) -> float:
+def binary_search_min_rank(TensorDecomposition, shape, min_rank, max_rank, 
+                          error_threshold=1e-2, max_attempts=3) -> int:
     """
-    Test the performance of a matrix multiplication implementation
+    Binary search to find the minimum rank needed for a valid decomposition
     
     Args:
-        matrix_multiply: Function to evaluate
+        TensorDecomposition: Class to evaluate
+        shape: Target tensor shape
+        min_rank: Minimum rank to try
+        max_rank: Maximum rank to try
+        error_threshold: Maximum allowed reconstruction error
+        max_attempts: Number of attempts per rank
         
     Returns:
-        Performance score (0.0 to 1.0)
+        Minimum rank for a valid decomposition
     """
-    # Define benchmark sizes focused on smaller matrices (as in the paper)
-    benchmark_sizes = [
-        (2, 2, 2),
-        (3, 3, 3),
-        (4, 4, 4),
-        (5, 5, 5),
-        (3, 4, 5),
-        (4, 3, 5),
-    ]
+    logger.info(f"Binary searching for minimum rank for shape {shape} between {min_rank} and {max_rank}")
     
-    # Define baseline times for the naive triple-loop implementation
-    # Calibrating based on typical performance of the naive implementation
-    # These should be adjusted based on the actual machine running the benchmarks
-    baseline_times = {
-        "2x2x2": 0.00010,  # Small matrix, very fast
-        "3x3x3": 0.00030,  # Still quite small
-        "4x4x4": 0.00070,  # Medium sized 
-        "5x5x5": 0.00150,  # Larger matrix
-        "3x4x5": 0.00070,  # Rectangular matrices 
-        "4x3x5": 0.00070,  # Rectangular matrices
-    }
+    if min_rank > max_rank:
+        return max_rank
     
-    # Define target speedups (what we're aiming for)
-    # Based on Strassen's algorithm and other optimized approaches
-    # We make these more ambitious to encourage more optimization
-    target_speedups = {
-        "2x2x2": 3.0,   # 3x faster than naive
-        "3x3x3": 3.5,   # 3.5x faster than naive
-        "4x4x4": 4.0,   # 4x faster than naive - Strassen's algorithm should be able to achieve this
-        "5x5x5": 4.5,   # 4.5x faster than naive
-        "3x4x5": 3.5,   # 3.5x faster than naive
-        "4x3x5": 3.5,   # 3.5x faster than naive
-    }
+    while min_rank < max_rank:
+        mid_rank = (min_rank + max_rank) // 2
+        
+        # Try multiple attempts at this rank
+        success = False
+        for attempt in range(max_attempts):
+            try:
+                td = TensorDecomposition(target_shape=shape, rank=mid_rank, 
+                                       config={"training_steps": 2000})
+                result = td.optimize(rng_seed=42 + attempt)
+                
+                # If error is small enough, consider it a success
+                if result["reconstruction_error"] < error_threshold:
+                    success = True
+                    break
+            except Exception as e:
+                logger.warning(f"Error in attempt {attempt} for rank {mid_rank}: {str(e)}")
+        
+        if success:
+            # We can try a lower rank
+            max_rank = mid_rank
+        else:
+            # We need a higher rank
+            min_rank = mid_rank + 1
     
-    # Run benchmark
-    results = {}
-    runs = 5  # More runs for better accuracy
+    return min_rank
+
+
+def evaluate_rank_quality(TensorDecomposition) -> float:
+    """
+    Test the quality of ranks found by the tensor decomposition implementation
     
-    for m, n, p in benchmark_sizes:
-        size_key = f"{m}x{n}x{p}"
+    Args:
+        TensorDecomposition: Class to evaluate
+        
+    Returns:
+        Rank quality score (0.0 to 1.0+)
+    """
+    scores = []
+    
+    for shape in TARGET_SHAPES:
+        best_known = BEST_KNOWN_RANKS.get(shape, float('inf'))
+        max_rank = MAX_RANKS.get(shape, 2 * best_known)
         
         try:
-            # Create random matrices
-            A = np.random.rand(m, n)
-            B = np.random.rand(n, p)
+            # First, verify we can at least match a higher rank
+            verification_rank = min(best_known + 5, max_rank)
+            td = TensorDecomposition(target_shape=shape, rank=verification_rank, 
+                                   config={"training_steps": 1000})
+            result = td.optimize(rng_seed=42)
             
-            # Warm-up
-            matrix_multiply(A, B)
+            # If verification fails, skip this shape
+            if result["reconstruction_error"] > 1e-2:
+                logger.warning(f"Verification failed for shape {shape} at rank {verification_rank}")
+                scores.append(0.0)
+                continue
             
-            # Benchmark
-            times = []
-            for _ in range(runs):
-                start_time = time.time()
-                matrix_multiply(A, B)
-                end_time = time.time()
-                times.append(end_time - start_time)
+            # Binary search for the minimum rank (with reduced search space)
+            # Using simplified linear search for faster evaluation
+            min_found_rank = max_rank
             
-            # Record average time (remove fastest and slowest)
-            times.sort()
-            if len(times) > 2:
-                times = times[1:-1]  # Remove extremes
-            avg_time = sum(times) / len(times)
-            results[size_key] = avg_time
+            # Try a few decreasing ranks from the best known
+            for test_rank in range(best_known, best_known - 5, -1):
+                if test_rank < 1:
+                    break
+                    
+                td = TensorDecomposition(target_shape=shape, rank=test_rank, 
+                                       config={"training_steps": 2000})
+                result = td.optimize(rng_seed=42)
+                
+                if result["reconstruction_error"] < 1e-2:
+                    min_found_rank = test_rank
+                    break
+            
+            # If we couldn't improve, try to match best known
+            if min_found_rank > best_known:
+                td = TensorDecomposition(target_shape=shape, rank=best_known, 
+                                       config={"training_steps": 3000})
+                result = td.optimize(rng_seed=42)
+                
+                if result["reconstruction_error"] < 1e-2:
+                    min_found_rank = best_known
+                else:
+                    min_found_rank = verification_rank  # Use the verified rank
+            
+            # Calculate rank quality based on comparison to best known
+            # If we match or beat best known, score >= 1.0
+            # If we're slightly worse, score is proportionally lower
+            quality = best_known / min_found_rank  
+            
+            # Bonus for beating best known
+            if min_found_rank < best_known:
+                bonus = 0.2 * (best_known - min_found_rank) / best_known
+                quality += bonus
+            
+            scores.append(quality)
+            
+            logger.info(f"Shape {shape}: best known {best_known}, found {min_found_rank}, quality {quality:.3f}")
+            
         except Exception as e:
-            logger.warning(f"Error in performance test for sizes {(m, n, p)}: {str(e)}")
-            results[size_key] = baseline_times[size_key] * 2  # Penalize errors
+            logger.warning(f"Error in rank quality test for shape {shape}: {str(e)}")
+            scores.append(0.0)
     
-    # Calculate speedups relative to baseline
-    speedups = {}
-    for size, time_taken in results.items():
-        if time_taken > 0:
-            speedups[size] = baseline_times[size] / time_taken
-        else:
-            speedups[size] = 0
-    
-    # Calculate relative performance to targets
-    target_percentages = {}
-    for size, speedup in speedups.items():
-        target = target_speedups[size]
-        # If speedup is below 1.0, it's worse than baseline (score 0.0-0.2)
-        # If speedup equals baseline, score is 0.2
-        # If speedup is between baseline and target, score is 0.2-0.8
-        # If speedup reaches target, score is 0.8
-        # If speedup exceeds target, score INCREASES BEYOND 0.8 proportionally
-        if speedup < 1.0:
-            target_percentages[size] = 0.2 * speedup
-        elif speedup < target:
-            # Linear interpolation between 0.2 and 0.8
-            progress = (speedup - 1.0) / (target - 1.0)
-            target_percentages[size] = 0.2 + 0.6 * progress
-        else:
-            # Speedup reached or exceeded target - NO CAP ON BONUS
-            # This allows scores above 1.0 for exceptional performance
-            bonus = (speedup - target) / target
-            target_percentages[size] = 0.8 + 0.2 * bonus
-    
-    # Calculate overall score (average of target percentages)
-    if not target_percentages:
-        return 0.0
-    
-    # Calculate weighted average score - giving more weight to larger matrices
-    # This encourages optimizations that work well on bigger matrices
-    weights = {
-        "2x2x2": 0.10,
-        "3x3x3": 0.15,
-        "4x4x4": 0.20,
-        "5x5x5": 0.25,
-        "3x4x5": 0.15,
-        "4x3x5": 0.15
-    }
+    # Average scores across all shapes, with higher weight on larger matrices
+    weights = [0.1, 0.2, 0.4, 0.3]  # More weight on 4x4 and 4x4x5
     
     weighted_score = 0.0
     total_weight = 0.0
     
-    for size, score in target_percentages.items():
-        weight = weights.get(size, 1.0) 
+    for i, score in enumerate(scores):
+        weight = weights[i] if i < len(weights) else 0.1
         weighted_score += score * weight
         total_weight += weight
     
     avg_score = weighted_score / total_weight if total_weight > 0 else 0.0
-    
-    # Log detailed results for debugging
-    logger.info(f"Performance results:")
-    for size in benchmark_sizes:
-        size_key = f"{size[0]}x{size[1]}x{size[2]}"
-        if size_key in results and size_key in speedups and size_key in target_percentages:
-            logger.info(f"  {size_key}: time={results[size_key]:.6f}s, speedup={speedups[size_key]:.2f}x, score={target_percentages[size_key]:.2f}")
-    
     return avg_score
+
+
+def evaluate_time_efficiency(TensorDecomposition) -> float:
+    """
+    Test how quickly the implementation can find a good decomposition
+    
+    Args:
+        TensorDecomposition: Class to evaluate
+        
+    Returns:
+        Time efficiency score (0.0 to 1.0)
+    """
+    # Define baseline times (seconds) for standard cases
+    baseline_times = {
+        (2, 2, 2): 1.0,   # Should be fairly quick
+        (3, 3, 3): 5.0,   # More challenging
+    }
+    
+    scores = []
+    
+    for shape, baseline in baseline_times.items():
+        best_known = BEST_KNOWN_RANKS.get(shape, 7)
+        
+        try:
+            # Measure time to find a valid decomposition
+            start_time = time.time()
+            
+            td = TensorDecomposition(target_shape=shape, rank=best_known, 
+                                   config={"training_steps": 1000})
+            result = td.optimize(rng_seed=42)
+            
+            elapsed_time = time.time() - start_time
+            
+            # Check if the decomposition is valid
+            if result["reconstruction_error"] < 1e-2:
+                # Calculate speed score (higher is better)
+                speed_score = min(2.0, baseline / max(0.1, elapsed_time))
+                scores.append(speed_score)
+                logger.info(f"Shape {shape}: time {elapsed_time:.3f}s, score {speed_score:.3f}")
+            else:
+                logger.warning(f"No valid decomposition found for shape {shape}")
+                scores.append(0.0)
+                
+        except Exception as e:
+            logger.warning(f"Error in time efficiency test for shape {shape}: {str(e)}")
+            scores.append(0.0)
+    
+    # Average scores
+    avg_score = sum(scores) / len(scores) if scores else 0.0
+    return min(1.0, avg_score)  # Cap at 1.0
+
+
+if __name__ == "__main__":
+    # Simple test
+    import sys
+    if len(sys.argv) > 1:
+        program_path = sys.argv[1]
+        print(f"Evaluating {program_path}")
+        
+        # Configure logging
+        logging.basicConfig(level=logging.INFO)
+        
+        # Run evaluation
+        scores = evaluate(program_path)
+        
+        print("\nEvaluation results:")
+        for name, value in scores.items():
+            print(f"  {name}: {value:.4f}")
+    else:
+        print("Usage: python evaluate.py <program_path>")
