@@ -13,7 +13,9 @@ def search_algorithm(iterations=1000, bounds=(-5, 5)):
     Returns:
         Tuple of (best_x, best_y, best_value)
     """
-    best_x, best_y = 0, 0
+    # Initialize with a random point
+    best_x = np.random.uniform(bounds[0], bounds[1])
+    best_y = np.random.uniform(bounds[0], bounds[1])
     best_value = evaluate_function(best_x, best_y)
     
     for _ in range(iterations):
