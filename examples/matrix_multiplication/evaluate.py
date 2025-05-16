@@ -137,14 +137,15 @@ def evaluate_correctness(matrix_multiply) -> float:
     Returns:
         Correctness score (0.0 to 1.0)
     """
-    # Define test cases
+    # Define test cases focused on smaller matrices (as in the paper)
     test_sizes = [
         (2, 2, 2),
+        (2, 3, 2),
         (3, 3, 3),
-        (4, 4, 4),
-        (10, 10, 10),
         (3, 4, 5),
-        (7, 3, 8),
+        (4, 4, 4),
+        (4, 5, 3),
+        (5, 5, 5),
     ]
     
     passed = 0
@@ -181,26 +182,41 @@ def evaluate_performance(matrix_multiply) -> float:
     Returns:
         Performance score (0.0 to 1.0)
     """
-    # Define benchmark sizes
+    # Define benchmark sizes focused on smaller matrices (as in the paper)
     benchmark_sizes = [
-        (10, 10, 10),
-        (20, 20, 20),
-        (30, 30, 30),
-        (40, 40, 40),
+        (2, 2, 2),
+        (3, 3, 3),
+        (4, 4, 4),
+        (5, 5, 5),
+        (3, 4, 5),
+        (4, 3, 5),
     ]
     
-    # Define baseline times (naive implementation)
-    # These would be measured in advance for the baseline implementation
+    # Define baseline times for the naive triple-loop implementation
+    # These are the reference times that our initial implementation should achieve
     baseline_times = {
-        "10x10x10": 0.0015,  # seconds
-        "20x20x20": 0.0120,  # seconds
-        "30x30x30": 0.0400,  # seconds
-        "40x40x40": 0.0950,  # seconds
+        "2x2x2": 0.0001,
+        "3x3x3": 0.0003,
+        "4x4x4": 0.0007,
+        "5x5x5": 0.0015,
+        "3x4x5": 0.0007,
+        "4x3x5": 0.0007,
+    }
+    
+    # Define target speedups (what we're aiming for)
+    # Based on Strassen's algorithm and other optimized approaches
+    target_speedups = {
+        "2x2x2": 1.5,  # 50% faster than naive
+        "3x3x3": 1.7,  # 70% faster than naive
+        "4x4x4": 2.0,  # 2x faster than naive
+        "5x5x5": 2.2,  # 2.2x faster than naive
+        "3x4x5": 1.7,  # 70% faster than naive
+        "4x3x5": 1.7,  # 70% faster than naive
     }
     
     # Run benchmark
     results = {}
-    runs = 3
+    runs = 5  # More runs for better accuracy
     
     for m, n, p in benchmark_sizes:
         size_key = f"{m}x{n}x{p}"
@@ -221,14 +237,17 @@ def evaluate_performance(matrix_multiply) -> float:
                 end_time = time.time()
                 times.append(end_time - start_time)
             
-            # Record average time
-            avg_time = sum(times) / runs
+            # Record average time (remove fastest and slowest)
+            times.sort()
+            if len(times) > 2:
+                times = times[1:-1]  # Remove extremes
+            avg_time = sum(times) / len(times)
             results[size_key] = avg_time
         except Exception as e:
             logger.warning(f"Error in performance test for sizes {(m, n, p)}: {str(e)}")
             results[size_key] = baseline_times[size_key] * 2  # Penalize errors
     
-    # Calculate speedups
+    # Calculate speedups relative to baseline
     speedups = {}
     for size, time_taken in results.items():
         if time_taken > 0:
@@ -236,23 +255,38 @@ def evaluate_performance(matrix_multiply) -> float:
         else:
             speedups[size] = 0
     
-    # Calculate overall score (geometric mean of speedups)
-    if not speedups:
+    # Calculate relative performance to targets
+    target_percentages = {}
+    for size, speedup in speedups.items():
+        target = target_speedups[size]
+        # If speedup is below 1.0, it's worse than baseline (score 0.0-0.2)
+        # If speedup equals baseline, score is 0.2
+        # If speedup is between baseline and target, score is 0.2-0.8
+        # If speedup reaches target, score is 0.8
+        # If speedup exceeds target, score is 0.8-1.0
+        if speedup < 1.0:
+            target_percentages[size] = 0.2 * speedup
+        elif speedup < target:
+            # Linear interpolation between 0.2 and 0.8
+            progress = (speedup - 1.0) / (target - 1.0)
+            target_percentages[size] = 0.2 + 0.6 * progress
+        else:
+            # Speedup reached or exceeded target
+            bonus = min((speedup - target) / target, 0.5)  # Cap bonus at 0.5
+            target_percentages[size] = 0.8 + 0.2 * bonus
+    
+    # Calculate overall score (average of target percentages)
+    if not target_percentages:
         return 0.0
     
-    # Remove any zero speedups
-    valid_speedups = [s for s in speedups.values() if s > 0]
-    if not valid_speedups:
-        return 0.0
+    # Calculate average score
+    avg_score = sum(target_percentages.values()) / len(target_percentages)
     
-    # Calculate geometric mean
-    import math
-    log_sum = sum(math.log(s) for s in valid_speedups)
-    geom_mean = math.exp(log_sum / len(valid_speedups))
+    # Log detailed results for debugging
+    logger.info(f"Performance results:")
+    for size in benchmark_sizes:
+        size_key = f"{size[0]}x{size[1]}x{size[2]}"
+        if size_key in results and size_key in speedups and size_key in target_percentages:
+            logger.info(f"  {size_key}: time={results[size_key]:.6f}s, speedup={speedups[size_key]:.2f}x, score={target_percentages[size_key]:.2f}")
     
-    # Normalize to 0.0-1.0 range (assuming baseline = 1.0)
-    # Values above 1.0 indicate improvement, below 1.0 indicate regression
-    # Cap at 5.0x speedup for scoring purposes
-    normalized_score = min(geom_mean / 5.0, 1.0)
-    
-    return normalized_score
+    return avg_score

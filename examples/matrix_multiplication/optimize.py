@@ -54,6 +54,38 @@ async def main():
     config.diff_based_evolution = True
     config.allow_full_rewrites = False
     
+    # Create specialized template for matrix multiplication
+    from openevolve.prompt.templates import TemplateManager
+    
+    # Modify prompt templates to use specialized ones for matrix multiplication
+    from openevolve.prompt.sampler import PromptSampler
+    original_build_prompt = PromptSampler.build_prompt
+    
+    def custom_build_prompt(self, *args, **kwargs):
+        # Get template key from kwargs or use default
+        template_key = kwargs.pop('template_key', 'diff_user') if 'template_key' in kwargs else 'diff_user'
+        
+        # Use specialized template for matrix multiplication
+        if template_key == 'diff_user':
+            template_key = 'matmul_diff_user'
+        
+        # Use specialized system message
+        if args and len(args) >= 1:
+            result = original_build_prompt(self, *args, **kwargs)
+            if 'system' in result:
+                template_manager = TemplateManager()
+                result['system'] = template_manager.get_template('matmul_system')
+            return result
+        else:
+            kwargs['template_key'] = template_key
+            return original_build_prompt(self, *args, **kwargs)
+    
+    # Apply the patch
+    PromptSampler.build_prompt = custom_build_prompt
+    
+    # Increase temperature for more creative solutions
+    config.llm.temperature = 0.9
+    
     # Initialize OpenEvolve with the custom config
     openevolve = OpenEvolve(
         initial_program_path=str(initial_program_path),
@@ -65,6 +97,7 @@ async def main():
     
     # Run evolution
     print(f"Starting evolution for {args.iterations} iterations...")
+    print(f"Focus on optimizing matrix multiplication for small matrices (2x2 to 5x5)")
     best_program = await openevolve.run(iterations=args.iterations)
     
     print(f"\nEvolution complete!")

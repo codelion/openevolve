@@ -21,7 +21,27 @@ class PromptSampler:
         # Initialize the random number generator
         random.seed()
         
+        # Store custom template mappings
+        self.system_template_override = None
+        self.user_template_override = None
+        
         logger.info("Initialized prompt sampler")
+    
+    def set_templates(
+        self,
+        system_template: Optional[str] = None,
+        user_template: Optional[str] = None
+    ) -> None:
+        """
+        Set custom templates to use for this sampler
+        
+        Args:
+            system_template: Template name for system message
+            user_template: Template name for user message
+        """
+        self.system_template_override = system_template
+        self.user_template_override = user_template
+        logger.info(f"Set custom templates: system={system_template}, user={user_template}")
     
     def build_prompt(
         self,
@@ -33,6 +53,7 @@ class PromptSampler:
         language: str = "python",
         evolution_round: int = 0,
         allow_full_rewrite: bool = False,
+        template_key: Optional[str] = None,
     ) -> Dict[str, str]:
         """
         Build a prompt for the LLM
@@ -46,14 +67,33 @@ class PromptSampler:
             language: Programming language
             evolution_round: Current evolution round
             allow_full_rewrite: Whether to allow a full rewrite
+            template_key: Optional override for template key
             
         Returns:
             Dictionary with 'system' and 'user' keys
         """
-        # Select template based on whether we want a full rewrite
-        template_key = "full_rewrite_user" if allow_full_rewrite else "diff_user"
-        user_template = self.template_manager.get_template(template_key)
-        system_template = self.config.system_message
+        # Select template based on whether we want a full rewrite (with overrides)
+        if template_key:
+            # Use explicitly provided template key
+            user_template_key = template_key
+        elif self.user_template_override:
+            # Use the override set with set_templates
+            user_template_key = self.user_template_override
+        else:
+            # Default behavior
+            user_template_key = "full_rewrite_user" if allow_full_rewrite else "diff_user"
+        
+        # Get the template
+        user_template = self.template_manager.get_template(user_template_key)
+        
+        # Use system template override if set
+        if self.system_template_override:
+            system_message = self.template_manager.get_template(self.system_template_override)
+        else:
+            system_message = self.config.system_message
+            # If system_message is a template name rather than content, get the template
+            if system_message in self.template_manager.templates:
+                system_message = self.template_manager.get_template(system_message)
         
         # Format metrics
         metrics_str = self._format_metrics(program_metrics)
@@ -82,7 +122,7 @@ class PromptSampler:
         )
         
         return {
-            "system": system_template,
+            "system": system_message,
             "user": user_message,
         }
     
