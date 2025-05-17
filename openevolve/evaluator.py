@@ -179,7 +179,14 @@ class Evaluator:
                 return await self._direct_evaluate(program_path)
             
             # Run first stage
-            stage1_result = await run_in_executor(module.evaluate_stage1)(program_path)
+            try:
+                stage1_result = await run_in_executor(module.evaluate_stage1)(program_path)
+                if not isinstance(stage1_result, dict):
+                    logger.warning(f"Stage 1 evaluation returned non-dictionary result: {stage1_result}")
+                    return {"error": 0.0}
+            except Exception as e:
+                logger.error(f"Error in stage 1 evaluation: {str(e)}")
+                return {"error": 0.0}
             
             # Check threshold
             if not self._passes_threshold(stage1_result, self.config.cascade_thresholds[0]):
@@ -190,10 +197,25 @@ class Evaluator:
                 return stage1_result
             
             # Run second stage
-            stage2_result = await run_in_executor(module.evaluate_stage2)(program_path)
+            try:
+                stage2_result = await run_in_executor(module.evaluate_stage2)(program_path)
+                if not isinstance(stage2_result, dict):
+                    logger.warning(f"Stage 2 evaluation returned non-dictionary result: {stage2_result}")
+                    return stage1_result
+            except Exception as e:
+                logger.error(f"Error in stage 2 evaluation: {str(e)}")
+                return stage1_result
             
             # Merge results
-            result = {**stage1_result, **stage2_result}
+            result = {}
+            # Convert all values to float to avoid type errors
+            for name, value in stage1_result.items():
+                if isinstance(value, (int, float)) and name != "error":
+                    result[name] = float(value)
+            
+            for name, value in stage2_result.items():
+                if isinstance(value, (int, float)) and name != "error":
+                    result[name] = float(value)
             
             # Check threshold
             if len(self.config.cascade_thresholds) < 2 or not self._passes_threshold(
@@ -206,10 +228,19 @@ class Evaluator:
                 return result
             
             # Run third stage
-            stage3_result = await run_in_executor(module.evaluate_stage3)(program_path)
+            try:
+                stage3_result = await run_in_executor(module.evaluate_stage3)(program_path)
+                if not isinstance(stage3_result, dict):
+                    logger.warning(f"Stage 3 evaluation returned non-dictionary result: {stage3_result}")
+                    return result
+            except Exception as e:
+                logger.error(f"Error in stage 3 evaluation: {str(e)}")
+                return result
             
             # Merge results
-            result = {**result, **stage3_result}
+            for name, value in stage3_result.items():
+                if isinstance(value, (int, float)) and name != "error":
+                    result[name] = float(value)
             
             return result
         
@@ -308,8 +339,21 @@ class Evaluator:
         if not metrics:
             return False
         
-        # Calculate average score
-        avg_score = sum(metrics.values()) / len(metrics)
+        # Calculate average score, skipping non-numeric values and 'error' key
+        valid_metrics = []
+        for name, value in metrics.items():
+            # Skip 'error' keys and ensure values are numeric
+            if name != 'error' and isinstance(value, (int, float)):
+                try:
+                    valid_metrics.append(float(value))
+                except (TypeError, ValueError):
+                    logger.warning(f"Skipping non-numeric metric: {name}={value}")
+                    continue
+        
+        if not valid_metrics:
+            return False
+            
+        avg_score = sum(valid_metrics) / len(valid_metrics)
         return avg_score >= threshold
     
     async def evaluate_multiple(

@@ -118,6 +118,11 @@ def evaluate(program_path):
             except TimeoutError as e:
                 print(f"Trial {trial}: {str(e)}")
                 continue
+            except IndexError as e:
+                # Specifically handle IndexError which often happens with early termination checks
+                print(f"Trial {trial}: IndexError - {str(e)}")
+                print("This is likely due to a list index check before the list is fully populated.")
+                continue
             except Exception as e:
                 print(f"Trial {trial}: Error - {str(e)}")
                 print(traceback.format_exc())
@@ -226,6 +231,11 @@ def evaluate_stage1(program_path):
         except TimeoutError as e:
             print(f"Stage 1 evaluation timed out: {e}")
             return {"runs_successfully": 0.0, "error": "Timeout"}
+        except IndexError as e:
+            # Specifically handle IndexError which often happens with early termination checks
+            print(f"Stage 1 evaluation failed with IndexError: {e}")
+            print("This is likely due to a list index check before the list is fully populated.")
+            return {"runs_successfully": 0.0, "error": f"IndexError: {str(e)}"}
         except Exception as e:
             print(f"Stage 1 evaluation failed: {e}")
             print(traceback.format_exc())
