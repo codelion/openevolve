@@ -58,6 +58,7 @@ class ProgramDatabase:
     
     The database implements a combination of MAP-Elites algorithm and
     island-based population model to maintain diversity during evolution.
+    It also tracks the absolute best program separately to ensure it's never lost.
     """
     
     def __init__(self, config: DatabaseConfig):
@@ -75,6 +76,9 @@ class ProgramDatabase:
         
         # Archive of elite programs
         self.archive: Set[str] = set()
+        
+        # Track the absolute best program separately
+        self.best_program_id: Optional[str] = None
         
         # Load database from disk if path is provided
         if config.db_path and os.path.exists(config.db_path):
@@ -111,6 +115,9 @@ class ProgramDatabase:
         
         # Update archive
         self._update_archive(program)
+        
+        # Update the absolute best program tracking
+        self._update_best_program(program)
         
         # Save to disk if configured
         if self.config.db_path:
@@ -160,6 +167,10 @@ class ProgramDatabase:
         if not self.programs:
             return None
         
+        # If no specific metric and we have a tracked best program, return it
+        if metric is None and self.best_program_id and self.best_program_id in self.programs:
+            return self.programs[self.best_program_id]
+        
         if metric:
             # Sort by specific metric
             sorted_programs = sorted(
@@ -174,6 +185,13 @@ class ProgramDatabase:
                 key=lambda p: sum(p.metrics.values()) / max(1, len(p.metrics)),
                 reverse=True
             )
+            
+            # Update the best program tracking if we found a better program
+            if sorted_programs and (self.best_program_id is None or 
+                                  sorted_programs[0].id != self.best_program_id):
+                old_id = self.best_program_id
+                self.best_program_id = sorted_programs[0].id
+                logger.info(f"Updated best program tracking: {self.best_program_id} ")
         
         return sorted_programs[0] if sorted_programs else None
     
@@ -236,6 +254,7 @@ class ProgramDatabase:
             "feature_map": self.feature_map,
             "islands": [list(island) for island in self.islands],
             "archive": list(self.archive),
+            "best_program_id": self.best_program_id,
         }
         
         with open(os.path.join(save_path, "metadata.json"), "w") as f:
@@ -263,6 +282,7 @@ class ProgramDatabase:
             self.feature_map = metadata.get("feature_map", {})
             self.islands = [set(island) for island in metadata.get("islands", [])]
             self.archive = set(metadata.get("archive", []))
+            self.best_program_id = metadata.get("best_program_id")
         
         # Load programs
         programs_dir = os.path.join(path, "programs")
@@ -425,6 +445,39 @@ class ProgramDatabase:
         if self._is_better(program, worst_program):
             self.archive.remove(worst_program.id)
             self.archive.add(program.id)
+            
+    def _update_best_program(self, program: Program) -> None:
+        """
+        Update the absolute best program tracking
+        
+        Args:
+            program: Program to consider as the new best
+        """
+        # If we don't have a best program yet, this becomes the best
+        if self.best_program_id is None:
+            self.best_program_id = program.id
+            logger.debug(f"Set initial best program to {program.id}")
+            return
+        
+        # Compare with current best program
+        current_best = self.programs[self.best_program_id]
+        
+        # Update if the new program is better
+        if self._is_better(program, current_best):
+            old_id = self.best_program_id
+            self.best_program_id = program.id
+            logger.info(f"New best program {program.id} replaces {old_id}")
+            
+            # Log improvement in metrics
+            if program.metrics and current_best.metrics:
+                improvements = []
+                for metric, value in program.metrics.items():
+                    if metric in current_best.metrics:
+                        diff = value - current_best.metrics[metric]
+                        improvements.append(f"{metric}: {diff:+.4f}")
+                
+                if improvements:
+                    logger.info(f"Metric improvements: {', '.join(improvements)}")
     
     def _sample_parent(self) -> Program:
         """
@@ -466,13 +519,21 @@ class ProgramDatabase:
         """
         inspirations = []
         
+        # Always include the absolute best program if available and different from parent
+        if self.best_program_id is not None and self.best_program_id != parent.id:
+            best_program = self.programs[self.best_program_id]
+            inspirations.append(best_program)
+            logger.debug(f"Including best program {self.best_program_id} in inspirations")
+        
         # Add top programs as inspirations
         top_n = max(1, int(n * self.config.elite_selection_ratio))
         top_programs = self.get_top_programs(n=top_n)
-        inspirations.extend(top_programs)
+        for program in top_programs:
+            if program.id not in [p.id for p in inspirations] and program.id != parent.id:
+                inspirations.append(program)
         
         # Add diverse programs
-        if len(self.programs) > n:
+        if len(self.programs) > n and len(inspirations) < n:
             # Sample from different feature cells
             feature_coords = self._calculate_feature_coords(parent)
             

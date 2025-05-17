@@ -33,6 +33,12 @@ class OpenEvolve:
     
     Orchestrates the evolution process, coordinating between the prompt sampler,
     LLM ensemble, evaluator, and program database.
+    
+    Features:
+    - Tracks the absolute best program across evolution steps
+    - Ensures the best solution is not lost during the MAP-Elites process
+    - Always includes the best program in the selection process for inspiration
+    - Maintains detailed logs and metadata about improvements
     """
     
     def __init__(
@@ -238,6 +244,11 @@ class OpenEvolve:
                 iteration_time = time.time() - iteration_start
                 self._log_iteration(i, parent, child_program, iteration_time)
                 
+                # Specifically check if this is the new best program
+                if self.database.best_program_id == child_program.id:
+                    logger.info(f"🌟 New best solution found at iteration {i+1}: {child_program.id}")
+                    logger.info(f"Metrics: {', '.join(f'{name}={value:.4f}' for name, value in child_program.metrics.items())}")
+                
                 # Save checkpoint
                 if (i + 1) % self.config.checkpoint_interval == 0:
                     self._save_checkpoint(i + 1)
@@ -255,8 +266,16 @@ class OpenEvolve:
                 logger.error(f"Error in iteration {i+1}: {str(e)}")
                 continue
         
-        # Get the best program
-        best_program = self.database.get_best_program()
+        # Get the best program using our tracking mechanism
+        best_program = None
+        if self.database.best_program_id:
+            best_program = self.database.get(self.database.best_program_id)
+            logger.info(f"Using tracked best program: {self.database.best_program_id}")
+        
+        # Fallback to calculating best program if tracked program not found
+        if best_program is None:
+            best_program = self.database.get_best_program()
+            logger.info("Using calculated best program (tracked program not found)")
         
         if best_program:
             logger.info(
@@ -264,8 +283,8 @@ class OpenEvolve:
                 f"{', '.join(f'{name}={value:.4f}' for name, value in best_program.metrics.items())}"
             )
             
-            # Save the best program
-            self._save_best_program(best_program)
+            # Save the best program (using our tracked best program)
+            self._save_best_program()
             
             return best_program
         else:
@@ -322,13 +341,25 @@ class OpenEvolve:
         
         logger.info(f"Saved checkpoint at iteration {iteration} to {checkpoint_path}")
     
-    def _save_best_program(self, program: Program) -> None:
+    def _save_best_program(self, program: Optional[Program] = None) -> None:
         """
         Save the best program
         
         Args:
-            program: Best program
+            program: Best program (if None, uses the tracked best program)
         """
+        # If no program is provided, use the tracked best program from the database
+        if program is None:
+            if self.database.best_program_id:
+                program = self.database.get(self.database.best_program_id)
+            else:
+                # Fallback to calculating best program if no tracked best program
+                program = self.database.get_best_program()
+                
+        if not program:
+            logger.warning("No best program found to save")
+            return
+            
         best_dir = os.path.join(self.output_dir, "best")
         os.makedirs(best_dir, exist_ok=True)
         
@@ -344,5 +375,17 @@ class OpenEvolve:
         with open(metrics_path, "w") as f:
             import json
             json.dump(program.metrics, f, indent=2)
+        
+        # Also save metadata about the best program
+        meta_path = os.path.join(best_dir, "best_program_info.json")
+        with open(meta_path, "w") as f:
+            import json
+            json.dump({
+                "id": program.id,
+                "generation": program.generation,
+                "timestamp": program.timestamp,
+                "parent_id": program.parent_id,
+                "metrics": program.metrics
+            }, f, indent=2)
         
         logger.info(f"Saved best program to {code_path} with metrics to {metrics_path}")
