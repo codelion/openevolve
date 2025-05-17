@@ -276,6 +276,16 @@ class OpenEvolve:
         if best_program is None:
             best_program = self.database.get_best_program()
             logger.info("Using calculated best program (tracked program not found)")
+            
+        # Check if there's a better program by combined_score that wasn't tracked
+        if "combined_score" in best_program.metrics:
+            best_by_combined = self.database.get_best_program(metric="combined_score")
+            if best_by_combined and best_by_combined.id != best_program.id and "combined_score" in best_by_combined.metrics:
+                # If the combined_score of this program is significantly better, use it instead
+                if best_by_combined.metrics["combined_score"] > best_program.metrics["combined_score"] + 0.02:
+                    logger.warning(f"Found program with better combined_score: {best_by_combined.id}")
+                    logger.warning(f"Score difference: {best_program.metrics['combined_score']:.4f} vs {best_by_combined.metrics['combined_score']:.4f}")
+                    best_program = best_by_combined
         
         if best_program:
             logger.info(

@@ -154,8 +154,24 @@ def evaluate(program_path):
         # Add reliability score based on success rate
         reliability_score = float(success_count / num_trials)
         
-        # Calculate combined score
-        combined_score = float(0.5 * value_score + 0.2 * distance_score + 0.1 * speed_score + 0.2 * reliability_score)
+        # Calculate a single combined score that prioritizes finding good solutions
+        # over secondary metrics like speed and reliability
+        # Value and distance scores (quality of solution) get 90% of the weight
+        # Speed and reliability get only 10% combined
+        combined_score = float(0.6 * value_score + 0.3 * distance_score + 0.05 * speed_score + 0.05 * reliability_score)
+        
+        # Also compute an "overall" score that will be the primary metric for selection
+        # This adds a bonus for finding solutions close to the global minimum
+        # and heavily penalizes solutions that aren't finding the right region
+        if distance_to_global < 1.0:  # Very close to the correct solution
+            solution_quality = 1.0
+        elif distance_to_global < 3.0:  # In the right region
+            solution_quality = 0.5
+        else:  # Not finding the right region
+            solution_quality = 0.1
+            
+        # Overall score is dominated by solution quality but also factors in the combined score
+        overall_score = 0.8 * solution_quality + 0.2 * combined_score
         
         return {
             "value_score": value_score,
@@ -163,6 +179,7 @@ def evaluate(program_path):
             "speed_score": speed_score,
             "reliability_score": reliability_score,
             "combined_score": combined_score,
+            "overall_score": overall_score,  # This will be the primary selection metric
             "success_rate": reliability_score
         }
     except Exception as e:
@@ -222,11 +239,26 @@ def evaluate_stage1(program_path):
             y_diff = float(y) - GLOBAL_MIN_Y
             distance = float(np.sqrt(x_diff**2 + y_diff**2))
             
-            # Basic metrics
+            # Calculate value-based score
+            value_score = float(1.0 / (1.0 + abs(value - GLOBAL_MIN_VALUE)))
+            distance_score = float(1.0 / (1.0 + distance))
+            
+            # Calculate solution quality metric
+            if distance < 1.0:  # Very close to the correct solution
+                solution_quality = 1.0
+            elif distance < 3.0:  # In the right region
+                solution_quality = 0.5
+            else:  # Not finding the right region
+                solution_quality = 0.1
+            
+            # Basic metrics with overall score
             return {
                 "runs_successfully": 1.0,
                 "value": float(value),
-                "distance": distance
+                "distance": distance,
+                "value_score": value_score,
+                "distance_score": distance_score,
+                "overall_score": solution_quality  # This becomes a strong guiding metric
             }
         except TimeoutError as e:
             print(f"Stage 1 evaluation timed out: {e}")

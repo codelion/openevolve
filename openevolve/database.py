@@ -159,7 +159,7 @@ class ProgramDatabase:
         Get the best program based on a metric
         
         Args:
-            metric: Metric to use for ranking (uses average if None)
+            metric: Metric to use for ranking (uses combined_score or average if None)
             
         Returns:
             Best program or None if database is empty
@@ -169,6 +169,7 @@ class ProgramDatabase:
         
         # If no specific metric and we have a tracked best program, return it
         if metric is None and self.best_program_id and self.best_program_id in self.programs:
+            logger.debug(f"Using tracked best program: {self.best_program_id}")
             return self.programs[self.best_program_id]
         
         if metric:
@@ -178,20 +179,40 @@ class ProgramDatabase:
                 key=lambda p: p.metrics[metric],
                 reverse=True
             )
+            if sorted_programs:
+                logger.debug(f"Found best program by metric '{metric}': {sorted_programs[0].id}")
+        elif self.programs and all("combined_score" in p.metrics for p in self.programs.values()):
+            # Sort by combined_score if it exists (preferred method)
+            sorted_programs = sorted(
+                self.programs.values(),
+                key=lambda p: p.metrics["combined_score"],
+                reverse=True
+            )
+            if sorted_programs:
+                logger.debug(f"Found best program by combined_score: {sorted_programs[0].id}")
         else:
-            # Sort by average of all metrics
+            # Sort by average of all metrics as fallback
             sorted_programs = sorted(
                 self.programs.values(),
                 key=lambda p: sum(p.metrics.values()) / max(1, len(p.metrics)),
                 reverse=True
             )
+            if sorted_programs:
+                logger.debug(f"Found best program by average metrics: {sorted_programs[0].id}")
             
-            # Update the best program tracking if we found a better program
-            if sorted_programs and (self.best_program_id is None or 
-                                  sorted_programs[0].id != self.best_program_id):
-                old_id = self.best_program_id
-                self.best_program_id = sorted_programs[0].id
-                logger.info(f"Updated best program tracking: {self.best_program_id} ")
+        # Update the best program tracking if we found a better program
+        if sorted_programs and (self.best_program_id is None or 
+                             sorted_programs[0].id != self.best_program_id):
+            old_id = self.best_program_id
+            self.best_program_id = sorted_programs[0].id
+            logger.info(f"Updated best program tracking from {old_id} to {self.best_program_id}")
+            
+            # Also log the scores to help understand the update
+            if old_id and old_id in self.programs and "combined_score" in self.programs[old_id].metrics \
+               and "combined_score" in self.programs[self.best_program_id].metrics:
+                old_score = self.programs[old_id].metrics["combined_score"]
+                new_score = self.programs[self.best_program_id].metrics["combined_score"]
+                logger.info(f"Score change: {old_score:.4f} → {new_score:.4f} ({new_score-old_score:+.4f})")
         
         return sorted_programs[0] if sorted_programs else None
     
@@ -416,7 +437,11 @@ class ProgramDatabase:
         if not program1.metrics and program2.metrics:
             return False
         
-        # Compare average of metrics
+        # Check for combined_score first (this is the preferred metric)
+        if "combined_score" in program1.metrics and "combined_score" in program2.metrics:
+            return program1.metrics["combined_score"] > program2.metrics["combined_score"]
+            
+        # Fallback to average of all metrics
         avg1 = sum(program1.metrics.values()) / len(program1.metrics)
         avg2 = sum(program2.metrics.values()) / len(program2.metrics)
         
@@ -466,18 +491,15 @@ class ProgramDatabase:
         if self._is_better(program, current_best):
             old_id = self.best_program_id
             self.best_program_id = program.id
-            logger.info(f"New best program {program.id} replaces {old_id}")
             
-            # Log improvement in metrics
-            if program.metrics and current_best.metrics:
-                improvements = []
-                for metric, value in program.metrics.items():
-                    if metric in current_best.metrics:
-                        diff = value - current_best.metrics[metric]
-                        improvements.append(f"{metric}: {diff:+.4f}")
-                
-                if improvements:
-                    logger.info(f"Metric improvements: {', '.join(improvements)}")
+            # Log the change
+            if "combined_score" in program.metrics and "combined_score" in current_best.metrics:
+                old_score = current_best.metrics["combined_score"]
+                new_score = program.metrics["combined_score"]
+                score_diff = new_score - old_score
+                logger.info(f"New best program {program.id} replaces {old_id} (combined_score: {old_score:.4f} → {new_score:.4f}, +{score_diff:.4f})")
+            else:
+                logger.info(f"New best program {program.id} replaces {old_id}")
     
     def _sample_parent(self) -> Program:
         """
