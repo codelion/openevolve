@@ -370,22 +370,18 @@ class OpenEvolve:
         with open(code_path, "w") as f:
             f.write(program.code)
         
-        # Save metrics
-        metrics_path = os.path.join(best_dir, "metrics.json")
-        with open(metrics_path, "w") as f:
-            import json
-            json.dump(program.metrics, f, indent=2)
-        
-        # Also save metadata about the best program
-        meta_path = os.path.join(best_dir, "best_program_info.json")
-        with open(meta_path, "w") as f:
+        # Save complete program info including metrics
+        info_path = os.path.join(best_dir, "best_program_info.json")
+        with open(info_path, "w") as f:
             import json
             json.dump({
                 "id": program.id,
                 "generation": program.generation,
                 "timestamp": program.timestamp,
                 "parent_id": program.parent_id,
-                "metrics": program.metrics
+                "metrics": program.metrics,
+                "language": program.language,
+                "saved_at": time.time()
             }, f, indent=2)
         
-        logger.info(f"Saved best program to {code_path} with metrics to {metrics_path}")
+        logger.info(f"Saved best program to {code_path} with program info to {info_path}")
