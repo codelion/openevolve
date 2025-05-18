@@ -1,6 +1,7 @@
 """
 Evaluator for the function minimization example
 """
+
 import importlib.util
 import numpy as np
 import time
@@ -9,16 +10,17 @@ import threading
 import traceback
 import sys
 
+
 def run_with_timeout(func, args=(), kwargs={}, timeout_seconds=5):
     """
     Run a function with a timeout using concurrent.futures
-    
+
     Args:
         func: Function to run
         args: Arguments to pass to the function
         kwargs: Keyword arguments to pass to the function
         timeout_seconds: Timeout in seconds
-        
+
     Returns:
         Result of the function or raises TimeoutError
     """
@@ -27,7 +29,10 @@ def run_with_timeout(func, args=(), kwargs={}, timeout_seconds=5):
         try:
             return future.result(timeout=timeout_seconds)
         except concurrent.futures.TimeoutError:
-            raise TimeoutError(f"Function {func.__name__} timed out after {timeout_seconds} seconds")
+            raise TimeoutError(
+                f"Function {func.__name__} timed out after {timeout_seconds} seconds"
+            )
+
 
 def safe_float(value):
     """Convert a value to float safely"""
@@ -37,14 +42,15 @@ def safe_float(value):
         print(f"Warning: Could not convert {value} of type {type(value)} to float")
         return 0.0
 
+
 def evaluate(program_path):
     """
     Evaluate the program by running it multiple times and checking how close
     it gets to the known global minimum.
-    
+
     Args:
         program_path: Path to the program file
-        
+
     Returns:
         Dictionary of metrics
     """
@@ -52,13 +58,13 @@ def evaluate(program_path):
     GLOBAL_MIN_X = -1.76
     GLOBAL_MIN_Y = -1.03
     GLOBAL_MIN_VALUE = -2.104
-    
+
     try:
         # Load the program
         spec = importlib.util.spec_from_file_location("program", program_path)
         program = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(program)
-        
+
         # Check if the required function exists
         if not hasattr(program, "run_search"):
             print(f"Error: program does not have 'run_search' function")
@@ -67,67 +73,77 @@ def evaluate(program_path):
                 "distance_score": 0.0,
                 "speed_score": 0.0,
                 "combined_score": 0.0,
-                "error": "Missing run_search function"
+                "error": "Missing run_search function",
             }
-        
+
         # Run multiple trials
         num_trials = 10
         values = []
         distances = []
         times = []
         success_count = 0
-        
+
         for trial in range(num_trials):
             try:
                 start_time = time.time()
-                
+
                 # Run with timeout
                 result = run_with_timeout(program.run_search, timeout_seconds=5)
-                
+
                 # Check if we got a tuple of 3 values
                 if not isinstance(result, tuple) or len(result) != 3:
-                    print(f"Trial {trial}: Invalid result format, expected tuple of 3 values but got {type(result)}")
+                    print(
+                        f"Trial {trial}: Invalid result format, expected tuple of 3 values but got {type(result)}"
+                    )
                     continue
-                
+
                 x, y, value = result
-                
+
                 end_time = time.time()
-                
+
                 # Ensure all values are float
                 x = safe_float(x)
                 y = safe_float(y)
                 value = safe_float(value)
-                
+
                 # Check if the result is valid (not NaN or infinite)
-                if (np.isnan(x) or np.isnan(y) or np.isnan(value) or 
-                    np.isinf(x) or np.isinf(y) or np.isinf(value)):
+                if (
+                    np.isnan(x)
+                    or np.isnan(y)
+                    or np.isnan(value)
+                    or np.isinf(x)
+                    or np.isinf(y)
+                    or np.isinf(value)
+                ):
                     print(f"Trial {trial}: Invalid result, got x={x}, y={y}, value={value}")
                     continue
-                
+
                 # Calculate metrics
                 x_diff = safe_float(x) - GLOBAL_MIN_X
                 y_diff = safe_float(y) - GLOBAL_MIN_Y
                 distance_to_global = np.sqrt(x_diff**2 + y_diff**2)
                 value_difference = abs(value - GLOBAL_MIN_VALUE)
-                
+
                 values.append(float(value))
                 distances.append(float(distance_to_global))
                 times.append(float(end_time - start_time))
                 success_count += 1
-                
+
             except TimeoutError as e:
                 print(f"Trial {trial}: {str(e)}")
                 continue
             except IndexError as e:
                 # Specifically handle IndexError which often happens with early termination checks
                 print(f"Trial {trial}: IndexError - {str(e)}")
-                print("This is likely due to a list index check before the list is fully populated.")
+                print(
+                    "This is likely due to a list index check before the list is fully populated."
+                )
                 continue
             except Exception as e:
                 print(f"Trial {trial}: Error - {str(e)}")
                 print(traceback.format_exc())
                 continue
-        
+
         # If all trials failed, return zero scores
         if success_count == 0:
             return {
@@ -135,31 +151,33 @@ def evaluate(program_path):
                 "distance_score": 0.0,
                 "speed_score": 0.0,
                 "combined_score": 0.0,
-                "error": "All trials failed"
+                "error": "All trials failed",
             }
-        
+
         # Calculate metrics
         avg_value = float(np.mean(values))
         avg_distance = float(np.mean(distances))
         avg_time = float(np.mean(times)) if times else 1.0
-        
+
         # Convert to scores (higher is better)
         value_score = float(1.0 / (1.0 + abs(avg_value - GLOBAL_MIN_VALUE)))  # Normalize and invert
         distance_score = float(1.0 / (1.0 + avg_distance))
         speed_score = float(1.0 / avg_time) if avg_time > 0 else 0.0
-        
+
         # Normalize speed score (so it doesn't dominate)
         speed_score = float(min(speed_score, 10.0) / 10.0)
-        
+
         # Add reliability score based on success rate
         reliability_score = float(success_count / num_trials)
-        
+
         # Calculate a single combined score that prioritizes finding good solutions
         # over secondary metrics like speed and reliability
         # Value and distance scores (quality of solution) get 90% of the weight
         # Speed and reliability get only 10% combined
-        combined_score = float(0.6 * value_score + 0.3 * distance_score + 0.05 * speed_score + 0.05 * reliability_score)
-        
+        combined_score = float(
+            0.6 * value_score + 0.3 * distance_score + 0.05 * speed_score + 0.05 * reliability_score
+        )
+
         # Also compute an "overall" score that will be the primary metric for selection
         # This adds a bonus for finding solutions close to the global minimum
         # and heavily penalizes solutions that aren't finding the right region
@@ -169,10 +187,10 @@ def evaluate(program_path):
             solution_quality = 0.5
         else:  # Not finding the right region
             solution_quality = 0.1
-            
+
         # Overall score is dominated by solution quality but also factors in the combined score
         overall_score = 0.8 * solution_quality + 0.2 * combined_score
-        
+
         return {
             "value_score": value_score,
             "distance_score": distance_score,
@@ -180,7 +198,7 @@ def evaluate(program_path):
             "reliability_score": reliability_score,
             "combined_score": combined_score,
             "overall_score": overall_score,  # This will be the primary selection metric
-            "success_rate": reliability_score
+            "success_rate": reliability_score,
         }
     except Exception as e:
         print(f"Evaluation failed completely: {str(e)}")
@@ -190,8 +208,9 @@ def evaluate(program_path):
             "distance_score": 0.0,
             "speed_score": 0.0,
             "combined_score": 0.0,
-            "error": str(e)
+            "error": str(e),
         }
+
 
 # Stage-based evaluation for cascade evaluation
 def evaluate_stage1(program_path):
@@ -200,49 +219,58 @@ def evaluate_stage1(program_path):
     GLOBAL_MIN_X = float(-1.76)
     GLOBAL_MIN_Y = float(-1.03)
     GLOBAL_MIN_VALUE = float(-2.104)
-    
+
     # Quick check to see if the program runs without errors
     try:
         # Load the program
         spec = importlib.util.spec_from_file_location("program", program_path)
         program = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(program)
-        
+
         # Check if the required function exists
         if not hasattr(program, "run_search"):
             print(f"Stage 1 validation: Program does not have 'run_search' function")
             return {"runs_successfully": 0.0, "error": "Missing run_search function"}
-        
+
         try:
             # Run a single trial with timeout
             result = run_with_timeout(program.run_search, timeout_seconds=5)
-            
+
             # Check if we got a tuple of 3 values
             if not isinstance(result, tuple) or len(result) != 3:
-                print(f"Stage 1: Invalid result format, expected tuple of 3 values but got {type(result)}")
+                print(
+                    f"Stage 1: Invalid result format, expected tuple of 3 values but got {type(result)}"
+                )
                 return {"runs_successfully": 0.0, "error": "Invalid result format"}
-            
+
             x, y, value = result
-            
+
             # Ensure all values are float
             x = safe_float(x)
             y = safe_float(y)
             value = safe_float(value)
-            
+
             # Check if the result is valid
-            if np.isnan(x) or np.isnan(y) or np.isnan(value) or np.isinf(x) or np.isinf(y) or np.isinf(value):
+            if (
+                np.isnan(x)
+                or np.isnan(y)
+                or np.isnan(value)
+                or np.isinf(x)
+                or np.isinf(y)
+                or np.isinf(value)
+            ):
                 print(f"Stage 1 validation: Invalid result, got x={x}, y={y}, value={value}")
                 return {"runs_successfully": 0.5, "error": "Invalid result values"}
-            
+
             # Calculate distance safely
             x_diff = float(x) - GLOBAL_MIN_X
             y_diff = float(y) - GLOBAL_MIN_Y
             distance = float(np.sqrt(x_diff**2 + y_diff**2))
-            
+
             # Calculate value-based score
             value_score = float(1.0 / (1.0 + abs(value - GLOBAL_MIN_VALUE)))
             distance_score = float(1.0 / (1.0 + distance))
-            
+
             # Calculate solution quality metric
             if distance < 1.0:  # Very close to the correct solution
                 solution_quality = 1.0
@@ -250,7 +278,7 @@ def evaluate_stage1(program_path):
                 solution_quality = 0.5
             else:  # Not finding the right region
                 solution_quality = 0.1
-            
+
             # Basic metrics with overall score
             return {
                 "runs_successfully": 1.0,
@@ -258,7 +286,7 @@ def evaluate_stage1(program_path):
                 "distance": distance,
                 "value_score": value_score,
                 "distance_score": distance_score,
-                "overall_score": solution_quality  # This becomes a strong guiding metric
+                "overall_score": solution_quality,  # This becomes a strong guiding metric
             }
         except TimeoutError as e:
             print(f"Stage 1 evaluation timed out: {e}")
@@ -272,11 +300,12 @@ def evaluate_stage1(program_path):
             print(f"Stage 1 evaluation failed: {e}")
             print(traceback.format_exc())
             return {"runs_successfully": 0.0, "error": str(e)}
-            
+
     except Exception as e:
         print(f"Stage 1 evaluation failed: {e}")
         print(traceback.format_exc())
         return {"runs_successfully": 0.0, "error": str(e)}
+
 
 def evaluate_stage2(program_path):
     """Second stage evaluation with more thorough testing"""
