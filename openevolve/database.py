@@ -80,6 +80,9 @@ class ProgramDatabase:
         # Track the absolute best program separately
         self.best_program_id: Optional[str] = None
         
+        # Track the last iteration number (for resuming)
+        self.last_iteration: int = 0
+        
         # Load database from disk if path is provided
         if config.db_path and os.path.exists(config.db_path):
             self.load(config.db_path)
@@ -251,12 +254,13 @@ class ProgramDatabase:
         
         return sorted_programs[:n]
     
-    def save(self, path: Optional[str] = None) -> None:
+    def save(self, path: Optional[str] = None, iteration: int = 0) -> None:
         """
         Save the database to disk
         
         Args:
             path: Path to save to (uses config.db_path if None)
+            iteration: Current iteration number
         """
         save_path = path or self.config.db_path
         if not save_path:
@@ -276,6 +280,7 @@ class ProgramDatabase:
             "islands": [list(island) for island in self.islands],
             "archive": list(self.archive),
             "best_program_id": self.best_program_id,
+            "last_iteration": iteration or self.last_iteration,
         }
         
         with open(os.path.join(save_path, "metadata.json"), "w") as f:
@@ -304,6 +309,9 @@ class ProgramDatabase:
             self.islands = [set(island) for island in metadata.get("islands", [])]
             self.archive = set(metadata.get("archive", []))
             self.best_program_id = metadata.get("best_program_id")
+            self.last_iteration = metadata.get("last_iteration", 0)
+            
+            logger.info(f"Loaded database metadata with last_iteration={self.last_iteration}")
         
         # Load programs
         programs_dir = os.path.join(path, "programs")
