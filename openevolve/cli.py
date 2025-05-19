@@ -44,31 +44,19 @@ def parse_args() -> argparse.Namespace:
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         default="INFO",
     )
-    
+
     parser.add_argument(
         "--checkpoint",
         help="Path to checkpoint directory to resume from (e.g., openevolve_output/checkpoints/checkpoint_50)",
-        default=None
+        default=None,
     )
-    
-    parser.add_argument(
-        "--api-base",
-        help="Base URL for the LLM API",
-        default=None
-    )
-    
-    parser.add_argument(
-        "--primary-model",
-        help="Primary LLM model name",
-        default=None
-    )
-    
-    parser.add_argument(
-        "--secondary-model",
-        help="Secondary LLM model name",
-        default=None
-    )
-    
+
+    parser.add_argument("--api-base", help="Base URL for the LLM API", default=None)
+
+    parser.add_argument("--primary-model", help="Primary LLM model name", default=None)
+
+    parser.add_argument("--secondary-model", help="Secondary LLM model name", default=None)
+
     return parser.parse_args()
 
 
@@ -118,7 +106,7 @@ async def main_async() -> int:
             config_path=args.config if config is None else None,
             output_dir=args.output,
         )
-        
+
         # Load from checkpoint if specified
         if args.checkpoint:
             if not os.path.exists(args.checkpoint):
@@ -126,8 +114,10 @@ async def main_async() -> int:
                 return 1
             print(f"Loading checkpoint from {args.checkpoint}")
             openevolve.database.load(args.checkpoint)
-            print(f"Checkpoint loaded successfully (iteration {openevolve.database.last_iteration})")
-        
+            print(
+                f"Checkpoint loaded successfully (iteration {openevolve.database.last_iteration})"
+            )
+
         # Override log level if specified
         if args.log_level:
             logging.getLogger().setLevel(getattr(logging, args.log_level))
@@ -137,25 +127,30 @@ async def main_async() -> int:
             iterations=args.iterations,
             target_score=args.target_score,
         )
-        
+
         # Get the checkpoint path
         checkpoint_dir = os.path.join(openevolve.output_dir, "checkpoints")
         latest_checkpoint = None
         if os.path.exists(checkpoint_dir):
-            checkpoints = [os.path.join(checkpoint_dir, d) for d in os.listdir(checkpoint_dir) 
-                          if os.path.isdir(os.path.join(checkpoint_dir, d))]
+            checkpoints = [
+                os.path.join(checkpoint_dir, d)
+                for d in os.listdir(checkpoint_dir)
+                if os.path.isdir(os.path.join(checkpoint_dir, d))
+            ]
             if checkpoints:
-                latest_checkpoint = sorted(checkpoints, key=lambda x: int(x.split("_")[-1]) if "_" in x else 0)[-1]
-        
+                latest_checkpoint = sorted(
+                    checkpoints, key=lambda x: int(x.split("_")[-1]) if "_" in x else 0
+                )[-1]
+
         print(f"\nEvolution complete!")
         print(f"Best program metrics:")
         for name, value in best_program.metrics.items():
             print(f"  {name}: {value:.4f}")
-            
+
         if latest_checkpoint:
             print(f"\nLatest checkpoint saved at: {latest_checkpoint}")
             print(f"To resume, use: --checkpoint {latest_checkpoint}")
-        
+
         return 0
 
     except Exception as e:
