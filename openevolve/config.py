@@ -1,6 +1,7 @@
 """
 Configuration handling for OpenEvolve
 """
+
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -12,24 +13,24 @@ import yaml
 @dataclass
 class LLMConfig:
     """Configuration for LLM models"""
-    
+
     # Primary model
     primary_model: str = "gemini-2.0-flash-lite"
     primary_model_weight: float = 0.8
-    
+
     # Secondary model
     secondary_model: str = "gemini-2.0-flash"
     secondary_model_weight: float = 0.2
-    
+
     # API configuration
     api_base: str = "https://api.openai.com/v1"
     api_key: Optional[str] = None
-    
+
     # Generation parameters
     temperature: float = 0.7
     top_p: float = 0.95
     max_tokens: int = 4096
-    
+
     # Request parameters
     timeout: int = 60
     retries: int = 3
@@ -39,18 +40,18 @@ class LLMConfig:
 @dataclass
 class PromptConfig:
     """Configuration for prompt generation"""
-    
+
     template_dir: Optional[str] = None
     system_message: str = "You are an expert coder helping to improve programs through evolution."
-    
+
     # Number of examples to include in the prompt
     num_top_programs: int = 3
     num_diverse_programs: int = 2
-    
+
     # Template stochasticity
     use_template_stochasticity: bool = True
     template_variations: Dict[str, List[str]] = field(default_factory=dict)
-    
+
     # Meta-prompting
     use_meta_prompting: bool = False
     meta_prompt_weight: float = 0.1
@@ -59,22 +60,22 @@ class PromptConfig:
 @dataclass
 class DatabaseConfig:
     """Configuration for the program database"""
-    
+
     # General settings
     db_path: Optional[str] = None  # Path to store database on disk
     in_memory: bool = True
-    
+
     # Evolutionary parameters
     population_size: int = 1000
     archive_size: int = 100
     num_islands: int = 5
-    
+
     # Selection parameters
     elite_selection_ratio: float = 0.1
     exploration_ratio: float = 0.2
     exploitation_ratio: float = 0.7
     diversity_metric: str = "edit_distance"  # Options: "edit_distance", "feature_based"
-    
+
     # Feature map dimensions for MAP-Elites
     feature_dimensions: List[str] = field(default_factory=lambda: ["score", "complexity"])
     feature_bins: int = 10
@@ -83,23 +84,23 @@ class DatabaseConfig:
 @dataclass
 class EvaluatorConfig:
     """Configuration for program evaluation"""
-    
+
     # General settings
     timeout: int = 300  # Maximum evaluation time in seconds
     max_retries: int = 3
-    
+
     # Resource limits for evaluation
     memory_limit_mb: Optional[int] = None
     cpu_limit: Optional[float] = None
-    
+
     # Evaluation strategies
     cascade_evaluation: bool = True
     cascade_thresholds: List[float] = field(default_factory=lambda: [0.5, 0.75, 0.9])
-    
+
     # Parallel evaluation
     parallel_evaluations: int = 4
     distributed: bool = False
-    
+
     # LLM-based feedback
     use_llm_feedback: bool = False
     llm_feedback_weight: float = 0.1
@@ -108,43 +109,43 @@ class EvaluatorConfig:
 @dataclass
 class Config:
     """Master configuration for OpenEvolve"""
-    
+
     # General settings
     max_iterations: int = 10000
     checkpoint_interval: int = 100
     log_level: str = "INFO"
     log_dir: Optional[str] = None
     random_seed: Optional[int] = None
-    
+
     # Component configurations
     llm: LLMConfig = field(default_factory=LLMConfig)
     prompt: PromptConfig = field(default_factory=PromptConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     evaluator: EvaluatorConfig = field(default_factory=EvaluatorConfig)
-    
+
     # Evolution settings
     diff_based_evolution: bool = True
     allow_full_rewrites: bool = False
     max_code_length: int = 10000
-    
+
     @classmethod
     def from_yaml(cls, path: Union[str, Path]) -> "Config":
         """Load configuration from a YAML file"""
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             config_dict = yaml.safe_load(f)
         return cls.from_dict(config_dict)
-    
+
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> "Config":
         """Create configuration from a dictionary"""
         # Handle nested configurations
         config = Config()
-        
+
         # Update top-level fields
         for key, value in config_dict.items():
             if key not in ["llm", "prompt", "database", "evaluator"] and hasattr(config, key):
                 setattr(config, key, value)
-        
+
         # Update nested configs
         if "llm" in config_dict:
             config.llm = LLMConfig(**config_dict["llm"])
@@ -154,9 +155,9 @@ class Config:
             config.database = DatabaseConfig(**config_dict["database"])
         if "evaluator" in config_dict:
             config.evaluator = EvaluatorConfig(**config_dict["evaluator"])
-        
+
         return config
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to a dictionary"""
         return {
@@ -166,7 +167,6 @@ class Config:
             "log_level": self.log_level,
             "log_dir": self.log_dir,
             "random_seed": self.random_seed,
-            
             # Component configurations
             "llm": {
                 "primary_model": self.llm.primary_model,
@@ -216,16 +216,15 @@ class Config:
                 "use_llm_feedback": self.evaluator.use_llm_feedback,
                 "llm_feedback_weight": self.evaluator.llm_feedback_weight,
             },
-            
             # Evolution settings
             "diff_based_evolution": self.diff_based_evolution,
             "allow_full_rewrites": self.allow_full_rewrites,
             "max_code_length": self.max_code_length,
         }
-    
+
     def to_yaml(self, path: Union[str, Path]) -> None:
         """Save configuration to a YAML file"""
-        with open(path, 'w') as f:
+        with open(path, "w") as f:
             yaml.dump(self.to_dict(), f, default_flow_style=False)
 
 
@@ -233,15 +232,15 @@ def load_config(config_path: Optional[Union[str, Path]] = None) -> Config:
     """Load configuration from a YAML file or use defaults"""
     if config_path and os.path.exists(config_path):
         return Config.from_yaml(config_path)
-    
+
     # Use environment variables if available
     api_key = os.environ.get("OPENAI_API_KEY")
     api_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
-    
+
     config = Config()
     if api_key:
         config.llm.api_key = api_key
     if api_base:
         config.llm.api_base = api_base
-    
+
     return config
