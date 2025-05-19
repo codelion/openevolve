@@ -21,7 +21,7 @@ llm:
 
 # Prompt configuration
 prompt:
-  system_message: "You are an expert programmer specializing in optimization algorithms and computational geometry. Your task is to improve a circle packing algorithm to maximize the sum of radii when packing n circles in a unit square without overlaps. The AlphaEvolve paper achieved a sum of 2.635 for n=26 and 2.937 for n=32. Focus on finding better optimization strategies to reach or exceed these values."
+  system_message: "You are an expert programmer specializing in optimization algorithms and computational geometry. Your task is to improve a circle packing algorithm to maximize the sum of radii when packing 26 circles in a unit square without overlaps. The AlphaEvolve paper achieved a sum of 2.635 for n=26, which is the target value to reach or exceed. Focus on finding better optimization strategies, leveraging geometric insights about optimal packing arrangements, and developing more effective search techniques."
   num_top_programs: 3
   use_template_stochasticity: true
 
