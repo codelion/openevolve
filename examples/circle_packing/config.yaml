@@ -2,20 +2,22 @@
 max_iterations: 100
 checkpoint_interval: 10
 log_level: "INFO"
+max_code_length: 100000 
 
 # LLM configuration
 llm:
-  # primary_model: "gemini-2.0-flash-lite"
-  primary_model: "llama3.1-8b"
+  primary_model: "google/gemini-2.0-flash-001"
+  # primary_model: "llama3.1-8b"
   primary_model_weight: 0.8
-  # secondary_model: "gemini-2.0-flash"
-  secondary_model: "llama-4-scout-17b-16e-instruct"
+  secondary_model: "anthropic/claude-3.7-sonnet"
+  # secondary_model: "llama-4-scout-17b-16e-instruct"
   secondary_model_weight: 0.2
-  # api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
-  api_base: "https://api.cerebras.ai/v1"
+  api_base: "https://openrouter.ai/api/v1"
+  # api_base: "https://api.cerebras.ai/v1"
   temperature: 0.7
   top_p: 0.95
-  max_tokens: 4096
+  max_tokens: 8192
+  timeout: 600 
 
 # Prompt configuration
 prompt:

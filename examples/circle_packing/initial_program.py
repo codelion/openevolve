@@ -96,8 +96,29 @@ def run_packing(n=26):
     centers, radii, sum_radii = pack_circles(n)
     return centers, radii, sum_radii
 
+def visualize(centers, radii):
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Circle
+    
+    fig, ax = plt.subplots(figsize=(8, 8))
+    
+    # Draw unit square
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect('equal')
+    ax.grid(True)
+    
+    # Draw circles
+    for i, (center, radius) in enumerate(zip(centers, radii)):
+        circle = Circle(center, radius, alpha=0.5)
+        ax.add_patch(circle)
+        ax.text(center[0], center[1], str(i), ha='center', va='center')
+    
+    plt.title(f"Circle Packing (n={len(centers)}, sum={sum(radii):.6f})")
+    plt.show()
 
 if __name__ == "__main__":
     centers, radii, sum_radii = run_packing()
     print(f"Sum of radii: {sum_radii}")
+    visualize(centers, radii)
     # AlphaEvolve improved this to 2.635 for n=26
