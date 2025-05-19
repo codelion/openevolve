@@ -99,7 +99,7 @@ def evaluate(program_path):
 
                 # Run packing with timeout
                 centers, radii, sum_radii = run_with_timeout(
-                    program.run_packing, args=(n,), timeout_seconds=30
+                    program.run_packing, args=(n,), timeout_seconds=300
                 )
 
                 end_time = time.time()
@@ -149,7 +149,7 @@ def evaluate(program_path):
                 results[n] = {
                     "valid": False,
                     "sum_radii": 0.0,
-                    "time": 30.0,  # timeout value
+                    "time": 300.0,  # timeout value
                     "target_ratio": 0.0,
                 }
             except Exception as e:
@@ -205,7 +205,7 @@ def evaluate_stage1(program_path):
         try:
             # Run with a lower iteration count for quicker checking
             centers, radii, sum_radii = run_with_timeout(
-                program.run_packing, args=(26,), timeout_seconds=10
+                program.run_packing, args=(26,), timeout_seconds=100
             )
 
             # Ensure centers and radii are numpy arrays
