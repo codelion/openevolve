@@ -53,8 +53,7 @@ def apply_diff(original_code: str, diff_text: str) -> str:
     result_lines = original_lines.copy()
 
     # Extract diff blocks
-    diff_pattern = r"<<<<<<< SEARCH\n(.*?)\n=======\n(.*?)\n>>>>>>> REPLACE"
-    diff_blocks = re.findall(diff_pattern, diff_text, re.DOTALL)
+    diff_blocks = extract_diffs(diff_text)
 
     # Apply each diff block
     for search_text, replace_text in diff_blocks:
@@ -81,9 +80,9 @@ def extract_diffs(diff_text: str) -> List[Tuple[str, str]]:
     Returns:
         List of tuples (search_text, replace_text)
     """
-    diff_pattern = r"<<<<<<< SEARCH\n(.*?)\n=======\n(.*?)\n>>>>>>> REPLACE"
+    diff_pattern = r"<<<<<<< SEARCH\n(.*?)=======\n(.*?)>>>>>>> REPLACE"
     diff_blocks = re.findall(diff_pattern, diff_text, re.DOTALL)
-    return diff_blocks
+    return [(match[0].rstrip(), match[1].rstrip()) for match in diff_blocks]
 
 
 def parse_full_rewrite(llm_response: str, language: str = "python") -> Optional[str]:
