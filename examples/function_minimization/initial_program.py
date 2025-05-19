@@ -49,4 +49,3 @@ def run_search():
 if __name__ == "__main__":
     x, y, value = run_search()
     print(f"Found minimum at ({x}, {y}) with value {value}")
-
