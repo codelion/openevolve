@@ -55,9 +55,9 @@ def evaluate(program_path):
         Dictionary of metrics
     """
     # Known global minimum (approximate)
-    GLOBAL_MIN_X = -1.76
-    GLOBAL_MIN_Y = -1.03
-    GLOBAL_MIN_VALUE = -2.104
+    GLOBAL_MIN_X = -1.704
+    GLOBAL_MIN_Y = 0.678
+    GLOBAL_MIN_VALUE = -1.519
 
     try:
         # Load the program
@@ -216,9 +216,9 @@ def evaluate(program_path):
 def evaluate_stage1(program_path):
     """First stage evaluation with fewer trials"""
     # Known global minimum (approximate)
-    GLOBAL_MIN_X = float(-1.76)
-    GLOBAL_MIN_Y = float(-1.03)
-    GLOBAL_MIN_VALUE = float(-2.104)
+    GLOBAL_MIN_X = float(-1.704)
+    GLOBAL_MIN_Y = float(0.678)
+    GLOBAL_MIN_VALUE = float(-1.519)
 
     # Quick check to see if the program runs without errors
     try:

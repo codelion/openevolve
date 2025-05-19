@@ -353,9 +353,49 @@ class OpenEvolve:
         checkpoint_dir = os.path.join(self.output_dir, "checkpoints")
         os.makedirs(checkpoint_dir, exist_ok=True)
 
-        # Save the database
+        # Create specific checkpoint directory
         checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint_{iteration}")
+        os.makedirs(checkpoint_path, exist_ok=True)
+
+        # Save the database
         self.database.save(checkpoint_path, iteration)
+
+        # Save the best program found so far
+        best_program = None
+        if self.database.best_program_id:
+            best_program = self.database.get(self.database.best_program_id)
+        else:
+            best_program = self.database.get_best_program()
+
+        if best_program:
+            # Save the best program at this checkpoint
+            best_program_path = os.path.join(checkpoint_path, f"best_program{self.file_extension}")
+            with open(best_program_path, "w") as f:
+                f.write(best_program.code)
+
+            # Save metrics
+            best_program_info_path = os.path.join(checkpoint_path, "best_program_info.json")
+            with open(best_program_info_path, "w") as f:
+                import json
+
+                json.dump(
+                    {
+                        "id": best_program.id,
+                        "generation": best_program.generation,
+                        "iteration": iteration,
+                        "metrics": best_program.metrics,
+                        "language": best_program.language,
+                        "timestamp": best_program.timestamp,
+                        "saved_at": time.time(),
+                    },
+                    f,
+                    indent=2,
+                )
+
+            logger.info(
+                f"Saved best program at checkpoint {iteration} with metrics: "
+                f"{', '.join(f'{name}={value:.4f}' for name, value in best_program.metrics.items())}"
+            )
 
         logger.info(f"Saved checkpoint at iteration {iteration} to {checkpoint_path}")
 
