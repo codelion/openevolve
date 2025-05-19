@@ -27,6 +27,7 @@ OpenEvolve follows an evolutionary approach with the following components:
 
 ### Installation
 
+To install natively, use:
 ```bash
 git clone https://github.com/codelion/openevolve.git
 cd openevolve
@@ -89,6 +90,13 @@ python openevolve-run.py examples/function_minimization/initial_program.py \
   examples/function_minimization/evaluator.py \
   --checkpoint examples/function_minimization/openevolve_output/checkpoints/checkpoint_50 \
   --iterations 50
+```
+### Docker
+
+You can also install and execute via Docker:
+```bash
+docker build -t openevolve .
+docker run --rm -v .:/app openevolve examples/function_minimization/initial_program.py examples/function_minimization/evaluator.py --config examples/function_minimization/config.yaml --iterations 1000
 ```
 
 ## Configuration

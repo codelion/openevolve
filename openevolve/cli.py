@@ -1,6 +1,7 @@
 """
 Command-line interface for OpenEvolve
 """
+
 import argparse
 import asyncio
 import logging
@@ -17,53 +18,31 @@ logger = logging.getLogger(__name__)
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments"""
     parser = argparse.ArgumentParser(description="OpenEvolve - Evolutionary coding agent")
-    
+
+    parser.add_argument("initial_program", help="Path to the initial program file")
+
     parser.add_argument(
-        "initial_program",
-        help="Path to the initial program file"
+        "evaluation_file", help="Path to the evaluation file containing an 'evaluate' function"
     )
-    
+
+    parser.add_argument("--config", "-c", help="Path to configuration file (YAML)", default=None)
+
+    parser.add_argument("--output", "-o", help="Output directory for results", default=None)
+
     parser.add_argument(
-        "evaluation_file",
-        help="Path to the evaluation file containing an 'evaluate' function"
+        "--iterations", "-i", help="Maximum number of iterations", type=int, default=None
     )
-    
+
     parser.add_argument(
-        "--config",
-        "-c",
-        help="Path to configuration file (YAML)",
-        default=None
+        "--target-score", "-t", help="Target score to reach", type=float, default=None
     )
-    
-    parser.add_argument(
-        "--output",
-        "-o",
-        help="Output directory for results",
-        default=None
-    )
-    
-    parser.add_argument(
-        "--iterations",
-        "-i",
-        help="Maximum number of iterations",
-        type=int,
-        default=None
-    )
-    
-    parser.add_argument(
-        "--target-score",
-        "-t",
-        help="Target score to reach",
-        type=float,
-        default=None
-    )
-    
+
     parser.add_argument(
         "--log-level",
         "-l",
         help="Logging level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="INFO"
+        default="INFO",
     )
     
     parser.add_argument(
@@ -96,40 +75,40 @@ def parse_args() -> argparse.Namespace:
 async def main_async() -> int:
     """
     Main asynchronous entry point
-    
+
     Returns:
         Exit code
     """
     args = parse_args()
-    
+
     # Check if files exist
     if not os.path.exists(args.initial_program):
         print(f"Error: Initial program file '{args.initial_program}' not found")
         return 1
-    
+
     if not os.path.exists(args.evaluation_file):
         print(f"Error: Evaluation file '{args.evaluation_file}' not found")
         return 1
-    
+
     # Create config object with command-line overrides
     config = None
     if args.api_base or args.primary_model or args.secondary_model:
         # Load base config from file or defaults
         config = load_config(args.config)
-        
+
         # Apply command-line overrides
         if args.api_base:
             config.llm.api_base = args.api_base
             print(f"Using API base: {config.llm.api_base}")
-        
+
         if args.primary_model:
             config.llm.primary_model = args.primary_model
             print(f"Using primary model: {config.llm.primary_model}")
-        
+
         if args.secondary_model:
             config.llm.secondary_model = args.secondary_model
             print(f"Using secondary model: {config.llm.secondary_model}")
-    
+
     # Initialize OpenEvolve
     try:
         openevolve = OpenEvolve(
@@ -152,7 +131,7 @@ async def main_async() -> int:
         # Override log level if specified
         if args.log_level:
             logging.getLogger().setLevel(getattr(logging, args.log_level))
-        
+
         # Run evolution
         best_program = await openevolve.run(
             iterations=args.iterations,
@@ -178,10 +157,11 @@ async def main_async() -> int:
             print(f"To resume, use: --checkpoint {latest_checkpoint}")
         
         return 0
-    
+
     except Exception as e:
         print(f"Error: {str(e)}")
         import traceback
+
         traceback.print_exc()
         return 1
 
@@ -189,7 +169,7 @@ async def main_async() -> int:
 def main() -> int:
     """
     Main entry point
-    
+
     Returns:
         Exit code
     """
