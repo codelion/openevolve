@@ -1,6 +1,7 @@
 """
 Utilities for code parsing, diffing, and manipulation
 """
+
 import re
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -61,9 +62,9 @@ def apply_diff(original_code: str, diff_text: str) -> str:
 
         # Find where the search pattern starts in the original code
         for i in range(len(result_lines) - len(search_lines) + 1):
-            if result_lines[i:i+len(search_lines)] == search_lines:
+            if result_lines[i : i + len(search_lines)] == search_lines:
                 # Replace the matched section
-                result_lines[i:i+len(search_lines)] = replace_lines
+                result_lines[i : i + len(search_lines)] = replace_lines
                 break
 
     return "\n".join(result_lines)
@@ -131,8 +132,12 @@ def format_diff_summary(diff_blocks: List[Tuple[str, str]]) -> str:
         if len(search_lines) == 1 and len(replace_lines) == 1:
             summary.append(f"Change {i+1}: '{search_lines[0]}' to '{replace_lines[0]}'")
         else:
-            search_summary = f"{len(search_lines)} lines" if len(search_lines) > 1 else search_lines[0]
-            replace_summary = f"{len(replace_lines)} lines" if len(replace_lines) > 1 else replace_lines[0]
+            search_summary = (
+                f"{len(search_lines)} lines" if len(search_lines) > 1 else search_lines[0]
+            )
+            replace_summary = (
+                f"{len(replace_lines)} lines" if len(replace_lines) > 1 else replace_lines[0]
+            )
             summary.append(f"Change {i+1}: Replace {search_summary} with {replace_summary}")
 
     return "\n".join(summary)
@@ -164,11 +169,11 @@ def calculate_edit_distance(code1: str, code2: str) -> int:
 
     for i in range(1, m + 1):
         for j in range(1, n + 1):
-            cost = 0 if code1[i-1] == code2[j-1] else 1
+            cost = 0 if code1[i - 1] == code2[j - 1] else 1
             dp[i][j] = min(
-                dp[i-1][j] + 1,       # deletion
-                dp[i][j-1] + 1,       # insertion
-                dp[i-1][j-1] + cost,  # substitution
+                dp[i - 1][j] + 1,  # deletion
+                dp[i][j - 1] + 1,  # insertion
+                dp[i - 1][j - 1] + cost,  # substitution
             )
 
     return dp[m][n]

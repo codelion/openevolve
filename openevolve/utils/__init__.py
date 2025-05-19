@@ -1,11 +1,12 @@
 """
 Utilities module initialization
 """
+
 from openevolve.utils.async_utils import (
-    TaskPool, 
-    gather_with_concurrency, 
-    retry_async, 
-    run_in_executor
+    TaskPool,
+    gather_with_concurrency,
+    retry_async,
+    run_in_executor,
 )
 from openevolve.utils.code_utils import (
     apply_diff,

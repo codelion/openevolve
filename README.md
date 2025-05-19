@@ -27,6 +27,7 @@ OpenEvolve follows an evolutionary approach with the following components:
 
 ### Installation
 
+To install natively, use:
 ```bash
 git clone https://github.com/codelion/openevolve.git
 cd openevolve
@@ -58,6 +59,44 @@ OpenEvolve can also be run from the command line:
 
 ```bash
 python openevolve-run.py path/to/initial_program.py path/to/evaluator.py --config path/to/config.yaml --iterations 1000
+```
+
+### Resuming from Checkpoints
+
+OpenEvolve automatically saves checkpoints at intervals specified by the `checkpoint_interval` config parameter (default is 10 iterations). You can resume an evolution run from a saved checkpoint:
+
+```bash
+python openevolve-run.py path/to/initial_program.py path/to/evaluator.py \
+  --config path/to/config.yaml \
+  --checkpoint path/to/checkpoint_directory \
+  --iterations 50
+```
+
+When resuming from a checkpoint:
+- The system loads all previously evolved programs and their metrics
+- Checkpoint numbering continues from where it left off (e.g., if loaded from checkpoint_50, the next checkpoint will be checkpoint_60)
+- All evolution state is preserved (best programs, feature maps, archives, etc.)
+
+Example workflow with checkpoints:
+
+```bash
+# Run for 50 iterations (creates checkpoints at iterations 10, 20, 30, 40, 50)
+python openevolve-run.py examples/function_minimization/initial_program.py \
+  examples/function_minimization/evaluator.py \
+  --iterations 50
+
+# Resume from checkpoint 50 for another 50 iterations (creates checkpoints at 60, 70, 80, 90, 100)
+python openevolve-run.py examples/function_minimization/initial_program.py \
+  examples/function_minimization/evaluator.py \
+  --checkpoint examples/function_minimization/openevolve_output/checkpoints/checkpoint_50 \
+  --iterations 50
+```
+### Docker
+
+You can also install and execute via Docker:
+```bash
+docker build -t openevolve .
+docker run --rm -v .:/app openevolve examples/function_minimization/initial_program.py examples/function_minimization/evaluator.py --config examples/function_minimization/config.yaml --iterations 1000
 ```
 
 ## Configuration

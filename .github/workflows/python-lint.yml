@@ -1,0 +1,17 @@
+name: Lint
+
+on: [push, pull_request]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: psf/black@stable
+        with:
+          options: "--check --verbose"
+          src: "./openevolve ./tests ./examples"
+          use_pyproject: true
