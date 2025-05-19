@@ -154,7 +154,14 @@ class OpenEvolve:
         self.database.add(initial_program)
 
         # Main evolution loop
-        for i in range(max_iterations):
+        start_iteration = self.database.last_iteration
+        total_iterations = start_iteration + max_iterations
+
+        logger.info(
+            f"Starting evolution from iteration {start_iteration} for {max_iterations} iterations (total: {total_iterations})"
+        )
+
+        for i in range(start_iteration, total_iterations):
             iteration_start = time.time()
 
             # Sample parent and inspirations
@@ -348,7 +355,7 @@ class OpenEvolve:
 
         # Save the database
         checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint_{iteration}")
-        self.database.save(checkpoint_path)
+        self.database.save(checkpoint_path, iteration)
 
         logger.info(f"Saved checkpoint at iteration {iteration} to {checkpoint_path}")
 
