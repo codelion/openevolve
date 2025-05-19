@@ -76,6 +76,7 @@ When resuming from a checkpoint:
 - The system loads all previously evolved programs and their metrics
 - Checkpoint numbering continues from where it left off (e.g., if loaded from checkpoint_50, the next checkpoint will be checkpoint_60)
 - All evolution state is preserved (best programs, feature maps, archives, etc.)
+- Each checkpoint directory contains a copy of the best program at that point in time
 
 Example workflow with checkpoints:
 
@@ -90,6 +91,32 @@ python openevolve-run.py examples/function_minimization/initial_program.py \
   examples/function_minimization/evaluator.py \
   --checkpoint examples/function_minimization/openevolve_output/checkpoints/checkpoint_50 \
   --iterations 50
+```
+
+### Comparing Results Across Checkpoints
+
+Each checkpoint directory contains the best program found up to that point, making it easy to compare solutions over time:
+
+```
+checkpoints/
+  checkpoint_10/
+    best_program.py         # Best program at iteration 10
+    best_program_info.json  # Metrics and details
+    programs/               # All programs evaluated so far
+    metadata.json           # Database state
+  checkpoint_20/
+    best_program.py         # Best program at iteration 20
+    ...
+```
+
+You can compare the evolution of solutions by examining the best programs at different checkpoints:
+
+```bash
+# Compare best programs at different checkpoints
+diff -u checkpoints/checkpoint_10/best_program.py checkpoints/checkpoint_20/best_program.py
+
+# Compare metrics
+cat checkpoints/checkpoint_*/best_program_info.json | grep -A 10 metrics
 ```
 ### Docker
 
