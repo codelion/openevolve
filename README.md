@@ -163,6 +163,12 @@ Our implementation of the circle packing problem from the AlphaEvolve paper, whe
 
 [Explore the Circle Packing Example](examples/circle_packing/)
 
+**We have sucessfully replicated the results from the AlphaEvolve paper, below is the packaging found by OpenEvolve after 800 iterations**
+![alpha-evolve-replication](https://github.com/user-attachments/assets/1dc9dc95-7519-4742-bce4-ad3a8402635d)
+
+You can see that this is exactly the packaging reported by AlphaEolve in their paper (Figure 14): 
+![alpha-evolve-results](https://github.com/user-attachments/assets/bcf8d108-a7d1-41e6-bc46-614e354debcd)
+
 ### Function Minimization
 
 An example showing how OpenEvolve can transform a simple random search algorithm into a sophisticated simulated annealing approach.
