@@ -169,7 +169,7 @@ We have sucessfully replicated the results from the AlphaEvolve paper, below is 
 
 This is exactly the packing reported by AlphaEolve in their paper (Figure 14): 
 
-![alpha-evolve-results](https://github.com/user-attachments/assets/bcf8d108-a7d1-41e6-bc46-614e354debcd)
+![alpha-evolve-results](https://github.com/user-attachments/assets/0c9affa5-053d-404e-bb2d-11479ab248c9)
 
 ### Function Minimization
 
