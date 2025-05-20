@@ -165,7 +165,7 @@ Our implementation of the circle packing problem from the AlphaEvolve paper, whe
 
 We have sucessfully replicated the results from the AlphaEvolve paper, below is the packing found by OpenEvolve after 800 iterations
 
-![alpha-evolve-replication](https://github.com/user-attachments/assets/1dc9dc95-7519-4742-bce4-ad3a8402635d)
+![alpha-evolve-replication](https://github.com/user-attachments/assets/00100f9e-2ac3-445b-9266-0398b7174193)
 
 This is exactly the packing reported by AlphaEolve in their paper (Figure 14): 
 
