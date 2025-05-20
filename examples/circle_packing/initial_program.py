@@ -130,4 +130,4 @@ if __name__ == "__main__":
     # AlphaEvolve improved this to 2.635
 
     # Uncomment to visualize:
-    # visualize(centers, radii)
+    visualize(centers, radii)

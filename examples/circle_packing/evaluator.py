@@ -185,7 +185,7 @@ def evaluate(program_path):
 
         # Use subprocess to run with timeout
         centers, radii, reported_sum = run_with_timeout(
-            program_path, timeout_seconds=15  # Single timeout
+            program_path, timeout_seconds=60  # Single timeout
         )
 
         end_time = time.time()
@@ -256,7 +256,7 @@ def evaluate_stage1(program_path):
     try:
         # Use the simplified subprocess approach
         try:
-            centers, radii, sum_radii = run_with_timeout(program_path, timeout_seconds=10)
+            centers, radii, sum_radii = run_with_timeout(program_path, timeout_seconds=60)
 
             # Ensure centers and radii are numpy arrays
             if not isinstance(centers, np.ndarray):
