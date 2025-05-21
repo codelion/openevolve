@@ -159,7 +159,7 @@ See the `examples/` directory for complete examples of using OpenEvolve on vario
 
 ### Circle Packing
 
-Our implementation of the circle packing problem from the AlphaEvolve paper, where we successfully match their reported results within 0.04%.
+Our implementation of the circle packing problem from the AlphaEvolve paper. For the n=26 case, where one needs to pack 26 circles in a unit square we also obtain SOTA results.
 
 [Explore the Circle Packing Example](examples/circle_packing/)
 
