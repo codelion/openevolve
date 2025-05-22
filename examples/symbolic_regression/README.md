@@ -1,16 +1,16 @@
-# Evolving Symbolic Regression Models with OpenEvolve on LLM-SRBench 🧬🔍
+# Evolving Symbolic Regression with OpenEvolve on LLM-SRBench 🧬🔍
 
-This example demonstrates how **OpenEvolve** can be utilized to perform **symbolic regression** tasks using the **LLM-SRBench benchmark**. It showcases the ability of OpenEvolve to evolve Python code representing mathematical expressions to fit given datasets.
+This example demonstrates how **OpenEvolve** can be utilized to perform **symbolic regression** tasks using the **[LLM-SRBench benchmark](https://arxiv.org/pdf/2504.10415)**. It showcases OpenEvolve's capability to evolve Python code, transforming simple mathematical expressions into more complex and accurate models that fit given datasets.
 
----
+------
 
-## Problem Description: Symbolic Regression on LLM-SRBench
+## 🎯 Problem Description: Symbolic Regression on LLM-SRBench
 
-**Symbolic Regression** is the task of discovering a mathematical expression that best fits a given dataset. Unlike traditional regression techniques that fit parameters to a predefined model structure, symbolic regression aims to find both the structure of the model and its parameters.
+**Symbolic Regression** is the task of discovering a mathematical expression that best fits a given dataset. Unlike traditional regression techniques that optimize parameters for a predefined model structure, symbolic regression aims to find both the **structure of the model** and its **parameters**.
 
-This example leverages **LLM-SRBench**, a benchmark for Large Language Model based Symbolic Regression (highlighted at ICML 2025). The goal is to use OpenEvolve to evolve an initial, simple model (e.g., a linear model) into a more accurate symbolic expression that captures the underlying relationships in various scientific datasets provided by the benchmark.
+This example leverages **LLM-SRBench**, a benchmark specifically designed for Large Language Model-based Symbolic Regression. The core objective is to use OpenEvolve to evolve an initial, often simple, model (e.g., a linear model) into a more sophisticated symbolic expression. This evolved expression should accurately capture the underlying relationships within various scientific datasets provided by the benchmark.
 
----
+------
 
 ## 🚀 Getting Started
 
@@ -18,34 +18,44 @@ Follow these steps to set up and run the symbolic regression benchmark example:
 
 ### 1. Configure API Secrets
 
-You'll need to provide your API credentials for the language models.
-Create a `secrets.yaml` file in the example directory with the following structure:
+You'll need to provide your API credentials for the language models used by OpenEvolve.
 
-```yaml
+- Create a `secrets.yaml` file in the example directory.
+- Add your API key and model preferences:
+
+YAML
+
+```
 # secrets.yaml
 api_key: <YOUR_OPENAI_API_KEY>
-api_base: "[https://api.openai.com/v1](https://api.openai.com/v1)"  # Or your custom endpoint
+api_base: "https://api.openai.com/v1"  # Or your custom endpoint
 primary_model: "gpt-4o"
-secondary_model: "o3" # Or another preferred model
+secondary_model: "o3" # Or another preferred model for specific tasks
 ```
-Replace `<YOUR_OPENAI_API_KEY>` with your actual key.
+
+Replace `<YOUR_OPENAI_API_KEY>` with your actual OpenAI API key.
 
 ### 2. Load Benchmark Tasks & Generate Initial Programs
 
-The `data_api.py` script is used to load tasks from the LLM-SRBench dataset (located in `./problems` and defined by classes in `./bench`). This script will also automatically generate:
-* An `initial_program.py` (typically a simple linear model) for each benchmark task.
-* An `evaluator.py` tailored for each task.
-* A `config.yaml` for OpenEvolve for each task.
+The `data_api.py` script is crucial for setting up the environment. It prepares tasks from the LLM-SRBench dataset (defined by classes in `./bench`, and will be located at `./problems`).
 
-Run the script:
+For each benchmark task, this script will automatically generate:
+
+- `initial_program.py`: A starting Python program, typically a simple linear model.
+- `evaluator.py`: A tailored evaluation script for the task.
+- `config.yaml`: An OpenEvolve configuration file specific to the task.
+
+Run the script from your terminal:
+
 ```bash
 python data_api.py
 ```
-This will prepare all necessary files within subdirectories for each benchmark task.
+
+This will create subdirectories for each benchmark task, populated with the necessary files.
 
 ### 3. Run OpenEvolve
 
-Use the provided shell script `scripts.sh` to execute OpenEvolve across the generated benchmark tasks. This script will iterate through the task-specific configurations and apply the evolutionary process.
+Use the provided shell script `scripts.sh` to execute OpenEvolve across the generated benchmark tasks. This script iterates through the task-specific configurations and applies the evolutionary process.
 
 ```bash
 bash scripts.sh
@@ -53,129 +63,130 @@ bash scripts.sh
 
 ### 4. Evaluate Results
 
-After OpenEvolve has completed its runs, you can evaluate the performance on different subsets of tasks (e.g., `bio`, `chemical`, `physics`, `material`). The `eval.py` script collates the results and provides a summary.
+After OpenEvolve has completed its runs, you can evaluate the performance on different subsets of tasks (e.g., bio, chemical, physics, material). The `eval.py` script collates the results and provides a summary.
 
 ```bash
 python eval.py <subset_path>
 ```
-For example, to evaluate results for the 'physics' subset, if they are located in `results/physics_tasks`, you might run `python eval.py results/physics_tasks`.
 
-This will also save a JSON file containing detailed results for your analysis.
+For example, to evaluate results for the 'physics' subset located in `./problems/phys_osc/`, you would run:
 
----
+```bash
+python eval.py ./problems/phys_osc
+```
 
-## Algorithm Evolution: From Linear Model to...?
+This script will also save a `JSON` file containing detailed results for your analysis.
 
-### Initial Algorithm (e.g., Linear Model)
+------
 
-The `data_api.py` script typically generates a basic linear model as the starting point for evolution. For a given task, this `initial_program.py` might look something like:
+## 🌱 Algorithm Evolution: From Linear Model to Complex Expression
+
+OpenEvolve works by iteratively modifying an initial Python program to find a better-fitting mathematical expression.
+
+### Initial Algorithm (Example: Linear Model)
+
+The `data_api.py` script typically generates a basic linear model as the starting point. For a given task, this `initial_program.py` might look like this:
 
 ```python
-# initial_program.py (conceptual example)
+"""
+Initial program: A naive linear model for symbolic regression.
+This model predicts the output as a linear combination of input variables
+or a constant if no input variables are present.
+The function is designed for vectorized input (X matrix).
+
+Target output variable: dv_dt (Acceleration in Nonl-linear Harmonic Oscillator)
+Input variables (columns of x): x (Position at time t), t (Time), v (Velocity at time t)
+"""
 import numpy as np
 
-# [[evolve_start]]
-def symbolic_model(X_train_scaled, X_test_scaled, y_train_scaled, feature_names, X_train, y_train):
-    # A simple linear model or a placeholder function
-    # The actual initial model is generated by data_api.py
-    predictions = np.zeros(len(X_train_scaled)) # Placeholder
-    # For a real linear model, it might be:
-    # if X_train_scaled.shape[1] > 0:
-    #     coeffs = np.random.rand(X_train_scaled.shape[1])
-    #     intercept = np.random.rand()
-    #     predictions = X_train_scaled @ coeffs + intercept
-    # else:
-    #     predictions = np.full(len(X_train_scaled), np.mean(y_train_scaled))
+# Input variable mapping for x (columns of the input matrix):
+#   x[:, 0]: x (Position at time t)
+#   x[:, 1]: t (Time)
+#   x[:, 2]: v (Velocity at time t)
 
-    # The goal of openevolve is to replace this function
-    # with one that produces better predictions by finding
-    # a symbolic expression using the input features.
-    mse = np.mean((y_train_scaled - predictions)**2)
-    return mse, predictions
-# [[evolve_end]]
+# Parameters will be optimized by BFGS outside this function.
+# Number of parameters expected by this model: 10.
+# Example initialization: params = np.random.rand(10)
 
-def evaluate(X_train_scaled, X_test_scaled, y_train_scaled, feature_names, X_train, y_train):
-    # [[evolve_start]]
-    mse, _ = symbolic_model(X_train_scaled, X_test_scaled, y_train_scaled, feature_names, X_train, y_train)
-    # [[evolve_end]]
-    return mse
+# EVOLVE-BLOCK-START
+
+def func(x, params):
+    """
+    Calculates the model output using a linear combination of input variables
+    or a constant value if no input variables. Operates on a matrix of samples.
+
+    Args:
+        x (np.ndarray): A 2D numpy array of input variable values, shape (n_samples, n_features).
+                        n_features is 3.
+                        If n_features is 0, x should be shape (n_samples, 0).
+                        The order of columns in x must correspond to:
+                        (x, t, v).
+        params (np.ndarray): A 1D numpy array of parameters.
+                             Expected length: 10.
+
+    Returns:
+        np.ndarray: A 1D numpy array of predicted output values, shape (n_samples,).
+    """
+
+    result = x[:, 0] * params[0] + x[:, 1] * params[1] + x[:, 2] * params[2]
+    return result
+    
+# EVOLVE-BLOCK-END
+
+# This part remains fixed (not evolved)
+# It ensures that OpenEvolve can consistently call the evolving function.
+def run_search():
+    return func
+
+# Note: The actual structure of initial_program.py is determined by data_api.py.
 ```
-*Note: The actual structure of `initial_program.py` is determined by `data_api.py`.*
 
 ### Evolved Algorithm (Discovered Symbolic Expression)
 
-OpenEvolve will iteratively modify the code within the `[[evolve_start]]` and `[[evolve_end]]` blocks in `initial_program.py`. The aim is to transform the simple initial model into a more complex and accurate symbolic expression that minimizes the Mean Squared Error (MSE) on the training data.
+OpenEvolve will iteratively modify the Python code within the `# EVOLVE-BLOCK-START` and `# EVOLVE-BLOCK-END` markers in `initial_program.py`. The goal is to transform the simple initial model into a more complex and accurate symbolic expression that minimizes the Mean Squared Error (MSE) on the training data.
 
-An evolved `symbolic_model` function might, for instance, discover an expression like:
-`predictions = np.sin(X_train_scaled[:, 0]) * X_train_scaled[:, 1]**2 + const`
-(This is a hypothetical example of what OpenEvolve might find).
+An evolved `func` might, for instance, discover a non-linear expression like:
 
----
+```python
+# Hypothetical example of what OpenEvolve might find:
+def func(x, params):
+   # Assuming X_train_scaled maps to x and const maps to a parameter in params
+   predictions = np.sin(x[:, 0]) * x[:, 1]**2 + params[0]
+   return predictions
+```
+
+*(This is a simplified, hypothetical example to illustrate the transformation.)*
+
+------
 
 ## ⚙️ Key Configuration & Approach
 
-* **LLM Models**:
-    * **Primary Model**: `gpt-4o` (used for sophisticated code generation)
-    * **Secondary Model**: `o3` (or your configured alternative, potentially for refinements or specific sub-tasks)
-* **Evaluation Strategy**:
-    * Currently, this example **does not use cascade evaluation**. Each evolved program is evaluated directly. Exploring cascade evaluation could be a future enhancement to potentially boost performance.
-* **Objective Function**:
-    * The primary objective is straightforward: **minimize the Mean Squared Error (MSE)** of the model's predictions on the training data.
+- LLM Models:
+  - **Primary Model:** `gpt-4o` (or your configured `primary_model`) is typically used for sophisticated code generation and modification.
+  - **Secondary Model:** `o3` (or your configured `secondary_model`) can be used for refinements, simpler modifications, or other auxiliary tasks within the evolutionary process.
+- Evaluation Strategy:
+  - Currently, this example employs a direct evaluation strategy (not **cascade evaluation**).
+- Objective Function:
+  - The primary objective is to **minimize the Mean Squared Error (MSE)** between the model's predictions and the true values on the training data.
 
----
+------
 
 ## 📊 Results
 
-*(This section can be filled in once you have run the benchmarks and gathered performance data.)*
+The `eval.py` script will help you collect and analyze performance metrics. The LLM-SRBench paper provides a comprehensive comparison of various baselines. For results generated by this specific OpenEvolve example, you should run the evaluation script as described in the "Getting Started" section.
 
-You can present results in a table or through plots, comparing metrics like:
-* Achieved MSE on training/test sets.
-* Complexity of discovered expressions.
-* Performance across different LLM-SRBench task categories (bio, chemical, physics, material).
+For benchmark-wide comparisons and results from other methods, please refer to the official LLM-SRBench paper.
 
-Example Table Structure:
+| **Task Category**       | Med. NMSE (Test) | Med. R2 (Test) | **Med. NMSE (OOD Test)** | **Med. R2 (OOD Test)** |
+| ----------------------- | ---------------- | -------------- | ------------------------ | ---------------------- |
+| Chemistry (36 tasks)    | 2.3419e-06       | 1.000          | 3.1384e-02               | 0.9686                 |
+| Physics (44 tasks)      | 1.8548e-05       | 1.000          | 7.9255e-04               | 0.9992                 |
 
-| Task Category | Avg. MSE (Train) | Avg. MSE (Test) | Notes |
-|---------------|------------------|-----------------|-------|
-| Bio           | *value* | *value* |       |
-| Chemical      | *value* | *value* |       |
-| Physics       | *value* | *value* |       |
-| Material      | *value* | *value* |       |
-| **Overall** | **value** | **value** |       |
+Current results are only for two subset of LSR-Synth. We will update the comprehensive results soon.
 
-The `eval.py` script will output a JSON file with detailed results suitable for populating such tables or for further analysis.
+------
 
----
+## 🤝 Contribution
 
-## 💡 How It Works with OpenEvolve
+This OpenEvolve example for LLM-SRBench was implemented by [**Haowei Lin**](https://linhaowei1.github.io/) from Peking University. If you encounter any issues or have questions, please feel free to reach out to Haowei via email (linhaowei@pku.edu.cn) for discussion.
 
-This example highlights several capabilities of OpenEvolve:
-
-* **Automated Code Evolution**: OpenEvolve directly modifies Python code within specified blocks to search for better solutions.
-* **Symbolic Discovery**: Instead of just tuning parameters, OpenEvolve attempts to discover the underlying mathematical structure (the symbolic expression) that best models the data.
-* **Adaptability to Benchmarks**: The framework is set up to systematically process multiple tasks from the LLM-SRBench.
-* **Leveraging LLMs for Code Generation**: It utilizes powerful LLMs like GPT-4o to propose novel code structures representing mathematical formulas.
-
----
-
-## 🔮 Next Steps & Future Exploration
-
-* **Analyze Detailed Results**: Dive into the JSON output from `eval.py` to understand the performance on specific tasks and the nature of the evolved expressions.
-* **Implement Cascade Evaluation**: Explore adding a cascade evaluation mechanism where promising programs are subjected to more rigorous or diverse evaluation criteria.
-* **Experiment with Different LLMs**: Try swapping the primary and secondary models in `secrets.yaml` or testing newer models as they become available.
-* **Modify Evolutionary Parameters**: Adjust settings in the task-specific `config.yaml` files (e.g., population size, number of generations, mutation rates) to see their impact on the discovery process.
-* **Explore Different Objectives**: While MSE is standard, consider incorporating other objectives like model complexity (e.g., using a Pareto front or adding a complexity penalty to the fitness function) to find simpler, more interpretable expressions.
-
----
-
-## 📁 Files in this Example
-
-* `data_api.py`: Loads benchmark tasks and generates initial files (`initial_program.py`, `evaluator.py`, `config.yaml`) for each.
-* `./problems/`: Contains the raw data files for the LLM-SRBench tasks.
-* `./bench/`: Contains Python data classes and helpers for loading and handling LLM-SRBench tasks.
-* `eval.py`: Script to evaluate the results from OpenEvolve runs for a subset of tasks.
-* `secrets.yaml` (to be created by you): Stores API keys and model preferences.
-* `scripts.sh`: Utility script to run OpenEvolve across all configured benchmark tasks.
-* `initial_program.py` (generated per task): The starting Python code that OpenEvolve will evolve.
-* `evaluator.py` (generated per task): Defines how the evolved programs are evaluated for a specific task.
-* `config.yaml` (generated per task): Configuration file for OpenEvolve for a specific task.

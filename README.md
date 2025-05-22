@@ -1,192 +1,201 @@
-# Evolving Symbolic Regression with OpenEvolve on LLM-SRBench 🧬🔍
+# OpenEvolve
 
-This example demonstrates how **OpenEvolve** can be utilized to perform **symbolic regression** tasks using the **LLM-SRBench benchmark** (highlighted at ICML 2025). It showcases OpenEvolve's capability to evolve Python code, transforming simple mathematical expressions into more complex and accurate models that fit given datasets.
+An open-source implementation of the AlphaEvolve system described in the Google DeepMind paper "AlphaEvolve: A coding agent for scientific and algorithmic discovery" (2025).
 
-------
+![OpenEvolve Logo](openevolve-logo.png)
 
-## 🎯 Problem Description: Symbolic Regression on LLM-SRBench
+## Overview
 
-**Symbolic Regression** is the task of discovering a mathematical expression that best fits a given dataset. Unlike traditional regression techniques that optimize parameters for a predefined model structure, symbolic regression aims to find both the **structure of the model** and its **parameters**.
+OpenEvolve is an evolutionary coding agent that uses Large Language Models to optimize code through an iterative process. It orchestrates a pipeline of LLM-based code generation, evaluation, and selection to continuously improve programs for a variety of tasks.
 
-This example leverages **LLM-SRBench**, a benchmark specifically designed for Large Language Model-based Symbolic Regression. The core objective is to use OpenEvolve to evolve an initial, often simple, model (e.g., a linear model) into a more sophisticated symbolic expression. This evolved expression should accurately capture the underlying relationships within various scientific datasets provided by the benchmark.
+Key features:
+- Evolution of entire code files, not just single functions
+- Support for multiple programming languages
+- Supports OpenAI-compatible APIs for any LLM
+- Multi-objective optimization
+- Flexible prompt engineering
+- Distributed evaluation
 
-------
+## How It Works
 
-## 🚀 Getting Started
+OpenEvolve follows an evolutionary approach with the following components:
 
-Follow these steps to set up and run the symbolic regression benchmark example:
+![OpenEvolve Architecture](openevolve-architecture.png)
 
-### 1. Configure API Secrets
+1. **Prompt Sampler**: Creates context-rich prompts containing past programs, their scores, and problem descriptions
+2. **LLM Ensemble**: Generates code modifications via an ensemble of language models
+3. **Evaluator Pool**: Tests generated programs and assigns scores
+4. **Program Database**: Stores programs and their evaluation metrics, guiding future evolution
 
-You'll need to provide your API credentials for the language models used by OpenEvolve.
+The controller orchestrates interactions between these components in an asynchronous pipeline, maximizing throughput to evaluate as many candidate solutions as possible.
 
-- Create a `secrets.yaml` file in the example directory.
-- Add your API key and model preferences:
+## Getting Started
 
-YAML
+### Installation
 
-```
-# secrets.yaml
-api_key: <YOUR_OPENAI_API_KEY>
-api_base: "https://api.openai.com/v1"  # Or your custom endpoint
-primary_model: "gpt-4o"
-secondary_model: "o3" # Or another preferred model for specific tasks
-```
-
-Replace `<YOUR_OPENAI_API_KEY>` with your actual OpenAI API key.
-
-### 2. Load Benchmark Tasks & Generate Initial Programs
-
-The `data_api.py` script is crucial for setting up the environment. It prepares tasks from the LLM-SRBench dataset (defined by classes in `./bench`, and will be located at `./problems`).
-
-For each benchmark task, this script will automatically generate:
-
-- `initial_program.py`: A starting Python program, typically a simple linear model.
-- `evaluator.py`: A tailored evaluation script for the task.
-- `config.yaml`: An OpenEvolve configuration file specific to the task.
-
-Run the script from your terminal:
-
+To install natively, use:
 ```bash
-python data_api.py
+git clone https://github.com/codelion/openevolve.git
+cd openevolve
+pip install -e .
 ```
 
-This will create subdirectories for each benchmark task, populated with the necessary files.
-
-### 3. Run OpenEvolve
-
-Use the provided shell script `scripts.sh` to execute OpenEvolve across the generated benchmark tasks. This script iterates through the task-specific configurations and applies the evolutionary process.
-
-```bash
-bash scripts.sh
-```
-
-### 4. Evaluate Results
-
-After OpenEvolve has completed its runs, you can evaluate the performance on different subsets of tasks (e.g., bio, chemical, physics, material). The `eval.py` script collates the results and provides a summary.
-
-```bash
-python eval.py <subset_path>
-```
-
-For example, to evaluate results for the 'physics' subset located in `./problems/phys_osc/`, you would run:
-
-```bash
-python eval.py ./problems/phys_osc
-```
-
-This script will also save a `JSON` file containing detailed results for your analysis.
-
-------
-
-## 🌱 Algorithm Evolution: From Linear Model to Complex Expression
-
-OpenEvolve works by iteratively modifying an initial Python program to find a better-fitting mathematical expression.
-
-### Initial Algorithm (Example: Linear Model)
-
-The `data_api.py` script typically generates a basic linear model as the starting point. For a given task, this `initial_program.py` might look like this:
+### Quick Start
 
 ```python
-"""
-Initial program: A naive linear model for symbolic regression.
-This model predicts the output as a linear combination of input variables
-or a constant if no input variables are present.
-The function is designed for vectorized input (X matrix).
+from openevolve import OpenEvolve
 
-Target output variable: dv_dt (Acceleration in Nonl-linear Harmonic Oscillator)
-Input variables (columns of x): x (Position at time t), t (Time), v (Velocity at time t)
-"""
-import numpy as np
+# Initialize the system
+evolve = OpenEvolve(
+    initial_program_path="path/to/initial_program.py",
+    evaluation_file="path/to/evaluator.py",
+    config_path="path/to/config.yaml"
+)
 
-# Input variable mapping for x (columns of the input matrix):
-#   x[:, 0]: x (Position at time t)
-#   x[:, 1]: t (Time)
-#   x[:, 2]: v (Velocity at time t)
-
-# Parameters will be optimized by BFGS outside this function.
-# Number of parameters expected by this model: 10.
-# Example initialization: params = np.random.rand(10)
-
-# EVOLVE-BLOCK-START
-
-def func(x, params):
-    """
-    Calculates the model output using a linear combination of input variables
-    or a constant value if no input variables. Operates on a matrix of samples.
-
-    Args:
-        x (np.ndarray): A 2D numpy array of input variable values, shape (n_samples, n_features).
-                        n_features is 3.
-                        If n_features is 0, x should be shape (n_samples, 0).
-                        The order of columns in x must correspond to:
-                        (x, t, v).
-        params (np.ndarray): A 1D numpy array of parameters.
-                             Expected length: 10.
-
-    Returns:
-        np.ndarray: A 1D numpy array of predicted output values, shape (n_samples,).
-    """
-
-    result = x[:, 0] * params[0] + x[:, 1] * params[1] + x[:, 2] * params[2]
-    return result
-    
-# EVOLVE-BLOCK-END
-
-# This part remains fixed (not evolved)
-# It ensures that OpenEvolve can consistently call the evolving function.
-def run_search():
-    return func
-
-# Note: The actual structure of initial_program.py is determined by data_api.py.
+# Run the evolution
+best_program = await evolve.run(iterations=1000)
+print(f"Best program metrics:")
+for name, value in best_program.metrics.items():
+    print(f"  {name}: {value:.4f}")
 ```
 
-### Evolved Algorithm (Discovered Symbolic Expression)
+### Command-Line Usage
 
-OpenEvolve will iteratively modify the Python code within the `# EVOLVE-BLOCK-START` and `# EVOLVE-BLOCK-END` markers in `initial_program.py`. The goal is to transform the simple initial model into a more complex and accurate symbolic expression that minimizes the Mean Squared Error (MSE) on the training data.
+OpenEvolve can also be run from the command line:
 
-An evolved `func` might, for instance, discover a non-linear expression like:
-
-```python
-# Hypothetical example of what OpenEvolve might find:
-def func(x, params):
-   # Assuming X_train_scaled maps to x and const maps to a parameter in params
-   predictions = np.sin(x[:, 0]) * x[:, 1]**2 + params[0]
-   return predictions
+```bash
+python openevolve-run.py path/to/initial_program.py path/to/evaluator.py --config path/to/config.yaml --iterations 1000
 ```
 
-*(This is a simplified, hypothetical example to illustrate the transformation.)*
+### Resuming from Checkpoints
 
-------
+OpenEvolve automatically saves checkpoints at intervals specified by the `checkpoint_interval` config parameter (default is 10 iterations). You can resume an evolution run from a saved checkpoint:
 
-## ⚙️ Key Configuration & Approach
+```bash
+python openevolve-run.py path/to/initial_program.py path/to/evaluator.py \
+  --config path/to/config.yaml \
+  --checkpoint path/to/checkpoint_directory \
+  --iterations 50
+```
 
-- LLM Models:
-  - **Primary Model:** `gpt-4o` (or your configured `primary_model`) is typically used for sophisticated code generation and modification.
-  - **Secondary Model:** `o3` (or your configured `secondary_model`) can be used for refinements, simpler modifications, or other auxiliary tasks within the evolutionary process.
-- Evaluation Strategy:
-  - Currently, this example employs a direct evaluation strategy (not **cascade evaluation**).
-- Objective Function:
-  - The primary objective is to **minimize the Mean Squared Error (MSE)** between the model's predictions and the true values on the training data.
+When resuming from a checkpoint:
+- The system loads all previously evolved programs and their metrics
+- Checkpoint numbering continues from where it left off (e.g., if loaded from checkpoint_50, the next checkpoint will be checkpoint_60)
+- All evolution state is preserved (best programs, feature maps, archives, etc.)
+- Each checkpoint directory contains a copy of the best program at that point in time
 
-------
+Example workflow with checkpoints:
 
-## 📊 Results
+```bash
+# Run for 50 iterations (creates checkpoints at iterations 10, 20, 30, 40, 50)
+python openevolve-run.py examples/function_minimization/initial_program.py \
+  examples/function_minimization/evaluator.py \
+  --iterations 50
 
-The `eval.py` script will help you collect and analyze performance metrics. The LLM-SRBench paper provides a comprehensive comparison of various baselines. For results generated by this specific OpenEvolve example, you should run the evaluation script as described in the "Getting Started" section.
+# Resume from checkpoint 50 for another 50 iterations (creates checkpoints at 60, 70, 80, 90, 100)
+python openevolve-run.py examples/function_minimization/initial_program.py \
+  examples/function_minimization/evaluator.py \
+  --checkpoint examples/function_minimization/openevolve_output/checkpoints/checkpoint_50 \
+  --iterations 50
+```
 
-For benchmark-wide comparisons and results from other methods, please refer to the official LLM-SRBench paper.
+### Comparing Results Across Checkpoints
 
-| **Task Category**       | Med. NMSE (Test) | Med. R2 (Test) | **Med. NMSE (OOD Test)** | **Med. R2 (OOD Test)** |
-| ----------------------- | ---------------- | -------------- | ------------------------ | ---------------------- |
-| Chemistry (36 tasks)    | 2.3419e-06       | 1.000          | 3.1384e-02               | 0.9686                 |
-| Biology (24 tasks)      |                  |                |                          |                        |
-| Physics (44 tasks)      | 1.8548e-05       | 1.000          | 7.9255e-04               | 0.9992                 |
-| Material Sc. (25 tasks) |                  |                |                          |                        |
+Each checkpoint directory contains the best program found up to that point, making it easy to compare solutions over time:
 
-------
+```
+checkpoints/
+  checkpoint_10/
+    best_program.py         # Best program at iteration 10
+    best_program_info.json  # Metrics and details
+    programs/               # All programs evaluated so far
+    metadata.json           # Database state
+  checkpoint_20/
+    best_program.py         # Best program at iteration 20
+    ...
+```
 
-## 🤝 Contribution
+You can compare the evolution of solutions by examining the best programs at different checkpoints:
 
-This OpenEvolve example for LLM-SRBench was implemented by [**Haowei Lin**](https://linhaowei1.github.io/) from Peking University. If you encounter any issues or have questions, please feel free to reach out to Haowei via email (linhaowei@pku.edu.cn) for discussion.
+```bash
+# Compare best programs at different checkpoints
+diff -u checkpoints/checkpoint_10/best_program.py checkpoints/checkpoint_20/best_program.py
 
+# Compare metrics
+cat checkpoints/checkpoint_*/best_program_info.json | grep -A 10 metrics
+```
+### Docker
+
+You can also install and execute via Docker:
+```bash
+docker build -t openevolve .
+docker run --rm -v .:/app openevolve examples/function_minimization/initial_program.py examples/function_minimization/evaluator.py --config examples/function_minimization/config.yaml --iterations 1000
+```
+
+## Configuration
+
+OpenEvolve is highly configurable. You can specify configuration options in a YAML file:
+
+```yaml
+# Example configuration
+max_iterations: 1000
+llm:
+  primary_model: "gemini-2.0-flash-lite"
+  secondary_model: "gemini-2.0-flash"
+  temperature: 0.7
+database:
+  population_size: 500
+  num_islands: 5
+```
+
+Sample configuration files are available in the `configs/` directory:
+- `default_config.yaml`: Comprehensive configuration with all available options
+
+See the [Configuration Guide](configs/default_config.yaml) for a full list of options.
+
+## Examples
+
+See the `examples/` directory for complete examples of using OpenEvolve on various problems:
+
+### Circle Packing
+
+Our implementation of the circle packing problem from the AlphaEvolve paper. For the n=26 case, where one needs to pack 26 circles in a unit square we also obtain SOTA results.
+
+[Explore the Circle Packing Example](examples/circle_packing/)
+
+We have sucessfully replicated the results from the AlphaEvolve paper, below is the packing found by OpenEvolve after 800 iterations
+
+![alpha-evolve-replication](https://github.com/user-attachments/assets/00100f9e-2ac3-445b-9266-0398b7174193)
+
+This is exactly the packing reported by AlphaEolve in their paper (Figure 14): 
+
+![alpha-evolve-results](https://github.com/user-attachments/assets/0c9affa5-053d-404e-bb2d-11479ab248c9)
+
+### Function Minimization
+
+An example showing how OpenEvolve can transform a simple random search algorithm into a sophisticated simulated annealing approach.
+
+[Explore the Function Minimization Example](examples/function_minimization/)
+
+## Preparing Your Own Problems
+
+To use OpenEvolve for your own problems:
+
+1. **Mark code sections** to evolve with `# EVOLVE-BLOCK-START` and `# EVOLVE-BLOCK-END` comments
+2. **Create an evaluation function** that returns a dictionary of metrics
+3. **Configure OpenEvolve** with appropriate parameters
+4. **Run the evolution** process
+
+## Citation
+
+If you use OpenEvolve in your research, please cite:
+
+```
+@software{openevolve,
+  title = {OpenEvolve: Open-source implementation of AlphaEvolve},
+  author = {Asankhaya Sharma},
+  year = {2025},
+  publisher = {GitHub},
+  url = {https://github.com/codelion/openevolve}
+}
+```
