@@ -16,24 +16,10 @@ This example leverages **LLM-SRBench**, a benchmark specifically designed for La
 
 Follow these steps to set up and run the symbolic regression benchmark example:
 
-### 1. Configure API Secrets
+### 1. Configure API Keys
 
-You'll need to provide your API credentials for the language models used by OpenEvolve.
+The API key is read from the environment `OPENAI_API_KEY` by default. The primary and secondary model we used in testing LLM-SRBench is `gpt-4o` and `o3`. You can check `create_config()` in `data_api.py`.
 
-- Create a `secrets.yaml` file in the example directory.
-- Add your API key and model preferences:
-
-YAML
-
-```
-# secrets.yaml
-api_key: <YOUR_OPENAI_API_KEY>
-api_base: "https://api.openai.com/v1"  # Or your custom endpoint
-primary_model: "gpt-4o"
-secondary_model: "o3" # Or another preferred model for specific tasks
-```
-
-Replace `<YOUR_OPENAI_API_KEY>` with your actual OpenAI API key.
 
 ### 2. Load Benchmark Tasks & Generate Initial Programs
 
@@ -143,19 +129,83 @@ def run_search():
 
 ### Evolved Algorithm (Discovered Symbolic Expression)
 
-OpenEvolve will iteratively modify the Python code within the `# EVOLVE-BLOCK-START` and `# EVOLVE-BLOCK-END` markers in `initial_program.py`. The goal is to transform the simple initial model into a more complex and accurate symbolic expression that minimizes the Mean Squared Error (MSE) on the training data.
+**OpenEvolve** iteratively modifies Python code segments, delineated by `# EVOLVE-BLOCK-START` and `# EVOLVE-BLOCK-END` markers within an `initial_program.py` file. The primary objective is to evolve a simple initial model into a more complex and accurate symbolic expression that minimizes the Mean Squared Error (MSE) against the training data.
 
-An evolved `func` might, for instance, discover a non-linear expression like:
+Below is a symbolic expression discovered by OpenEvolve for the physics task `PO10`:
 
 ```python
-# Hypothetical example of what OpenEvolve might find:
+import numpy as np
+
 def func(x, params):
-   # Assuming X_train_scaled maps to x and const maps to a parameter in params
-   predictions = np.sin(x[:, 0]) * x[:, 1]**2 + params[0]
-   return predictions
+    """
+    Calculates the model output using a linear combination of input variables
+    or a constant value if no input variables. Operates on a matrix of samples.
+
+    Args:
+        x (np.ndarray): A 2D numpy array of input variable values, shape (n_samples, n_features).
+                        n_features is 2.
+                        If n_features is 0, x should be shape (n_samples, 0).
+                        The order of columns in x must correspond to:
+                        (x, t).
+        params (np.ndarray): A 1D numpy array of parameters.
+                             Expected length: 10.
+
+    Returns:
+        np.ndarray: A 1D numpy array of predicted output values, shape (n_samples,).
+    """
+    # --------------------------------------------------------------------------
+    # Allow for flexible parameter count, only padding essential parts.
+    if len(params) < 10:
+        required_params = params.shape[0]
+        params = np.pad(params, (0, 10 - required_params))
+
+    # Readable aliases for the two input features
+    pos = x[:, 0]       # position   x(t)
+    t_val = x[:, 1]     # time       t
+
+    # ----------   Internal restoring forces (Duffing-like)   ------------------
+    # −k x −β x³ −γ x⁵    (only odd powers, respecting the usual symmetry)
+    # Reduced polynomial order (up to cubic) to avoid over-fitting while
+    # still capturing the essential softening/stiffening behaviour.
+    restoring = -(params[0] * pos + params[1] * pos**3)
+
+    # ----------   Externally forced, periodically driven term   --------------
+    #  A e^{-λ t} sin(ω t)   +   B cos(Ω t)   (General form considered)
+    # Let the optimiser decide whether the envelope should grow
+    # or decay by keeping the sign of params[4].  The exponent is
+    # clipped to avoid numerical overflow.
+    # Simple periodic forcing without exponential envelope.  This is
+    # sufficient for many driven oscillator benchmarks and reduces the
+    # risk of numerical overflow in exp().
+    trig1 = params[3] * t_val
+    trig2 = params[5] * t_val
+    forcing = params[2] * np.cos(trig1) + params[4] * np.sin(trig2)
+
+    # ----------   Weak position–time coupling & constant bias   ---------------
+    interaction = params[8] * pos * t_val
+    bias = params[9]
+
+    return restoring + forcing + interaction + bias
 ```
 
-*(This is a simplified, hypothetical example to illustrate the transformation.)*
+The ground truth for this PO10 task is represented by the equation: 
+
+$F_0sin(t)−ω_0^2(γt+1)x(t)−ω_0^2x(t)^3−ω_0^2x(t).$
+
+This can be expanded and simplified to:
+
+$F_0sin(t)−ω_0^2γtx(t)−2ω_0^2x(t)−ω_0^2x(t)^3.$
+
+Notably, the core functional forms present in this ground truth equation are captured by the evolved symbolic expression:
+
+- The $sin(t)$ component can be represented by `params[4] * np.sin(params[5] * t_val)`.
+- The linear $x(t)$ term corresponds to `params[0] * pos`.
+- The cubic $x(t)^3$ term is `params[1] * pos**3`.
+- The interaction term $t⋅x(t)$ is captured by `params[8] * pos * t_val`.
+
+The evolved code also includes terms like `params[2] * np.cos(params[3] * t_val)` (a cosine forcing term) and `params[9]` (a constant bias). These might evolve to have negligible parameter values if not supported by the data, or they could capture secondary effects or noise. The inclusion of the primary terms demonstrates OpenEvolve's strength in identifying the correct underlying structure of the equation.
+
+*Note: Symbolic regression, despite such promising results, remains a very challenging task. This difficulty largely stems from the inherent complexities of inferring precise mathematical models from finite and potentially noisy training data, which provides only a partial observation of the true underlying system.*
 
 ------
 
@@ -177,12 +227,28 @@ The `eval.py` script will help you collect and analyze performance metrics. The 
 
 For benchmark-wide comparisons and results from other methods, please refer to the official LLM-SRBench paper.
 
-| **Task Category**       | Med. NMSE (Test) | Med. R2 (Test) | **Med. NMSE (OOD Test)** | **Med. R2 (OOD Test)** |
-| ----------------------- | ---------------- | -------------- | ------------------------ | ---------------------- |
-| Chemistry (36 tasks)    | 2.3419e-06       | 1.000          | 3.1384e-02               | 0.9686                 |
-| Physics (44 tasks)      | 1.8548e-05       | 1.000          | 7.9255e-04               | 0.9992                 |
+*Note: Below we extract the approximate results of baselines in Fig.5 from LLMSR-Bench paper.*
 
-Current results are only for two subset of LSR-Synth. We will update the comprehensive results soon.
+**Median NMSE (Test Set)**
+
+| **Domain**       | **Direct**  | **LLMSR**       | **LaSR**    | **SGA**     | **OpenEvolve** |
+| ---------------- | ----------- | --------------- | ----------- | ----------- | -------------- |
+| Chemistry        | ~6.0 × 10⁻¹ | **~1.5 × 10⁻⁶** | ~1.0 × 10⁻⁴ | ~1.0 × 10⁻² | 2.34 × 10⁻⁶    |
+| Biology          | ~2.0 × 10⁻² | ~1.0 × 10⁻⁵     | ~1.0 × 10⁻⁴ | ~2.0 × 10⁻⁴ | –              |
+| Physics          | ~3.0 × 10⁻¹ | **~2.0 × 10⁻⁷** | ~1.0 × 10⁻³ | ~4.0 × 10⁻³ | 1.85 × 10⁻⁵    |
+| Material Science | ~3.0 × 10⁻¹ | ~1.0 × 10⁻⁴     | ~7.0 × 10⁻⁴ | ~3.0 × 10⁻² | –              |
+
+**Median NMSE (OOD Test Set)**
+
+| **Domain**       | **Direct** | **LLMSR**   | **LaSR**    | **SGA**    | **OpenEvolve**  |
+| ---------------- | ---------- | ----------- | ----------- | ---------- | --------------- |
+| Chemistry        | ~3.0 × 10² | ~5.0 × 10⁻² | ~1.0 × 10⁰  | ~1.5 × 10⁰ | **3.14 × 10⁻²** |
+| Biology          | ~1.2 × 10² | ~4.0 × 10⁰  | ~3.0 × 10¹  | ~4.0 × 10¹ | –               |
+| Physics          | ~1.0 × 10¹ | ~1.0 × 10⁻³ | ~5.0 × 10⁻² | ~1.0 × 10⁰ | **7.93 × 10⁻⁴** |
+| Material Science | ~2.5 × 10¹ | ~3.0 × 10⁰  | ~8.0 × 10⁰  | ~2.5 × 10¹ | –               |
+
+Current results for OpenEvolve are only for two subsets of LSR-Synth. We will update the comprehensive results soon.
+
 
 ------
 
