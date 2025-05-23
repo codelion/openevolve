@@ -13,6 +13,7 @@ llm:
   secondary_model_weight: 0.2
   # api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
   api_base: "https://api.cerebras.ai/v1"
+  api_key: "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"
   temperature: 0.7
   top_p: 0.95
   max_tokens: 4096

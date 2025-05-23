@@ -589,6 +589,7 @@ def create_config(problem: Dict[str, Any]) -> str:
             "secondary_model": "o3",
             "secondary_model_weight": 0.2,
             "api_base": "https://api.openai.com/v1",
+            "api_key": "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"
         },
         "prompt": {
             "system_message": system_message,
