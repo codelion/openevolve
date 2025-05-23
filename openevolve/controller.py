@@ -136,6 +136,9 @@ class OpenEvolve:
         """
         max_iterations = iterations or self.config.max_iterations
 
+        # Define start_iteration before creating the initial program
+        start_iteration = self.database.last_iteration
+
         # Initialize the database with the initial program
         initial_program_id = str(uuid.uuid4())
 
@@ -155,7 +158,6 @@ class OpenEvolve:
         self.database.add(initial_program)
 
         # Main evolution loop
-        start_iteration = self.database.last_iteration
         total_iterations = start_iteration + max_iterations
 
         logger.info(
