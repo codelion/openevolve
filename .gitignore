@@ -45,3 +45,7 @@ htmlcov/
 # Misc
 .DS_Store
 .venv
+
+# For SR
+secrets.yaml
+problems
