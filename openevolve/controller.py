@@ -149,6 +149,7 @@ class OpenEvolve:
             code=self.initial_program_code,
             language=self.language,
             metrics=initial_metrics,
+            iteration_found=start_iteration
         )
 
         self.database.add(initial_program)
@@ -235,7 +236,7 @@ class OpenEvolve:
                 )
 
                 # Add to database
-                self.database.add(child_program)
+                self.database.add(child_program, iteration=i+1)
 
                 # Log progress
                 iteration_time = time.time() - iteration_start
@@ -380,6 +381,7 @@ class OpenEvolve:
                     {
                         "id": best_program.id,
                         "generation": best_program.generation,
+                        "iteration_found": best_program.iteration_found,
                         "iteration": iteration,
                         "metrics": best_program.metrics,
                         "language": best_program.language,
@@ -435,6 +437,7 @@ class OpenEvolve:
                 {
                     "id": program.id,
                     "generation": program.generation,
+                    "iteration_found": program.iteration_found,
                     "timestamp": program.timestamp,
                     "parent_id": program.parent_id,
                     "metrics": program.metrics,

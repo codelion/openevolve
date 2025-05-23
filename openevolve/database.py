@@ -32,6 +32,7 @@ class Program:
     parent_id: Optional[str] = None
     generation: int = 0
     timestamp: float = field(default_factory=time.time)
+    iteration_found: int = 0  # Track which iteration this program was found
 
     # Performance metrics
     metrics: Dict[str, float] = field(default_factory=dict)
@@ -90,17 +91,24 @@ class ProgramDatabase:
 
         logger.info(f"Initialized program database with {len(self.programs)} programs")
 
-    def add(self, program: Program) -> str:
+    def add(self, program: Program, iteration: int = None) -> str:
         """
         Add a program to the database
 
         Args:
             program: Program to add
+            iteration: Current iteration (defaults to last_iteration)
 
         Returns:
             Program ID
         """
         # Store the program
+        # If iteration is provided, update the program's iteration_found
+        if iteration is not None:
+            program.iteration_found = iteration
+            # Update last_iteration if needed
+            self.last_iteration = max(self.last_iteration, iteration)
+            
         self.programs[program.id] = program
 
         # Calculate feature coordinates for MAP-Elites
