@@ -51,12 +51,14 @@ class OpenAILLM(LLMInterface):
         formatted_messages.extend(messages)
 
         # Set up generation parameters
-        if self.config.api_base == "https://api.openai.com/v1" and str(self.model).lower().startswith("o"):
+        if self.config.api_base == "https://api.openai.com/v1" and str(
+            self.model
+        ).lower().startswith("o"):
             # For o-series models
             params = {
                 "model": self.model,
                 "messages": formatted_messages,
-                "max_completion_tokens": kwargs.get("max_tokens", self.config.max_tokens)
+                "max_completion_tokens": kwargs.get("max_tokens", self.config.max_tokens),
             }
         else:
             params = {
