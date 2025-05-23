@@ -161,6 +161,18 @@ See the [Configuration Guide](configs/default_config.yaml) for a full list of op
 
 See the `examples/` directory for complete examples of using OpenEvolve on various problems:
 
+### Symbolic Regression
+
+A comprehensive example demonstrating OpenEvolve's application to symbolic regression tasks using the LLM-SRBench benchmark. This example shows how OpenEvolve can evolve simple mathematical expressions (like linear models) into complex symbolic formulas that accurately fit scientific datasets.
+
+[Explore the Symbolic Regression Example](examples/symbolic_regression/)
+
+Key features:
+- Automatic generation of initial programs from benchmark tasks
+- Evolution from simple linear models to complex mathematical expressions
+- Evaluation on physics, chemistry, biology, and material science datasets
+- Competitive results compared to state-of-the-art symbolic regression methods
+
 ### Circle Packing
 
 Our implementation of the circle packing problem from the AlphaEvolve paper. For the n=26 case, where one needs to pack 26 circles in a unit square we also obtain SOTA results.
