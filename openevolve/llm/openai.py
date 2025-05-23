@@ -51,13 +51,23 @@ class OpenAILLM(LLMInterface):
         formatted_messages.extend(messages)
 
         # Set up generation parameters
-        params = {
-            "model": self.model,
-            "messages": formatted_messages,
-            "temperature": kwargs.get("temperature", self.config.temperature),
-            "top_p": kwargs.get("top_p", self.config.top_p),
-            "max_tokens": kwargs.get("max_tokens", self.config.max_tokens),
-        }
+        if self.config.api_base == "https://api.openai.com/v1" and str(
+            self.model
+        ).lower().startswith("o"):
+            # For o-series models
+            params = {
+                "model": self.model,
+                "messages": formatted_messages,
+                "max_completion_tokens": kwargs.get("max_tokens", self.config.max_tokens),
+            }
+        else:
+            params = {
+                "model": self.model,
+                "messages": formatted_messages,
+                "temperature": kwargs.get("temperature", self.config.temperature),
+                "top_p": kwargs.get("top_p", self.config.top_p),
+                "max_tokens": kwargs.get("max_tokens", self.config.max_tokens),
+            }
 
         # Attempt the API call with retries
         retries = kwargs.get("retries", self.config.retries)
