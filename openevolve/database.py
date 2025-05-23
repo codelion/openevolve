@@ -108,7 +108,7 @@ class ProgramDatabase:
             program.iteration_found = iteration
             # Update last_iteration if needed
             self.last_iteration = max(self.last_iteration, iteration)
-            
+
         self.programs[program.id] = program
 
         # Calculate feature coordinates for MAP-Elites
