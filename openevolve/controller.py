@@ -142,9 +142,11 @@ class OpenEvolve:
         # Only add initial program if starting fresh (not resuming from checkpoint)
         # Check if we're resuming AND no program matches initial code to avoid pollution
         should_add_initial = (
-            start_iteration == 0 and 
-            len(self.database.programs) == 0 and
-            not any(p.code == self.initial_program_code for p in self.database.programs.values())
+            start_iteration == 0
+            and len(self.database.programs) == 0
+            and not any(
+                p.code == self.initial_program_code for p in self.database.programs.values()
+            )
         )
 
         if should_add_initial:
@@ -166,7 +168,9 @@ class OpenEvolve:
 
             self.database.add(initial_program)
         else:
-            logger.info(f"Skipping initial program addition (resuming from iteration {start_iteration} with {len(self.database.programs)} existing programs)")
+            logger.info(
+                f"Skipping initial program addition (resuming from iteration {start_iteration} with {len(self.database.programs)} existing programs)"
+            )
 
         # Main evolution loop
         total_iterations = start_iteration + max_iterations
