@@ -139,23 +139,34 @@ class OpenEvolve:
         # Define start_iteration before creating the initial program
         start_iteration = self.database.last_iteration
 
-        # Initialize the database with the initial program
-        initial_program_id = str(uuid.uuid4())
-
-        # Evaluate the initial program
-        initial_metrics = await self.evaluator.evaluate_program(
-            self.initial_program_code, initial_program_id
+        # Only add initial program if starting fresh (not resuming from checkpoint)
+        # Check if we're resuming AND no program matches initial code to avoid pollution
+        should_add_initial = (
+            start_iteration == 0 and 
+            len(self.database.programs) == 0 and
+            not any(p.code == self.initial_program_code for p in self.database.programs.values())
         )
 
-        initial_program = Program(
-            id=initial_program_id,
-            code=self.initial_program_code,
-            language=self.language,
-            metrics=initial_metrics,
-            iteration_found=start_iteration,
-        )
+        if should_add_initial:
+            logger.info("Adding initial program to database")
+            initial_program_id = str(uuid.uuid4())
 
-        self.database.add(initial_program)
+            # Evaluate the initial program
+            initial_metrics = await self.evaluator.evaluate_program(
+                self.initial_program_code, initial_program_id
+            )
+
+            initial_program = Program(
+                id=initial_program_id,
+                code=self.initial_program_code,
+                language=self.language,
+                metrics=initial_metrics,
+                iteration_found=start_iteration,
+            )
+
+            self.database.add(initial_program)
+        else:
+            logger.info(f"Skipping initial program addition (resuming from iteration {start_iteration} with {len(self.database.programs)} existing programs)")
 
         # Main evolution loop
         total_iterations = start_iteration + max_iterations
@@ -312,7 +323,8 @@ class OpenEvolve:
             return best_program
         else:
             logger.warning("No valid programs found during evolution")
-            return initial_program
+            # Return None if no programs found instead of undefined initial_program
+            return None
 
     def _log_iteration(
         self,
