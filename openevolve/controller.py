@@ -381,8 +381,8 @@ class OpenEvolve:
                     {
                         "id": best_program.id,
                         "generation": best_program.generation,
-                        "iteration_found": best_program.iteration_found,
-                        "iteration": iteration,
+                        "iteration": best_program.iteration_found,
+                        "current_iteration": iteration,
                         "metrics": best_program.metrics,
                         "language": best_program.language,
                         "timestamp": best_program.timestamp,
@@ -437,7 +437,7 @@ class OpenEvolve:
                 {
                     "id": program.id,
                     "generation": program.generation,
-                    "iteration_found": program.iteration_found,
+                    "iteration": program.iteration_found,
                     "timestamp": program.timestamp,
                     "parent_id": program.parent_id,
                     "metrics": program.metrics,
