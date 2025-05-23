@@ -149,6 +149,7 @@ class OpenEvolve:
             code=self.initial_program_code,
             language=self.language,
             metrics=initial_metrics,
+            iteration_found=start_iteration,
         )
 
         self.database.add(initial_program)
@@ -235,7 +236,7 @@ class OpenEvolve:
                 )
 
                 # Add to database
-                self.database.add(child_program)
+                self.database.add(child_program, iteration=i + 1)
 
                 # Log progress
                 iteration_time = time.time() - iteration_start
@@ -243,7 +244,9 @@ class OpenEvolve:
 
                 # Specifically check if this is the new best program
                 if self.database.best_program_id == child_program.id:
-                    logger.info(f"🌟 New best solution found at iteration {i+1}: {child_program.id}")
+                    logger.info(
+                        f"🌟 New best solution found at iteration {i+1}: {child_program.id}"
+                    )
                     logger.info(
                         f"Metrics: {', '.join(f'{name}={value:.4f}' for name, value in child_program.metrics.items())}"
                     )
@@ -380,7 +383,8 @@ class OpenEvolve:
                     {
                         "id": best_program.id,
                         "generation": best_program.generation,
-                        "iteration": iteration,
+                        "iteration": best_program.iteration_found,
+                        "current_iteration": iteration,
                         "metrics": best_program.metrics,
                         "language": best_program.language,
                         "timestamp": best_program.timestamp,
@@ -435,6 +439,7 @@ class OpenEvolve:
                 {
                     "id": program.id,
                     "generation": program.generation,
+                    "iteration": program.iteration_found,
                     "timestamp": program.timestamp,
                     "parent_id": program.parent_id,
                     "metrics": program.metrics,

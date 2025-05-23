@@ -113,9 +113,9 @@ def compute_output_base_metrics(y_pred: np.ndarray, y: np.ndarray) -> Dict[str, 
         "nmse": float(nmse),
         "r2": float(r2),
         "kdt": kdt,  # Already a float
-        "mape": float(mape)
-        if mape is not float("inf")
-        else float("inf"),  # Ensure float, preserve inf
+        "mape": (
+            float(mape) if mape is not float("inf") else float("inf")
+        ),  # Ensure float, preserve inf
         "num_valid_points": int(y_pred_filtered.size),
     }
 
