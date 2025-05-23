@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 """
-Entry point script for OpenEvolve
+Enter point of the script
 """
+
 import sys
+
 from openevolve.cli import main
 
 if __name__ == "__main__":
