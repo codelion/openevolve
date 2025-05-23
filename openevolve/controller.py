@@ -144,6 +144,7 @@ class OpenEvolve:
             self.initial_program_code, initial_program_id
         )
 
+        start_iteration = 0
         initial_program = Program(
             id=initial_program_id,
             code=self.initial_program_code,
