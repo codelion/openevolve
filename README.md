@@ -42,6 +42,10 @@ pip install -e .
 
 ### Quick Start
 
+We use the OpenAI SDK, so you can use any LLM or provider that supports an OpenAI compatible API. Just set the `OPENAI_API_KEY` environment variable
+and update the `api_base` in config.yaml if you are using a provider other than OpenAI. For local models, you can use 
+an inference server like [optillm](https://github.com/codelion/optillm).
+
 ```python
 from openevolve import OpenEvolve
 
