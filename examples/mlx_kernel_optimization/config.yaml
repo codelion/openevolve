@@ -1,6 +1,6 @@
 # Configuration for MLX-LM Performance Optimization on Apple Silicon
-max_iterations: 200  # Extended run for real-world optimization
-checkpoint_interval: 20
+max_iterations: 100  # Extended run for real-world optimization
+checkpoint_interval: 10
 log_level: "INFO"
 
 # LLM configuration
