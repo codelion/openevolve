@@ -12,7 +12,7 @@ llm:
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
   temperature: 0.7
   top_p: 0.95
-  max_tokens: 16000 # thinking models require sufficient tokens otherwise the responses are trucated or empty
+  max_tokens: 24000 # thinking models require sufficient tokens otherwise the responses are trucated or empty
   timeout: 600 
 
 # Prompt configuration for MLX training optimization
