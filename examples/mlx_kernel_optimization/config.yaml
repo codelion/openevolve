@@ -1,9 +1,9 @@
-# Configuration for MLX Kernel Optimization on Apple Silicon
-max_iterations: 200  # Extended run for kernel optimization
+# Configuration for MLX-LM Performance Optimization on Apple Silicon
+max_iterations: 200  # Extended run for real-world optimization
 checkpoint_interval: 20
 log_level: "INFO"
 
-# LLM configuration - same ensemble as circle packing
+# LLM configuration
 llm:
   primary_model: "google/gemini-2.0-flash-001"
   primary_model_weight: 0.8
@@ -15,47 +15,87 @@ llm:
   max_tokens: 8192
   timeout: 600 
 
-# Prompt configuration for kernel optimization
+# Prompt configuration for MLX-LM optimization
 prompt:
   system_message: |
-    You are an expert systems programmer specializing in high-performance computing and Apple Silicon optimization. Your task is to improve MLX matrix multiplication kernel tiling heuristics to maximize performance on Apple Silicon (M1/M2/M3/M4).
+    You are an expert in Apple Silicon optimization and MLX performance tuning. Your task is to optimize MLX-LM inference and training performance by improving matrix multiplication tiling strategies.
 
-    Key optimization insights:
-    - Apple Silicon has unified memory architecture with high bandwidth
-    - Matrix tiling must balance cache utilization vs memory bandwidth
-    - Different matrix sizes (transformer attention, MLP layers) need different strategies
-    - Tile sizes should be multiples of vector unit widths (8, 16, 32)
-    - Memory coalescing is critical for performance
-    - Apple's AMX units prefer specific tile dimensions
-    - Consider both computation and memory access patterns
+    **OBJECTIVE**: Maximize real-world MLX-LM performance using the Qwen2.5-0.5B-Instruct-bf16 model for both inference and training workloads.
 
-    Focus on the choose_tile_size() function that determines optimal tile dimensions based on:
-    - Matrix dimensions (M, N, K)
-    - Apple Silicon device characteristics (chip type, memory)
-    - Workload patterns (attention vs MLP computations)
+    **KEY INSIGHTS FOR MLX-LM OPTIMIZATION**:
+    
+    🔬 **Apple Silicon Architecture**:
+    - M1/M2 have 16-element vector units, M3/M4 have 32-element AMX units
+    - Unified memory architecture with ~400GB/s bandwidth on M3/M4
+    - L1: 192KB, L2: 12-24MB (varies by chip), Shared cache: up to 48MB
+    - Memory coalescing is critical for bandwidth utilization
 
-    Your goal is to maximize GFLOPS while maintaining memory efficiency and consistency across different matrix sizes.
+    🧠 **MLX-LM Workload Patterns**:
+    - **Inference**: Small batch sizes (1-4), attention and MLP layers
+    - **Training**: Larger batches (8-32), forward + backward passes
+    - **Attention**: Square-ish matrices (seq_len × hidden_dim)
+    - **MLP**: Rectangular matrices (hidden_dim × 4*hidden_dim)
+    - **Modern LLMs**: hidden_dim = 768-4096, seq_len = 512-8192
+
+    🎯 **Optimization Targets**:
+    - **Primary (70%)**: Inference speedup (most common use case)
+    - **Secondary (30%)**: Training speedup (development workflows)
+    - **Threshold**: Only optimize matrices > 50K elements to avoid overhead
+    - **Goal**: 5-20% speedup on realistic transformer workloads
+
+    **FUNCTIONS TO OPTIMIZE**:
+
+    1. `choose_tile_size(M, N, K, device_info)`:
+       - Input: Matrix dimensions and Apple Silicon characteristics
+       - Output: Optimal (tile_M, tile_N, tile_K) for tiled multiplication
+       - Key considerations:
+         * Chip type (M1/M2 vs M3/M4) determines vector alignment
+         * Memory size affects maximum usable tile sizes
+         * Matrix aspect ratios guide asymmetric tiling
+         * K-dominance (K >> M,N) suggests different strategies
+
+    2. `optimized_matmul(A, B, tile_M, tile_N, tile_K)`:
+       - Implement the actual tiled matrix multiplication
+       - Must be numerically correct (verify against mx.matmul)
+       - Focus on memory access patterns and cache efficiency
+
+    **ADVANCED STRATEGIES TO CONSIDER**:
+    - **Workload Detection**: Classify attention vs MLP based on matrix ratios
+    - **Progressive Tiling**: Larger tiles for larger problems
+    - **Memory-Aware Scaling**: Adjust tiles based on available RAM
+    - **Chip-Specific Tuning**: Different base configurations per Apple Silicon generation
+    - **Cache Blocking**: Consider L1/L2 cache sizes in tile calculations
+    - **Bandwidth Optimization**: Balance compute vs memory access
+
+    **EVALUATION**:
+    Your optimization will be tested on real MLX-LM workloads:
+    - Model: Qwen2.5-0.5B-Instruct-bf16 (realistic but fast to test)
+    - Inference: Text generation with various prompts
+    - Training: Mini-batch training simulation
+    - Success: Consistent speedups > 5% across both workloads
+
+    Focus on practical, robust optimizations that work well across the range of transformer architectures used in MLX-LM.
   num_top_programs: 3
   use_template_stochasticity: true
 
 # Database configuration - PERSISTENT for auto-resume
 database:
-  db_path: "./openevolve_output/mlx_optimization_db"  # Persistent database directory
-  population_size: 80
-  archive_size: 30
-  num_islands: 5
+  db_path: "./openevolve_output/mlx_lm_optimization_db"  # New database for MLX-LM focus
+  population_size: 60  # Smaller population for faster iteration
+  archive_size: 20
+  num_islands: 4
   elite_selection_ratio: 0.3
   exploitation_ratio: 0.75
 
 # Evaluator configuration
 evaluator:
-  timeout: 120  # Allow time for MLX computations
+  timeout: 180  # Longer timeout for MLX-LM model loading and testing
   cascade_evaluation: true
-  cascade_thresholds: [0.6, 0.8]  # Progressive difficulty
-  parallel_evaluations: 3  # Conservative for MLX operations
+  cascade_thresholds: [0.7, 0.9]  # Higher thresholds for real performance
+  parallel_evaluations: 2  # Conservative for model loading
   use_llm_feedback: false
 
-# Evolution settings - allow substantial changes to tiling logic
-diff_based_evolution: false  # Use full rewrites for algorithm changes
-allow_full_rewrites: true    # Enable complete heuristic redesign
-max_code_length: 15000       # Allow complex tiling algorithms
+# Evolution settings
+diff_based_evolution: false  # Use full rewrites for algorithm discovery
+allow_full_rewrites: true    # Enable complete strategy redesign
+max_code_length: 12000       # Reasonable size for optimization functions

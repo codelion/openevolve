@@ -1,5 +1,5 @@
 # EVOLVE-BLOCK-START
-"""MLX Matrix Multiplication Tiling Optimization"""
+"""MLX-LM Performance Optimization for Apple Silicon"""
 import mlx.core as mx
 import numpy as np
 import time
@@ -15,7 +15,8 @@ def get_device_info():
         chip_info = subprocess.run(
             ["system_profiler", "SPHardwareDataType"], 
             capture_output=True, 
-            text=True
+            text=True,
+            timeout=5
         ).stdout
         
         chip_name = "Unknown"
@@ -33,8 +34,8 @@ def get_device_info():
         }
     except:
         return {
-            "chip": "Unknown",
-            "memory_gb": 8.0,
+            "chip": "M2",  # Default assumption
+            "memory_gb": 16.0,
             "cpu_count": 8
         }
 
@@ -43,68 +44,83 @@ def choose_tile_size(M, N, K, device_info):
     """
     Choose optimal tile sizes for MLX matrix multiplication
     
-    This heuristic determines tile sizes for C = A @ B where:
-    - A is M x K 
-    - B is K x N
-    - C is M x N
+    This function is the core of the optimization - it determines
+    how to break large matrices into smaller tiles for better
+    cache utilization and memory bandwidth on Apple Silicon.
     
     Args:
-        M, N, K: Matrix dimensions
+        M, N, K: Matrix dimensions for C = A @ B where A is MxK, B is KxN
         device_info: Apple Silicon device characteristics
         
     Returns:
         (tile_M, tile_N, tile_K): Optimal tile sizes
     """
     
-    # Simple baseline heuristic - room for improvement!
+    # Simple baseline heuristic - optimize this function!
     
-    # Basic tile sizes (conservative approach)
-    base_tile = 64
+    chip = device_info.get("chip", "Unknown")
+    memory_gb = device_info.get("memory_gb", 8.0)
     
-    # Adjust based on matrix size
-    if M <= 128 and N <= 128 and K <= 128:
-        # Small matrices - use smaller tiles
-        tile_M = min(32, M)
-        tile_N = min(32, N) 
-        tile_K = min(32, K)
-    elif M >= 1024 or N >= 1024 or K >= 1024:
-        # Large matrices - use larger tiles
-        tile_M = min(128, M)
-        tile_N = min(128, N)
-        tile_K = min(128, K)
-    else:
-        # Medium matrices - use base tiles
-        tile_M = min(base_tile, M)
-        tile_N = min(base_tile, N)
-        tile_K = min(base_tile, K)
+    # Start with conservative base tile sizes
+    if "M4" in chip:
+        base_tile = 128
+        vector_align = 32
+    elif "M3" in chip:
+        base_tile = 96
+        vector_align = 32
+    elif "M2" in chip:
+        base_tile = 80
+        vector_align = 16
+    else:  # M1 or unknown
+        base_tile = 64
+        vector_align = 16
     
-    # Simple memory-based adjustment
-    if device_info["memory_gb"] >= 16:
-        # More memory available - can use larger tiles
-        tile_M = min(tile_M * 2, M)
-        tile_N = min(tile_N * 2, N)
-        tile_K = min(tile_K * 2, K)
+    # Adjust for memory
+    if memory_gb >= 32:
+        base_tile = int(base_tile * 1.2)
+    elif memory_gb >= 16:
+        base_tile = int(base_tile * 1.1)
     
-    # Ensure tiles are multiples of 8 for better vectorization
-    tile_M = ((tile_M + 7) // 8) * 8
-    tile_N = ((tile_N + 7) // 8) * 8
-    tile_K = ((tile_K + 7) // 8) * 8
+    # Adjust based on matrix characteristics
+    total_elements = M * N * K
     
-    # Clamp to matrix dimensions
-    tile_M = min(tile_M, M)
-    tile_N = min(tile_N, N)
-    tile_K = min(tile_K, K)
+    if total_elements > 10_000_000:  # Very large matrices
+        scale = 0.8
+    elif total_elements > 1_000_000:  # Large matrices 
+        scale = 1.0
+    elif total_elements > 100_000:   # Medium matrices
+        scale = 1.2
+    else:  # Small matrices
+        scale = 1.5
+    
+    # Calculate tile sizes
+    tile_M = min(int(base_tile * scale), M)
+    tile_N = min(int(base_tile * scale), N)
+    tile_K = min(int(base_tile * scale), K)
+    
+    # Ensure alignment with vector units
+    tile_M = ((tile_M + vector_align - 1) // vector_align) * vector_align
+    tile_N = ((tile_N + vector_align - 1) // vector_align) * vector_align
+    tile_K = ((tile_K + vector_align - 1) // vector_align) * vector_align
+    
+    # Clamp to matrix dimensions and minimum size
+    tile_M = max(vector_align, min(tile_M, M))
+    tile_N = max(vector_align, min(tile_N, N))
+    tile_K = max(vector_align, min(tile_K, K))
     
     return tile_M, tile_N, tile_K
 
 
-def tiled_matmul(A, B, tile_M, tile_N, tile_K):
+def optimized_matmul(A, B, tile_M, tile_N, tile_K):
     """
-    Perform tiled matrix multiplication using MLX
+    Perform optimized tiled matrix multiplication
+    
+    This function implements the actual tiled multiplication
+    using the tile sizes determined by choose_tile_size().
     
     Args:
-        A: Matrix A (M x K)
-        B: Matrix B (K x N) 
+        A: Input matrix A (M x K)
+        B: Input matrix B (K x N)
         tile_M, tile_N, tile_K: Tile sizes
         
     Returns:
@@ -112,7 +128,11 @@ def tiled_matmul(A, B, tile_M, tile_N, tile_K):
     """
     M, K1 = A.shape
     K2, N = B.shape
-    assert K1 == K2, f"Matrix dimensions incompatible: {K1} != {K2}"
+    
+    if K1 != K2:
+        raise ValueError(f"Matrix dimensions incompatible: {K1} != {K2}")
+    
+    K = K1
     
     # Initialize result matrix
     C = mx.zeros((M, N), dtype=A.dtype)
@@ -120,12 +140,13 @@ def tiled_matmul(A, B, tile_M, tile_N, tile_K):
     # Perform tiled multiplication
     for i in range(0, M, tile_M):
         for j in range(0, N, tile_N):
-            for k in range(0, K1, tile_K):
-                # Extract tiles
+            for k in range(0, K, tile_K):
+                # Calculate tile boundaries
                 i_end = min(i + tile_M, M)
                 j_end = min(j + tile_N, N)
-                k_end = min(k + tile_K, K1)
+                k_end = min(k + tile_K, K)
                 
+                # Extract tiles
                 A_tile = A[i:i_end, k:k_end]
                 B_tile = B[k:k_end, j:j_end]
                 
@@ -136,119 +157,161 @@ def tiled_matmul(A, B, tile_M, tile_N, tile_K):
     return C
 
 
-def benchmark_configuration(M, N, K, tile_M, tile_N, tile_K, num_runs=5):
+def benchmark_mlx_lm_performance(model_name="mlx-community/Qwen2.5-0.5B-Instruct-bf16"):
     """
-    Benchmark a specific tiling configuration
+    Benchmark MLX-LM performance with current optimization
     
     Args:
-        M, N, K: Matrix dimensions
-        tile_M, tile_N, tile_K: Tile sizes
-        num_runs: Number of benchmark runs
+        model_name: MLX model to test with
         
     Returns:
-        Dictionary with performance metrics
+        Performance metrics comparing original vs optimized
     """
-    # Create test matrices
-    A = mx.random.normal((M, K), dtype=mx.float16)
-    B = mx.random.normal((K, N), dtype=mx.float16)
+    try:
+        from mlx_lm import load, generate
+    except ImportError:
+        return {
+            "error": "mlx-lm not installed",
+            "inference_speedup": 0.0,
+            "training_speedup": 0.0
+        }
     
-    # Warmup
-    for _ in range(2):
-        C = tiled_matmul(A, B, tile_M, tile_N, tile_K)
-        mx.eval(C)
+    device_info = get_device_info()
+    original_matmul = mx.matmul
     
-    # Benchmark
-    times = []
-    for _ in range(num_runs):
+    # Create optimized matmul function
+    def create_optimized_matmul():
+        def opt_matmul(A, B):
+            if (len(A.shape) == 2 and len(B.shape) == 2 and 
+                A.shape[0] * A.shape[1] * B.shape[1] > 50_000):
+                
+                M, K1 = A.shape
+                K2, N = B.shape
+                
+                if K1 == K2:
+                    tile_M, tile_N, tile_K = choose_tile_size(M, N, K1, device_info)
+                    return optimized_matmul(A, B, tile_M, tile_N, tile_K)
+            
+            return original_matmul(A, B)
+        return opt_matmul
+    
+    try:
+        # Load model
+        model, tokenizer = load(model_name)
+        
+        # Test prompts
+        test_prompts = ["Hello world", "What is AI?", "Explain Python"]
+        
+        # Test original
+        mx.matmul = original_matmul
+        
+        # Warmup
+        for _ in range(2):
+            generate(model, tokenizer, prompt="Hi", max_tokens=5, verbose=False)
+        
+        # Benchmark original
         start_time = time.perf_counter()
-        C = tiled_matmul(A, B, tile_M, tile_N, tile_K)
-        mx.eval(C)
-        end_time = time.perf_counter()
-        times.append(end_time - start_time)
-    
-    # Calculate metrics
-    mean_time = np.mean(times)
-    
-    # Calculate GFLOPS (2 * M * N * K operations)
-    total_ops = 2 * M * N * K
-    gflops = total_ops / (mean_time * 1e9)
-    
-    # Calculate efficiency metrics
-    memory_usage = (M * K + K * N + M * N) * 2  # float16 = 2 bytes
-    memory_bandwidth = memory_usage / mean_time / 1e9  # GB/s
-    
-    return {
-        "mean_time": mean_time,
-        "gflops": gflops,
-        "memory_bandwidth_gbs": memory_bandwidth,
-        "tile_efficiency": (tile_M * tile_N * tile_K) / (M * N * K)
-    }
+        for prompt in test_prompts:
+            generate(model, tokenizer, prompt=prompt, max_tokens=10, verbose=False)
+        original_time = time.perf_counter() - start_time
+        
+        # Test optimized
+        mx.matmul = create_optimized_matmul()
+        
+        # Warmup
+        for _ in range(2):
+            generate(model, tokenizer, prompt="Hi", max_tokens=5, verbose=False)
+        
+        # Benchmark optimized
+        start_time = time.perf_counter()
+        for prompt in test_prompts:
+            generate(model, tokenizer, prompt=prompt, max_tokens=10, verbose=False)
+        optimized_time = time.perf_counter() - start_time
+        
+        # Restore original
+        mx.matmul = original_matmul
+        
+        speedup = original_time / optimized_time if optimized_time > 0 else 0.0
+        
+        return {
+            "inference_speedup": speedup,
+            "original_time": original_time,
+            "optimized_time": optimized_time,
+            "model_loaded": True
+        }
+        
+    except Exception as e:
+        mx.matmul = original_matmul
+        return {
+            "error": str(e),
+            "inference_speedup": 0.0,
+            "training_speedup": 0.0
+        }
 
 
 # EVOLVE-BLOCK-END
 
 
-# This part remains fixed (not evolved)
+# Fixed part - evaluation interface
 def run_optimization():
-    """Run the MLX kernel optimization with current tiling heuristic"""
+    """
+    Run the MLX-LM optimization benchmark
+    
+    This function is called by the OpenEvolve evaluator to test
+    the current optimization configuration.
+    """
     
     device_info = get_device_info()
     
-    # Test on common transformer matrix sizes
-    test_cases = [
-        # Transformer attention matrices (seq_len x hidden_dim)
-        (512, 768, 768),    # BERT-like attention 
-        (1024, 768, 768),   # Longer sequence attention
-        (512, 768, 3072),   # MLP layer (hidden to 4*hidden)
-        (512, 3072, 768),   # MLP layer (4*hidden to hidden)
-        
-        # Larger model dimensions
-        (512, 1024, 1024),  # Larger transformer attention
-        (512, 1024, 4096),  # Larger MLP layer
-        
-        # Batch processing
-        (128, 512, 512),    # Smaller batch
-        (256, 512, 512),    # Medium batch
-    ]
+    # Run MLX-LM benchmark
+    mlx_lm_results = benchmark_mlx_lm_performance()
     
-    total_gflops = 0
-    total_time = 0
-    results = []
+    # Calculate summary metrics
+    inference_speedup = mlx_lm_results.get("inference_speedup", 0.0)
+    training_speedup = mlx_lm_results.get("training_speedup", 0.0)
     
-    for M, N, K in test_cases:
-        # Get optimal tile sizes using our heuristic
-        tile_M, tile_N, tile_K = choose_tile_size(M, N, K, device_info)
-        
-        # Benchmark this configuration
-        metrics = benchmark_configuration(M, N, K, tile_M, tile_N, tile_K)
-        
-        results.append({
-            "matrix_size": (M, N, K),
-            "tile_size": (tile_M, tile_N, tile_K),
-            "metrics": metrics
-        })
-        
-        total_gflops += metrics["gflops"]
-        total_time += metrics["mean_time"]
+    # Combined score (inference weighted higher)
+    combined_score = 0.7 * inference_speedup + 0.3 * training_speedup
     
-    # Calculate aggregate metrics
-    avg_gflops = total_gflops / len(test_cases)
-    total_compute_time = total_time
+    # Create results summary
+    results = [{
+        "optimization_type": "mlx_lm_inference",
+        "speedup": inference_speedup,
+        "metrics": {
+            "inference_speedup": inference_speedup,
+            "training_speedup": training_speedup,
+            "combined_score": combined_score
+        }
+    }]
     
-    return results, avg_gflops, total_compute_time, device_info
+    return results, combined_score, mlx_lm_results.get("optimized_time", 1.0), device_info
 
 
 if __name__ == "__main__":
-    results, avg_gflops, total_time, device_info = run_optimization()
+    print("🚀 MLX-LM Optimization Test")
+    print("=" * 40)
     
+    device_info = get_device_info()
     print(f"Device: {device_info['chip']} ({device_info['memory_gb']} GB RAM)")
-    print(f"Average GFLOPS: {avg_gflops:.1f}")
-    print(f"Total compute time: {total_time:.3f}s")
-    print("\nDetailed results:")
     
-    for result in results:
-        M, N, K = result["matrix_size"]
-        tile_M, tile_N, tile_K = result["tile_size"]
-        metrics = result["metrics"]
+    # Test the optimization
+    results = benchmark_mlx_lm_performance()
+    
+    if "error" in results:
+        print(f"❌ Error: {results['error']}")
+    else:
+        speedup = results["inference_speedup"]
+        original_time = results["original_time"]
+        optimized_time = results["optimized_time"]
         
-        print(f"  {M:4d}x{N:4d}x{K:4d} -> tiles({tile_M:3d},{tile_N:3d},{tile_K:3d}) = {metrics['gflops']:6.1f} GFLOPS")
+        print(f"\n📊 Results:")
+        print(f"   Original time: {original_time:.3f}s")
+        print(f"   Optimized time: {optimized_time:.3f}s")
+        print(f"   Speedup: {speedup:.3f}x")
+        
+        if speedup > 1.05:
+            print("   ✅ Optimization successful!")
+        elif speedup > 0.95:
+            print("   ⚪ No significant change")
+        else:
+            print("   ❌ Performance regression")

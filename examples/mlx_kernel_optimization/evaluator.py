@@ -1,5 +1,6 @@
 """
-Evaluator for MLX kernel optimization example
+Evaluator for MLX-LM performance optimization
+Tests real inference and training performance with Qwen2.5-0.5B-Instruct-bf16
 """
 
 import importlib.util
@@ -7,12 +8,16 @@ import time
 import traceback
 import numpy as np
 import mlx.core as mx
-import psutil
+import mlx.nn as nn
+import mlx.optimizers as optim
+import tempfile
+import os
+import gc
 
 
 def evaluate(program_path):
     """
-    Evaluate the MLX kernel optimization program
+    Evaluate MLX-LM optimization by measuring real inference and training performance
     
     Args:
         program_path: Path to the program file
@@ -27,259 +32,377 @@ def evaluate(program_path):
         program = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(program)
         
-        # Check if the required function exists
-        if not hasattr(program, "run_optimization"):
-            return {
-                "avg_gflops": 0.0,
-                "total_time": 999.0,
-                "efficiency_score": 0.0,
-                "combined_score": 0.0,
-                "error": "Missing run_optimization function"
-            }
+        # Check required functions exist
+        required_functions = ["get_device_info", "choose_tile_size", "optimized_matmul"]
+        for func_name in required_functions:
+            if not hasattr(program, func_name):
+                return {
+                    "inference_speedup": 0.0,
+                    "training_speedup": 0.0,
+                    "combined_score": 0.0,
+                    "error": f"Missing {func_name} function"
+                }
         
-        # Run the optimization with timeout
-        start_time = time.time()
+        # Test MLX-LM optimization
+        inference_results = test_mlx_lm_inference(program)
+        training_results = test_mlx_lm_training(program)
         
-        try:
-            results, avg_gflops, total_compute_time, device_info = program.run_optimization()
-        except Exception as e:
-            return {
-                "avg_gflops": 0.0,
-                "total_time": 999.0,
-                "efficiency_score": 0.0,
-                "combined_score": 0.0,
-                "error": f"Execution failed: {str(e)}"
-            }
+        # Calculate combined score
+        inference_speedup = inference_results.get("speedup", 0.0)
+        training_speedup = training_results.get("speedup", 0.0)
         
-        end_time = time.time()
-        evaluation_time = end_time - start_time
+        # Weighted scoring: 60% inference, 40% training (inference is more common)
+        combined_score = 0.6 * inference_speedup + 0.4 * training_speedup
         
-        # Validate results
-        if not isinstance(avg_gflops, (int, float)) or avg_gflops <= 0:
-            return {
-                "avg_gflops": 0.0,
-                "total_time": 999.0,
-                "efficiency_score": 0.0,
-                "combined_score": 0.0,
-                "error": "Invalid GFLOPS result"
-            }
+        # Bonus for consistency (both working well)
+        if inference_speedup > 1.02 and training_speedup > 1.02:
+            combined_score *= 1.1  # 10% bonus for consistent optimization
         
-        if not isinstance(total_compute_time, (int, float)) or total_compute_time <= 0:
-            return {
-                "avg_gflops": 0.0,
-                "total_time": 999.0,
-                "efficiency_score": 0.0,
-                "combined_score": 0.0,
-                "error": "Invalid timing result"
-            }
-        
-        # Calculate performance metrics
-        
-        # 1. GFLOPS score - higher is better
-        # Baseline: ~100 GFLOPS is decent, 200+ is good, 500+ is excellent
-        gflops_score = min(avg_gflops / 500.0, 2.0)  # Cap at 2.0 for 500+ GFLOPS
-        
-        # 2. Speed score - lower compute time is better
-        # Baseline: ~0.1s total is good, less is better
-        speed_score = min(1.0 / (total_compute_time + 0.01), 10.0)  # Cap at 10.0
-        
-        # 3. Efficiency score - balance between performance and time
-        efficiency_score = gflops_score * speed_score / 10.0  # Normalize
-        
-        # 4. Memory efficiency - analyze tile choices
-        memory_efficiency = calculate_memory_efficiency(results)
-        
-        # 5. Consistency score - how consistent performance is across different matrix sizes
-        consistency_score = calculate_consistency_score(results)
-        
-        # 6. Overall combined score 
-        # Emphasize GFLOPS performance but also consider efficiency and consistency
-        combined_score = (
-            0.5 * gflops_score +           # 50% - raw performance
-            0.2 * efficiency_score +       # 20% - efficiency  
-            0.15 * memory_efficiency +     # 15% - memory usage
-            0.15 * consistency_score       # 15% - consistency
-        )
-        
-        # Additional metrics for analysis
         return {
-            "avg_gflops": float(avg_gflops),
-            "total_time": float(total_compute_time),
-            "evaluation_time": float(evaluation_time),
-            "gflops_score": float(gflops_score),
-            "speed_score": float(speed_score),
-            "efficiency_score": float(efficiency_score),
-            "memory_efficiency": float(memory_efficiency),
-            "consistency_score": float(consistency_score),
+            "inference_speedup": float(inference_speedup),
+            "training_speedup": float(training_speedup),
+            "inference_time_original": float(inference_results.get("original_time", 0.0)),
+            "inference_time_optimized": float(inference_results.get("optimized_time", 0.0)),
+            "training_time_original": float(training_results.get("original_time", 0.0)),
+            "training_time_optimized": float(training_results.get("optimized_time", 0.0)),
             "combined_score": float(combined_score),
-            "num_test_cases": len(results),
-            "device_memory_gb": device_info.get("memory_gb", 0.0)
+            "peak_memory_mb": float(inference_results.get("peak_memory_mb", 0.0)),
+            "model_loaded": bool(inference_results.get("model_loaded", False)),
+            "error_inference": inference_results.get("error", ""),
+            "error_training": training_results.get("error", "")
         }
         
     except Exception as e:
         print(f"Evaluation failed: {str(e)}")
         traceback.print_exc()
         return {
-            "avg_gflops": 0.0,
-            "total_time": 999.0,
-            "efficiency_score": 0.0,
+            "inference_speedup": 0.0,
+            "training_speedup": 0.0,
             "combined_score": 0.0,
             "error": str(e)
         }
 
 
-def calculate_memory_efficiency(results):
-    """
-    Calculate memory efficiency based on tile choices
+def test_mlx_lm_inference(program):
+    """Test MLX-LM inference performance with optimization"""
     
-    Args:
-        results: List of benchmark results
+    try:
+        # Import MLX-LM
+        try:
+            from mlx_lm import load, generate
+        except ImportError:
+            return {"speedup": 0.0, "error": "mlx-lm not installed"}
         
-    Returns:
-        Memory efficiency score (0.0 to 1.0)
-    """
-    if not results:
-        return 0.0
+        # Store original matmul
+        original_matmul = mx.matmul
+        
+        # Get device info
+        device_info = program.get_device_info()
+        
+        # Create optimized matmul function
+        def create_optimized_matmul():
+            def optimized_matmul(A, B):
+                # Only optimize 2D matrices above threshold
+                if (len(A.shape) == 2 and len(B.shape) == 2 and 
+                    A.shape[0] * A.shape[1] * B.shape[1] > 50_000):  # Lower threshold for inference
+                    
+                    M, K1 = A.shape
+                    K2, N = B.shape
+                    
+                    if K1 == K2:
+                        tile_M, tile_N, tile_K = program.choose_tile_size(M, N, K1, device_info)
+                        return program.optimized_matmul(A, B, tile_M, tile_N, tile_K)
+                
+                return original_matmul(A, B)
+            return optimized_matmul
+        
+        # Load model (small model for fast testing)
+        model_name = "mlx-community/Qwen2.5-0.5B-Instruct-bf16"
+        
+        try:
+            model, tokenizer = load(model_name)
+        except Exception as e:
+            # Fallback to any available small model
+            try:
+                model, tokenizer = load("mlx-community/SmolLM-135M")
+            except:
+                return {"speedup": 0.0, "error": f"Could not load model: {str(e)}"}
+        
+        # Test prompts
+        test_prompts = [
+            "Hello, how are you?",
+            "What is machine learning?",
+            "Explain Python programming",
+            "Tell me about Apple Silicon"
+        ]
+        
+        # Test with original MLX
+        mx.matmul = original_matmul
+        
+        # Warmup
+        for _ in range(2):
+            try:
+                _ = generate(model, tokenizer, prompt="Hello", max_tokens=10, verbose=False)
+            except:
+                pass
+        
+        # Benchmark original
+        original_times = []
+        for prompt in test_prompts:
+            start_time = time.perf_counter()
+            try:
+                response = generate(model, tokenizer, prompt=prompt, max_tokens=20, verbose=False)
+                mx.eval(response)
+            except Exception as e:
+                print(f"Generation failed: {e}")
+                continue
+            end_time = time.perf_counter()
+            original_times.append(end_time - start_time)
+        
+        if not original_times:
+            return {"speedup": 0.0, "error": "Could not generate text"}
+        
+        original_time = np.median(original_times)
+        
+        # Test with optimized MLX
+        optimized_matmul_func = create_optimized_matmul()
+        mx.matmul = optimized_matmul_func
+        
+        # Warmup
+        for _ in range(2):
+            try:
+                _ = generate(model, tokenizer, prompt="Hello", max_tokens=10, verbose=False)
+            except:
+                pass
+        
+        # Benchmark optimized
+        optimized_times = []
+        for prompt in test_prompts:
+            start_time = time.perf_counter()
+            try:
+                response = generate(model, tokenizer, prompt=prompt, max_tokens=20, verbose=False)
+                mx.eval(response)
+            except Exception as e:
+                print(f"Optimized generation failed: {e}")
+                continue
+            end_time = time.perf_counter()
+            optimized_times.append(end_time - start_time)
+        
+        # Restore original
+        mx.matmul = original_matmul
+        
+        if not optimized_times:
+            return {"speedup": 0.0, "error": "Optimized generation failed"}
+        
+        optimized_time = np.median(optimized_times)
+        speedup = original_time / optimized_time if optimized_time > 0 else 0.0
+        
+        # Clean up
+        del model, tokenizer
+        gc.collect()
+        
+        return {
+            "speedup": speedup,
+            "original_time": original_time,
+            "optimized_time": optimized_time,
+            "model_loaded": True,
+            "peak_memory_mb": 0.0  # Could add memory monitoring here
+        }
+        
+    except Exception as e:
+        # Always restore original matmul
+        mx.matmul = original_matmul
+        return {"speedup": 0.0, "error": str(e)}
+
+
+def test_mlx_lm_training(program):
+    """Test training performance with optimization"""
     
-    total_efficiency = 0.0
-    
-    for result in results:
-        matrix_size = result["matrix_size"]
-        tile_size = result["tile_size"]
-        metrics = result["metrics"]
+    try:
+        # Store original matmul
+        original_matmul = mx.matmul
         
-        M, N, K = matrix_size
-        tile_M, tile_N, tile_K = tile_size
+        # Create a minimal training scenario
+        class SimpleLanguageModel(nn.Module):
+            def __init__(self, vocab_size=1000, hidden_dim=256, seq_len=128):
+                super().__init__()
+                self.embedding = nn.Embedding(vocab_size, hidden_dim)
+                self.linear1 = nn.Linear(hidden_dim, hidden_dim * 2)
+                self.linear2 = nn.Linear(hidden_dim * 2, hidden_dim)
+                self.output = nn.Linear(hidden_dim, vocab_size)
+                
+            def __call__(self, x):
+                x = self.embedding(x)
+                x = nn.gelu(self.linear1(x))
+                x = self.linear2(x)
+                return self.output(x)
         
-        # Calculate tile utilization
-        matrix_elements = M * N * K
-        tile_elements = tile_M * tile_N * tile_K
+        # Training configuration
+        batch_size = 8
+        seq_len = 128
+        vocab_size = 1000
+        hidden_dim = 256
         
-        # Prefer tiles that are not too small (underutilize) or too large (memory pressure)
-        if matrix_elements > 0:
-            tile_ratio = tile_elements / matrix_elements
+        # Get device info
+        device_info = program.get_device_info()
+        
+        # Create optimized matmul function
+        def create_optimized_matmul():
+            def optimized_matmul(A, B):
+                # Training uses larger matrices, so higher threshold
+                if (len(A.shape) == 2 and len(B.shape) == 2 and 
+                    A.shape[0] * A.shape[1] * B.shape[1] > 100_000):
+                    
+                    M, K1 = A.shape
+                    K2, N = B.shape
+                    
+                    if K1 == K2:
+                        tile_M, tile_N, tile_K = program.choose_tile_size(M, N, K1, device_info)
+                        return program.optimized_matmul(A, B, tile_M, tile_N, tile_K)
+                
+                return original_matmul(A, B)
+            return optimized_matmul
+        
+        # Create model and data
+        model = SimpleLanguageModel(vocab_size, hidden_dim, seq_len)
+        optimizer = optim.Adam(learning_rate=1e-3)
+        
+        # Training function
+        def training_step():
+            # Generate random batch
+            inputs = mx.random.randint(0, vocab_size, (batch_size, seq_len))
+            targets = mx.random.randint(0, vocab_size, (batch_size, seq_len))
             
-            # Optimal tile ratio is around 0.01 to 0.1 (1% to 10% of total matrix)
-            if 0.001 <= tile_ratio <= 0.1:
-                utilization_score = 1.0
-            elif tile_ratio < 0.001:
-                utilization_score = tile_ratio / 0.001  # Penalize very small tiles
-            else:
-                utilization_score = 0.1 / tile_ratio  # Penalize very large tiles
-        else:
-            utilization_score = 0.0
+            def loss_fn(model, inputs, targets):
+                logits = model(inputs)
+                return nn.losses.cross_entropy(
+                    logits.reshape(-1, vocab_size), 
+                    targets.reshape(-1), 
+                    reduction='mean'
+                )
+            
+            # Forward and backward pass
+            loss, grads = mx.value_and_grad(loss_fn)(model, inputs, targets)
+            optimizer.update(model, grads)
+            mx.eval(model.parameters(), optimizer.state, loss)
+            
+            return loss
         
-        # Also consider memory bandwidth utilization
-        bandwidth_score = min(metrics.get("memory_bandwidth_gbs", 0) / 100.0, 1.0)
+        # Test with original MLX
+        mx.matmul = original_matmul
         
-        # Combine utilization and bandwidth
-        efficiency = 0.7 * utilization_score + 0.3 * bandwidth_score
-        total_efficiency += efficiency
-    
-    return total_efficiency / len(results)
-
-
-def calculate_consistency_score(results):
-    """
-    Calculate how consistent the performance is across different matrix sizes
-    
-    Args:
-        results: List of benchmark results
+        # Warmup
+        for _ in range(3):
+            training_step()
         
-    Returns:
-        Consistency score (0.0 to 1.0)
-    """
-    if len(results) < 2:
-        return 1.0
-    
-    # Extract GFLOPS values
-    gflops_values = [result["metrics"]["gflops"] for result in results]
-    
-    if not gflops_values or max(gflops_values) == 0:
-        return 0.0
-    
-    # Calculate coefficient of variation (std/mean)
-    mean_gflops = np.mean(gflops_values)
-    std_gflops = np.std(gflops_values)
-    
-    if mean_gflops == 0:
-        return 0.0
-    
-    cv = std_gflops / mean_gflops
-    
-    # Convert to consistency score (lower coefficient of variation = higher consistency)
-    # Good consistency has CV < 0.2, excellent has CV < 0.1
-    consistency_score = max(0.0, 1.0 - cv / 0.3)  # Normalize so CV=0.3 gives score=0
-    
-    return consistency_score
+        # Benchmark original
+        original_times = []
+        for _ in range(5):
+            start_time = time.perf_counter()
+            training_step()
+            end_time = time.perf_counter()
+            original_times.append(end_time - start_time)
+        
+        original_time = np.median(original_times)
+        
+        # Test with optimized MLX
+        optimized_matmul_func = create_optimized_matmul()
+        mx.matmul = optimized_matmul_func
+        
+        # Warmup
+        for _ in range(3):
+            training_step()
+        
+        # Benchmark optimized
+        optimized_times = []
+        for _ in range(5):
+            start_time = time.perf_counter()
+            training_step()
+            end_time = time.perf_counter()
+            optimized_times.append(end_time - start_time)
+        
+        # Restore original
+        mx.matmul = original_matmul
+        
+        optimized_time = np.median(optimized_times)
+        speedup = original_time / optimized_time if optimized_time > 0 else 0.0
+        
+        # Clean up
+        del model, optimizer
+        gc.collect()
+        
+        return {
+            "speedup": speedup,
+            "original_time": original_time,
+            "optimized_time": optimized_time
+        }
+        
+    except Exception as e:
+        # Always restore original matmul
+        mx.matmul = original_matmul
+        return {"speedup": 0.0, "error": str(e)}
 
 
 # Stage-based evaluation for cascade evaluation
 def evaluate_stage1(program_path):
-    """
-    First stage evaluation - quick validation
-    """
+    """First stage - quick validation"""
     try:
-        # Load and validate the program structure
         spec = importlib.util.spec_from_file_location("program", program_path)
         program = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(program)
         
-        # Check required functions exist
-        if not hasattr(program, "run_optimization"):
-            return {"valid_structure": 0.0, "error": "Missing run_optimization function"}
+        # Check required functions
+        required = ["get_device_info", "choose_tile_size", "optimized_matmul"]
+        for func_name in required:
+            if not hasattr(program, func_name):
+                return {"valid_structure": 0.0, "error": f"Missing {func_name}"}
         
-        if not hasattr(program, "choose_tile_size"):
-            return {"valid_structure": 0.0, "error": "Missing choose_tile_size function"}
+        # Quick test
+        device_info = program.get_device_info()
+        tile_M, tile_N, tile_K = program.choose_tile_size(256, 256, 256, device_info)
         
-        # Quick test of choose_tile_size function
-        try:
-            device_info = {"chip": "Test", "memory_gb": 8.0, "cpu_count": 8}
-            tile_M, tile_N, tile_K = program.choose_tile_size(256, 256, 256, device_info)
-            
-            # Validate tile sizes are reasonable
-            if not (1 <= tile_M <= 256 and 1 <= tile_N <= 256 and 1 <= tile_K <= 256):
-                return {"valid_structure": 0.5, "error": "Invalid tile sizes returned"}
-            
-            return {
-                "valid_structure": 1.0,
-                "tile_example": [int(tile_M), int(tile_N), int(tile_K)]
-            }
-            
-        except Exception as e:
-            return {"valid_structure": 0.3, "error": f"Tile function error: {str(e)}"}
+        if not (1 <= tile_M <= 256 and 1 <= tile_N <= 256 and 1 <= tile_K <= 256):
+            return {"valid_structure": 0.5, "error": "Invalid tile sizes"}
+        
+        return {"valid_structure": 1.0}
         
     except Exception as e:
         return {"valid_structure": 0.0, "error": str(e)}
 
 
 def evaluate_stage2(program_path):
-    """
-    Second stage evaluation - limited performance test
-    """
+    """Second stage - quick performance test"""
     try:
-        # Run a subset of the full evaluation
         spec = importlib.util.spec_from_file_location("program", program_path)
         program = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(program)
         
-        # Test on just a few matrix sizes
+        # Quick matrix multiplication test
+        A = mx.random.normal((128, 256))
+        B = mx.random.normal((256, 128))
+        
         device_info = program.get_device_info()
+        tile_M, tile_N, tile_K = program.choose_tile_size(128, 128, 256, device_info)
         
-        # Quick performance test
-        M, N, K = 512, 512, 512
-        tile_M, tile_N, tile_K = program.choose_tile_size(M, N, K, device_info)
-        metrics = program.benchmark_configuration(M, N, K, tile_M, tile_N, tile_K, num_runs=2)
+        # Test optimized matmul function
+        start_time = time.perf_counter()
+        C = program.optimized_matmul(A, B, tile_M, tile_N, tile_K)
+        mx.eval(C)
+        elapsed = time.perf_counter() - start_time
         
-        # Basic performance scoring
-        gflops = metrics["gflops"]
-        gflops_score = min(gflops / 100.0, 2.0)  # Baseline 100 GFLOPS
+        # Verify correctness
+        C_ref = mx.matmul(A, B)
+        error = mx.mean(mx.abs(C - C_ref))
+        
+        if error > 1e-3:
+            return {"valid_structure": 0.0, "error": "Incorrect computation"}
+        
+        quick_score = min(1.0, 0.1 / elapsed)  # Faster = better score
         
         return {
             "valid_structure": 1.0,
-            "quick_gflops": float(gflops),
-            "quick_score": float(gflops_score),
-            "passes_stage2": gflops_score > 0.5
+            "quick_score": float(quick_score),
+            "passes_stage2": quick_score > 0.5
         }
         
     except Exception as e:
@@ -287,7 +410,5 @@ def evaluate_stage2(program_path):
 
 
 def evaluate_stage3(program_path):
-    """
-    Third stage evaluation - full performance evaluation
-    """
+    """Third stage - full MLX-LM evaluation"""
     return evaluate(program_path)
