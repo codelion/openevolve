@@ -7,39 +7,6 @@ import psutil
 import platform
 
 
-def get_device_info():
-    """Get Apple Silicon device characteristics"""
-    try:
-        # Try to get Mac chip info
-        import subprocess
-        chip_info = subprocess.run(
-            ["system_profiler", "SPHardwareDataType"], 
-            capture_output=True, 
-            text=True,
-            timeout=5
-        ).stdout
-        
-        chip_name = "Unknown"
-        memory_gb = round(psutil.virtual_memory().total / (1024**3), 1)
-        
-        for line in chip_info.split('\n'):
-            if 'Chip:' in line:
-                chip_name = line.split('Chip:')[1].strip()
-                break
-                
-        return {
-            "chip": chip_name,
-            "memory_gb": memory_gb,
-            "cpu_count": psutil.cpu_count()
-        }
-    except:
-        return {
-            "chip": "M2",  # Default assumption
-            "memory_gb": 16.0,
-            "cpu_count": 8
-        }
-
-
 def choose_tile_size(M, N, K, device_info):
     """
     Choose optimal tile sizes for MLX matrix multiplication
@@ -157,9 +124,48 @@ def optimized_matmul(A, B, tile_M, tile_N, tile_K):
     return C
 
 
+# EVOLVE-BLOCK-END
+
+
+# Fixed evaluation framework - NOT evolved
+def get_device_info():
+    """Get Apple Silicon device characteristics - FIXED IMPLEMENTATION"""
+    try:
+        import subprocess
+        chip_info = subprocess.run(
+            ["system_profiler", "SPHardwareDataType"], 
+            capture_output=True, 
+            text=True,
+            timeout=5
+        ).stdout
+        
+        chip_name = "Unknown"
+        memory_gb = round(psutil.virtual_memory().total / (1024**3), 1)
+        
+        for line in chip_info.split('\n'):
+            if 'Chip:' in line:
+                chip_name = line.split('Chip:')[1].strip()
+                break
+                
+        return {
+            "chip": chip_name,
+            "memory_gb": memory_gb,
+            "cpu_count": psutil.cpu_count()
+        }
+    except:
+        return {
+            "chip": "M2",  # Default assumption
+            "memory_gb": 16.0,
+            "cpu_count": 8
+        }
+
+
 def benchmark_mlx_lm_performance(model_name="mlx-community/Qwen2.5-0.5B-Instruct-bf16"):
     """
-    Benchmark MLX-LM performance with current optimization
+    Benchmark MLX-LM performance with current optimization - FIXED EVALUATION
+    
+    This function provides consistent, reliable evaluation across all iterations.
+    It should NOT be evolved to ensure fair comparison.
     
     Args:
         model_name: MLX model to test with
@@ -179,9 +185,10 @@ def benchmark_mlx_lm_performance(model_name="mlx-community/Qwen2.5-0.5B-Instruct
     device_info = get_device_info()
     original_matmul = mx.matmul
     
-    # Create optimized matmul function
+    # Create optimized matmul function using current evolved functions
     def create_optimized_matmul():
         def opt_matmul(A, B):
+            # Only optimize 2D matrices above threshold
             if (len(A.shape) == 2 and len(B.shape) == 2 and 
                 A.shape[0] * A.shape[1] * B.shape[1] > 50_000):
                 
@@ -196,42 +203,85 @@ def benchmark_mlx_lm_performance(model_name="mlx-community/Qwen2.5-0.5B-Instruct
         return opt_matmul
     
     try:
-        # Load model
-        model, tokenizer = load(model_name)
+        # Load model (try primary, then fallback)
+        try:
+            model, tokenizer = load(model_name)
+        except:
+            try:
+                model, tokenizer = load("mlx-community/SmolLM-135M")
+            except:
+                return {"error": "Could not load any test model", "inference_speedup": 0.0}
         
-        # Test prompts
-        test_prompts = ["Hello world", "What is AI?", "Explain Python"]
+        # Fixed test prompts for consistent evaluation
+        test_prompts = [
+            "Hello, how are you today?",
+            "What is machine learning?", 
+            "Explain Python programming briefly",
+            "Tell me about Apple Silicon chips"
+        ]
         
-        # Test original
+        # Test with original MLX
         mx.matmul = original_matmul
         
-        # Warmup
+        # Warmup (fixed)
         for _ in range(2):
-            generate(model, tokenizer, prompt="Hi", max_tokens=5, verbose=False)
+            try:
+                generate(model, tokenizer, prompt="Hi", max_tokens=5, verbose=False)
+            except:
+                pass
         
-        # Benchmark original
-        start_time = time.perf_counter()
+        # Benchmark original (fixed methodology)
+        original_times = []
         for prompt in test_prompts:
-            generate(model, tokenizer, prompt=prompt, max_tokens=10, verbose=False)
-        original_time = time.perf_counter() - start_time
+            start_time = time.perf_counter()
+            try:
+                response = generate(model, tokenizer, prompt=prompt, max_tokens=15, verbose=False)
+                mx.eval(response)
+            except:
+                continue
+            end_time = time.perf_counter()
+            original_times.append(end_time - start_time)
         
-        # Test optimized
+        if not original_times:
+            return {"error": "Could not generate text", "inference_speedup": 0.0}
+        
+        original_time = np.median(original_times)
+        
+        # Test with optimized MLX
         mx.matmul = create_optimized_matmul()
         
-        # Warmup
+        # Warmup (fixed)
         for _ in range(2):
-            generate(model, tokenizer, prompt="Hi", max_tokens=5, verbose=False)
+            try:
+                generate(model, tokenizer, prompt="Hi", max_tokens=5, verbose=False)
+            except:
+                pass
         
-        # Benchmark optimized
-        start_time = time.perf_counter()
+        # Benchmark optimized (fixed methodology)
+        optimized_times = []
         for prompt in test_prompts:
-            generate(model, tokenizer, prompt=prompt, max_tokens=10, verbose=False)
-        optimized_time = time.perf_counter() - start_time
+            start_time = time.perf_counter()
+            try:
+                response = generate(model, tokenizer, prompt=prompt, max_tokens=15, verbose=False)
+                mx.eval(response)
+            except:
+                continue
+            end_time = time.perf_counter()
+            optimized_times.append(end_time - start_time)
         
         # Restore original
         mx.matmul = original_matmul
         
+        if not optimized_times:
+            return {"error": "Optimized generation failed", "inference_speedup": 0.0}
+        
+        optimized_time = np.median(optimized_times)
         speedup = original_time / optimized_time if optimized_time > 0 else 0.0
+        
+        # Clean up
+        del model, tokenizer
+        import gc
+        gc.collect()
         
         return {
             "inference_speedup": speedup,
@@ -241,39 +291,31 @@ def benchmark_mlx_lm_performance(model_name="mlx-community/Qwen2.5-0.5B-Instruct
         }
         
     except Exception as e:
-        mx.matmul = original_matmul
-        return {
-            "error": str(e),
-            "inference_speedup": 0.0,
-            "training_speedup": 0.0
-        }
+        mx.matmul = original_matmul  # Always restore
+        return {"error": str(e), "inference_speedup": 0.0}
 
 
-# EVOLVE-BLOCK-END
-
-
-# Fixed part - evaluation interface
 def run_optimization():
     """
-    Run the MLX-LM optimization benchmark
+    Run the MLX-LM optimization benchmark - FIXED INTERFACE
     
-    This function is called by the OpenEvolve evaluator to test
-    the current optimization configuration.
+    This function provides a consistent interface for the OpenEvolve evaluator.
+    It calls the current evolved optimization functions through the fixed benchmark.
     """
     
     device_info = get_device_info()
     
-    # Run MLX-LM benchmark
+    # Run MLX-LM benchmark using current evolved functions
     mlx_lm_results = benchmark_mlx_lm_performance()
     
     # Calculate summary metrics
     inference_speedup = mlx_lm_results.get("inference_speedup", 0.0)
-    training_speedup = mlx_lm_results.get("training_speedup", 0.0)
+    training_speedup = 0.0  # Could add training benchmark here
     
-    # Combined score (inference weighted higher)
-    combined_score = 0.7 * inference_speedup + 0.3 * training_speedup
+    # Combined score (inference weighted higher since it's more common)
+    combined_score = 0.8 * inference_speedup + 0.2 * training_speedup
     
-    # Create results summary
+    # Create results summary for evaluator
     results = [{
         "optimization_type": "mlx_lm_inference",
         "speedup": inference_speedup,
@@ -294,7 +336,7 @@ if __name__ == "__main__":
     device_info = get_device_info()
     print(f"Device: {device_info['chip']} ({device_info['memory_gb']} GB RAM)")
     
-    # Test the optimization
+    # Test the current optimization
     results = benchmark_mlx_lm_performance()
     
     if "error" in results:
