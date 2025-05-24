@@ -40,7 +40,7 @@ prompt:
 
 # Database configuration - PERSISTENT for auto-resume
 database:
-  db_path: "./mlx_optimization_db"  # Persistent database directory
+  db_path: "./openevolve_output/mlx_optimization_db"  # Persistent database directory
   population_size: 80
   archive_size: 30
   num_islands: 5
