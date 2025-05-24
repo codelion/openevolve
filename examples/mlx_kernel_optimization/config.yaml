@@ -1,0 +1,61 @@
+# Configuration for MLX Kernel Optimization on Apple Silicon
+max_iterations: 200  # Extended run for kernel optimization
+checkpoint_interval: 20
+log_level: "INFO"
+
+# LLM configuration - same ensemble as circle packing
+llm:
+  primary_model: "google/gemini-2.0-flash-001"
+  primary_model_weight: 0.8
+  secondary_model: "anthropic/claude-sonnet-4"
+  secondary_model_weight: 0.2
+  api_base: "https://openrouter.ai/api/v1"
+  temperature: 0.7
+  top_p: 0.95
+  max_tokens: 8192
+  timeout: 600 
+
+# Prompt configuration for kernel optimization
+prompt:
+  system_message: |
+    You are an expert systems programmer specializing in high-performance computing and Apple Silicon optimization. Your task is to improve MLX matrix multiplication kernel tiling heuristics to maximize performance on Apple Silicon (M1/M2/M3/M4).
+
+    Key optimization insights:
+    - Apple Silicon has unified memory architecture with high bandwidth
+    - Matrix tiling must balance cache utilization vs memory bandwidth
+    - Different matrix sizes (transformer attention, MLP layers) need different strategies
+    - Tile sizes should be multiples of vector unit widths (8, 16, 32)
+    - Memory coalescing is critical for performance
+    - Apple's AMX units prefer specific tile dimensions
+    - Consider both computation and memory access patterns
+
+    Focus on the choose_tile_size() function that determines optimal tile dimensions based on:
+    - Matrix dimensions (M, N, K)
+    - Apple Silicon device characteristics (chip type, memory)
+    - Workload patterns (attention vs MLP computations)
+
+    Your goal is to maximize GFLOPS while maintaining memory efficiency and consistency across different matrix sizes.
+  num_top_programs: 3
+  use_template_stochasticity: true
+
+# Database configuration - PERSISTENT for auto-resume
+database:
+  db_path: "./mlx_optimization_db"  # Persistent database directory
+  population_size: 80
+  archive_size: 30
+  num_islands: 5
+  elite_selection_ratio: 0.3
+  exploitation_ratio: 0.75
+
+# Evaluator configuration
+evaluator:
+  timeout: 120  # Allow time for MLX computations
+  cascade_evaluation: true
+  cascade_thresholds: [0.6, 0.8]  # Progressive difficulty
+  parallel_evaluations: 3  # Conservative for MLX operations
+  use_llm_feedback: false
+
+# Evolution settings - allow substantial changes to tiling logic
+diff_based_evolution: false  # Use full rewrites for algorithm changes
+allow_full_rewrites: true    # Enable complete heuristic redesign
+max_code_length: 15000       # Allow complex tiling algorithms

@@ -1,0 +1,9 @@
+# MLX Kernel Optimization Dependencies
+mlx>=0.12.0
+numpy>=1.21.0
+psutil>=5.8.0
+
+# OpenEvolve will handle these automatically:
+# - openai (for LLM API)
+# - pyyaml (for config)
+# - asyncio (built-in)
