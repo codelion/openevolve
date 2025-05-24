@@ -89,7 +89,7 @@ database:
 
 # Evaluator configuration
 evaluator:
-  timeout: 180  # Longer timeout for MLX-LM model loading and testing
+  timeout: 300  # Longer timeout for MLX-LM model loading and testing
   cascade_evaluation: true
   cascade_thresholds: [0.7, 0.9]  # Higher thresholds for real performance
   parallel_evaluations: 2  # Conservative for model loading
@@ -98,4 +98,4 @@ evaluator:
 # Evolution settings
 diff_based_evolution: false  # Use full rewrites for algorithm discovery
 allow_full_rewrites: true    # Enable complete strategy redesign
-max_code_length: 12000       # Reasonable size for optimization functions
+max_code_length: 100000       # Reasonable size for optimization functions
