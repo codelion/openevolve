@@ -1,5 +1,5 @@
 # EVOLVE-BLOCK-START
-"""MLX-LM Performance Optimization for Apple Silicon"""
+"""MLX Training Performance Optimization for Apple Silicon"""
 import mlx.core as mx
 import numpy as np
 import time
@@ -9,11 +9,11 @@ import platform
 
 def choose_tile_size(M, N, K, device_info):
     """
-    Choose optimal tile sizes for MLX matrix multiplication
+    Choose optimal tile sizes for MLX matrix multiplication in training scenarios
     
     This function is the core of the optimization - it determines
     how to break large matrices into smaller tiles for better
-    cache utilization and memory bandwidth on Apple Silicon.
+    cache utilization and memory bandwidth on Apple Silicon during training.
     
     Args:
         M, N, K: Matrix dimensions for C = A @ B where A is MxK, B is KxN
@@ -23,54 +23,102 @@ def choose_tile_size(M, N, K, device_info):
         (tile_M, tile_N, tile_K): Optimal tile sizes
     """
     
-    # Simple baseline heuristic - optimize this function!
-    
     chip = device_info.get("chip", "Unknown")
     memory_gb = device_info.get("memory_gb", 8.0)
     
-    # Start with conservative base tile sizes
-    if "M4" in chip:
-        base_tile = 128
-        vector_align = 32
-    elif "M3" in chip:
-        base_tile = 96
-        vector_align = 32
-    elif "M2" in chip:
-        base_tile = 80
-        vector_align = 16
-    else:  # M1 or unknown
-        base_tile = 64
-        vector_align = 16
-    
-    # Adjust for memory
-    if memory_gb >= 32:
-        base_tile = int(base_tile * 1.2)
-    elif memory_gb >= 16:
-        base_tile = int(base_tile * 1.1)
-    
-    # Adjust based on matrix characteristics
+    # Detect workload type based on matrix characteristics
     total_elements = M * N * K
+    aspect_ratio_MN = max(M, N) / min(M, N) if min(M, N) > 0 else 1.0
+    aspect_ratio_K = K / min(M, N) if min(M, N) > 0 else 1.0
     
-    if total_elements > 10_000_000:  # Very large matrices
+    # Classify training workload patterns  
+    is_batch_heavy = (M > 256)  # Large batch dimension common in training
+    is_mlp = (aspect_ratio_K > 1.5 or max(M, N) > 1.5 * K)  # MLP layers (4x expansion)
+    is_attention = (aspect_ratio_MN < 2.0 and K > 256)  # Square-ish attention matrices
+    is_large = total_elements > 2_000_000  # Lower threshold for training focus
+    
+    # Base configurations per chip generation - training optimized
+    if "M4" in chip:
+        base_tile = 128 if is_large else 80
+        vector_align = 32
+        cache_factor = 1.4  # Higher for training's repeated patterns
+    elif "M3" in chip:
+        base_tile = 112 if is_large else 72
+        vector_align = 32
+        cache_factor = 1.3
+    elif "M2" in chip:
+        base_tile = 96 if is_large else 64
+        vector_align = 16
+        cache_factor = 1.2
+    else:  # M1 or unknown
+        base_tile = 80 if is_large else 56
+        vector_align = 16
+        cache_factor = 1.1
+    
+    # Memory scaling - more aggressive for training
+    if memory_gb >= 32:
+        memory_scale = 1.5  # Training can use more memory
+    elif memory_gb >= 16:
+        memory_scale = 1.3
+    else:
+        memory_scale = 1.1
+    
+    # Training workload-specific adjustments
+    if is_batch_heavy:
+        # Large batch training benefits from different tiling
+        workload_scale = 1.2
+        batch_bias = 1.1  # Slightly favor M dimension (batch)
+    else:
+        workload_scale = 1.0
+        batch_bias = 1.0
+    
+    if is_mlp:
+        # MLP layers need K-dimension optimization for 4x expansion
+        k_bias = 1.3
+        mlp_scale = 1.1
+    else:
+        k_bias = 1.0
+        mlp_scale = 1.0
+    
+    if is_attention:
+        # Attention patterns in training
+        attention_scale = 1.05
+        k_bias = max(k_bias, 0.95)  # Balanced for attention
+    else:
+        attention_scale = 1.0
+    
+    # Calculate base tile sizes
+    effective_base = int(
+        base_tile * cache_factor * memory_scale * workload_scale * mlp_scale * attention_scale
+    )
+    
+    # Dimension-specific tile sizes with training bias
+    tile_M = min(int(effective_base * batch_bias), M)
+    tile_N = min(effective_base, N)
+    tile_K = min(int(effective_base * k_bias), K)
+    
+    # Training-specific progressive sizing
+    if total_elements > 10_000_000:  # Very large training batch
         scale = 0.8
-    elif total_elements > 1_000_000:  # Large matrices 
-        scale = 1.0
-    elif total_elements > 100_000:   # Medium matrices
-        scale = 1.2
-    else:  # Small matrices
-        scale = 1.5
+    elif total_elements > 5_000_000:  # Large training batch
+        scale = 0.9
+    elif total_elements > 1_000_000:  # Medium training batch
+        scale = 1.1
+    elif total_elements > 100_000:   # Small training batch
+        scale = 1.4
+    else:  # Very small - be conservative
+        scale = 1.6
     
-    # Calculate tile sizes
-    tile_M = min(int(base_tile * scale), M)
-    tile_N = min(int(base_tile * scale), N)
-    tile_K = min(int(base_tile * scale), K)
+    tile_M = int(tile_M * scale)
+    tile_N = int(tile_N * scale)
+    tile_K = int(tile_K * scale)
     
-    # Ensure alignment with vector units
+    # Ensure vector alignment
     tile_M = ((tile_M + vector_align - 1) // vector_align) * vector_align
     tile_N = ((tile_N + vector_align - 1) // vector_align) * vector_align
     tile_K = ((tile_K + vector_align - 1) // vector_align) * vector_align
     
-    # Clamp to matrix dimensions and minimum size
+    # Clamp to valid ranges
     tile_M = max(vector_align, min(tile_M, M))
     tile_N = max(vector_align, min(tile_N, N))
     tile_K = max(vector_align, min(tile_K, K))
@@ -80,10 +128,11 @@ def choose_tile_size(M, N, K, device_info):
 
 def optimized_matmul(A, B, tile_M, tile_N, tile_K):
     """
-    Perform optimized tiled matrix multiplication
+    Perform optimized tiled matrix multiplication for training workloads
     
     This function implements the actual tiled multiplication
     using the tile sizes determined by choose_tile_size().
+    Optimized for training patterns including forward and backward passes.
     
     Args:
         A: Input matrix A (M x K)
@@ -101,25 +150,41 @@ def optimized_matmul(A, B, tile_M, tile_N, tile_K):
     
     K = K1
     
+    # For small matrices, use direct multiplication to avoid overhead
+    total_elements = M * N * K
+    if total_elements < 50_000:  # Lower threshold for training focus
+        return mx.matmul(A, B)
+    
+    # Check if tiling makes sense (avoid excessive tile overhead)
+    num_m_tiles = (M + tile_M - 1) // tile_M
+    num_n_tiles = (N + tile_N - 1) // tile_N
+    num_k_tiles = (K + tile_K - 1) // tile_K
+    
+    # If we have too many tiny tiles, use direct multiplication
+    if num_m_tiles * num_n_tiles * num_k_tiles > 800:  # More permissive for training
+        return mx.matmul(A, B)
+    
     # Initialize result matrix
     C = mx.zeros((M, N), dtype=A.dtype)
     
-    # Perform tiled multiplication
+    # Optimized tiled multiplication for training
+    # Use ikj loop order - good for training's memory access patterns
     for i in range(0, M, tile_M):
-        for j in range(0, N, tile_N):
-            for k in range(0, K, tile_K):
-                # Calculate tile boundaries
-                i_end = min(i + tile_M, M)
+        i_end = min(i + tile_M, M)
+        
+        for k in range(0, K, tile_K):
+            k_end = min(k + tile_K, K)
+            A_tile = A[i:i_end, k:k_end]
+            
+            for j in range(0, N, tile_N):
                 j_end = min(j + tile_N, N)
-                k_end = min(k + tile_K, K)
-                
-                # Extract tiles
-                A_tile = A[i:i_end, k:k_end]
                 B_tile = B[k:k_end, j:j_end]
                 
-                # Compute tile multiplication and accumulate
-                C_tile = mx.matmul(A_tile, B_tile)
-                C = C.at[i:i_end, j:j_end].add(C_tile)
+                # Compute partial result
+                partial = mx.matmul(A_tile, B_tile)
+                
+                # Accumulate in result matrix
+                C = C.at[i:i_end, j:j_end].add(partial)
     
     return C
 
@@ -160,27 +225,19 @@ def get_device_info():
         }
 
 
-def benchmark_mlx_lm_performance(model_name="mlx-community/Qwen2.5-0.5B-Instruct-bf16"):
+def benchmark_training_performance():
     """
-    Benchmark MLX-LM performance with current optimization - FIXED EVALUATION
+    Benchmark MLX training performance with current optimization - FIXED EVALUATION
     
     This function provides consistent, reliable evaluation across all iterations.
     It should NOT be evolved to ensure fair comparison.
     
-    Args:
-        model_name: MLX model to test with
-        
     Returns:
-        Performance metrics comparing original vs optimized
+        Performance metrics comparing original vs optimized training
     """
-    try:
-        from mlx_lm import load, generate
-    except ImportError:
-        return {
-            "error": "mlx-lm not installed",
-            "inference_speedup": 0.0,
-            "training_speedup": 0.0
-        }
+    import mlx.nn as nn
+    import mlx.optimizers as optim
+    import gc
     
     device_info = get_device_info()
     original_matmul = mx.matmul
@@ -188,9 +245,9 @@ def benchmark_mlx_lm_performance(model_name="mlx-community/Qwen2.5-0.5B-Instruct
     # Create optimized matmul function using current evolved functions
     def create_optimized_matmul():
         def opt_matmul(A, B):
-            # Only optimize 2D matrices above threshold
+            # Lower threshold for training focus - catch more operations
             if (len(A.shape) == 2 and len(B.shape) == 2 and 
-                A.shape[0] * A.shape[1] * B.shape[1] > 50_000):
+                A.shape[0] * A.shape[1] * B.shape[1] > 15_000):  # Lower threshold
                 
                 M, K1 = A.shape
                 K2, N = B.shape
@@ -203,101 +260,134 @@ def benchmark_mlx_lm_performance(model_name="mlx-community/Qwen2.5-0.5B-Instruct
         return opt_matmul
     
     try:
-        # Load model (try primary, then fallback)
-        try:
-            model, tokenizer = load(model_name)
-        except:
-            try:
-                model, tokenizer = load("mlx-community/SmolLM-135M")
-            except:
-                return {"error": "Could not load any test model", "inference_speedup": 0.0}
+        # Create a realistic training model for optimization testing
+        class TrainingTransformer(nn.Module):
+            def __init__(self, vocab_size=5000, hidden_dim=1024, seq_len=512):
+                super().__init__()
+                self.embedding = nn.Embedding(vocab_size, hidden_dim)
+                # Multiple layers to create substantial matrix operations
+                self.linear1 = nn.Linear(hidden_dim, hidden_dim * 4)  # MLP expansion
+                self.linear2 = nn.Linear(hidden_dim * 4, hidden_dim)  # MLP projection  
+                self.attention_q = nn.Linear(hidden_dim, hidden_dim)  # Attention query
+                self.attention_k = nn.Linear(hidden_dim, hidden_dim)  # Attention key
+                self.attention_v = nn.Linear(hidden_dim, hidden_dim)  # Attention value
+                self.attention_out = nn.Linear(hidden_dim, hidden_dim)  # Attention output
+                self.norm1 = nn.LayerNorm(hidden_dim)
+                self.norm2 = nn.LayerNorm(hidden_dim)
+                self.output = nn.Linear(hidden_dim, vocab_size)  # Large output projection
+                
+            def __call__(self, x):
+                # Transformer-like forward pass with substantial matrix operations
+                x = self.embedding(x)  # [batch, seq, hidden]
+                
+                # Attention-like operations
+                q = self.attention_q(x)
+                k = self.attention_k(x) 
+                v = self.attention_v(x)
+                # Simplified attention (real would have more ops)
+                attn_out = self.attention_out(v)
+                x = self.norm1(x + attn_out)
+                
+                # MLP operations
+                mlp_out = self.linear2(nn.gelu(self.linear1(x)))
+                x = self.norm2(x + mlp_out)
+                
+                # Output projection
+                return self.output(x)
         
-        # Fixed test prompts for consistent evaluation
-        test_prompts = [
-            "Hello, how are you today?",
-            "What is machine learning?", 
-            "Explain Python programming briefly",
-            "Tell me about Apple Silicon chips"
-        ]
+        # Training configuration - larger for more matrix operations
+        batch_size = 24      # Substantial batch size
+        seq_len = 512        # Longer sequences  
+        vocab_size = 5000    # Reasonable vocabulary
+        hidden_dim = 1024    # Large hidden dimension
+        
+        # Create model and optimizer
+        model = TrainingTransformer(vocab_size, hidden_dim, seq_len)
+        optimizer = optim.Adam(learning_rate=1e-3)
+        
+        # Training step function
+        def training_step():
+            # Generate random training batch
+            inputs = mx.random.randint(0, vocab_size, (batch_size, seq_len))
+            targets = mx.random.randint(0, vocab_size, (batch_size, seq_len))
+            
+            def loss_fn(model, inputs, targets):
+                logits = model(inputs)  # Forward pass
+                return nn.losses.cross_entropy(
+                    logits.reshape(-1, vocab_size), 
+                    targets.reshape(-1), 
+                    reduction='mean'
+                )
+            
+            # Forward and backward pass
+            loss, grads = mx.value_and_grad(loss_fn)(model, inputs, targets)
+            optimizer.update(model, grads)
+            mx.eval(model.parameters(), optimizer.state, loss)
+            
+            return loss
         
         # Test with original MLX
         mx.matmul = original_matmul
         
-        # Warmup (fixed)
-        for _ in range(2):
-            try:
-                generate(model, tokenizer, prompt="Hi", max_tokens=5, verbose=False)
-            except:
-                pass
+        # Extended warmup to stabilize timing
+        for _ in range(8):
+            training_step()
         
-        # Benchmark original (fixed methodology)
+        # Benchmark original MLX
         original_times = []
-        for prompt in test_prompts:
+        for _ in range(15):  # More iterations for better statistics
             start_time = time.perf_counter()
-            try:
-                response = generate(model, tokenizer, prompt=prompt, max_tokens=15, verbose=False)
-                mx.eval(response)
-            except:
-                continue
+            training_step()
             end_time = time.perf_counter()
             original_times.append(end_time - start_time)
         
-        if not original_times:
-            return {"error": "Could not generate text", "inference_speedup": 0.0}
-        
+        # Remove outliers and calculate median
+        original_times = sorted(original_times)[2:-2]  # Remove 2 highest and lowest
         original_time = np.median(original_times)
         
         # Test with optimized MLX
         mx.matmul = create_optimized_matmul()
         
-        # Warmup (fixed)
-        for _ in range(2):
-            try:
-                generate(model, tokenizer, prompt="Hi", max_tokens=5, verbose=False)
-            except:
-                pass
+        # Extended warmup for optimized version
+        for _ in range(8):
+            training_step()
         
-        # Benchmark optimized (fixed methodology)
+        # Benchmark optimized MLX
         optimized_times = []
-        for prompt in test_prompts:
+        for _ in range(15):  # More iterations for better statistics
             start_time = time.perf_counter()
-            try:
-                response = generate(model, tokenizer, prompt=prompt, max_tokens=15, verbose=False)
-                mx.eval(response)
-            except:
-                continue
+            training_step()
             end_time = time.perf_counter()
             optimized_times.append(end_time - start_time)
         
         # Restore original
         mx.matmul = original_matmul
         
-        if not optimized_times:
-            return {"error": "Optimized generation failed", "inference_speedup": 0.0}
-        
+        # Remove outliers and calculate median
+        optimized_times = sorted(optimized_times)[2:-2]
         optimized_time = np.median(optimized_times)
+        
         speedup = original_time / optimized_time if optimized_time > 0 else 0.0
         
         # Clean up
-        del model, tokenizer
-        import gc
+        del model, optimizer
         gc.collect()
         
         return {
-            "inference_speedup": speedup,
+            "training_speedup": speedup,
             "original_time": original_time,
             "optimized_time": optimized_time,
-            "model_loaded": True
+            "test_successful": True
         }
         
     except Exception as e:
         mx.matmul = original_matmul  # Always restore
-        return {"error": str(e), "inference_speedup": 0.0}
+        return {"error": str(e), "training_speedup": 0.0, "test_successful": False}
 
 
 def run_optimization():
     """
-    Run the MLX-LM optimization benchmark - FIXED INTERFACE
+    Run the MLX training optimization benchmark - FIXED INTERFACE
     
     This function provides a consistent interface for the OpenEvolve evaluator.
     It calls the current evolved optimization functions through the fixed benchmark.
@@ -305,55 +395,63 @@ def run_optimization():
     
     device_info = get_device_info()
     
-    # Run MLX-LM benchmark using current evolved functions
-    mlx_lm_results = benchmark_mlx_lm_performance()
+    # Run training benchmark using current evolved functions
+    training_results = benchmark_training_performance()
     
-    # Calculate summary metrics
-    inference_speedup = mlx_lm_results.get("inference_speedup", 0.0)
-    training_speedup = 0.0  # Could add training benchmark here
+    # Calculate summary metrics - simple training-only scoring
+    training_speedup = training_results.get("training_speedup", 0.0)
     
-    # Combined score (inference weighted higher since it's more common)
-    combined_score = 0.8 * inference_speedup + 0.2 * training_speedup
+    # Simple combined score = training speedup with bonuses
+    combined_score = training_speedup
+    if training_speedup > 1.15:  # >15% improvement
+        combined_score *= 1.3
+    elif training_speedup > 1.10:  # >10% improvement  
+        combined_score *= 1.2
+    elif training_speedup > 1.05:  # >5% improvement
+        combined_score *= 1.1
     
     # Create results summary for evaluator
     results = [{
-        "optimization_type": "mlx_lm_inference",
-        "speedup": inference_speedup,
+        "optimization_type": "mlx_training",
+        "speedup": training_speedup,
         "metrics": {
-            "inference_speedup": inference_speedup,
             "training_speedup": training_speedup,
             "combined_score": combined_score
         }
     }]
     
-    return results, combined_score, mlx_lm_results.get("optimized_time", 1.0), device_info
+    return results, combined_score, training_results.get("optimized_time", 1.0), device_info
 
 
 if __name__ == "__main__":
-    print("🚀 MLX-LM Optimization Test")
-    print("=" * 40)
+    print("🚀 MLX Training Optimization Test")
+    print("=" * 50)
     
     device_info = get_device_info()
     print(f"Device: {device_info['chip']} ({device_info['memory_gb']} GB RAM)")
     
     # Test the current optimization
-    results = benchmark_mlx_lm_performance()
+    results = benchmark_training_performance()
     
     if "error" in results:
         print(f"❌ Error: {results['error']}")
     else:
-        speedup = results["inference_speedup"]
+        speedup = results["training_speedup"]
         original_time = results["original_time"]
         optimized_time = results["optimized_time"]
         
-        print(f"\n📊 Results:")
-        print(f"   Original time: {original_time:.3f}s")
-        print(f"   Optimized time: {optimized_time:.3f}s")
-        print(f"   Speedup: {speedup:.3f}x")
+        print(f"\n📊 Training Results:")
+        print(f"   Original time: {original_time:.4f}s per step")
+        print(f"   Optimized time: {optimized_time:.4f}s per step")
+        print(f"   Training speedup: {speedup:.3f}x")
         
-        if speedup > 1.05:
-            print("   ✅ Optimization successful!")
-        elif speedup > 0.95:
+        if speedup > 1.10:
+            print("   ✅ Significant training acceleration!")
+        elif speedup > 1.05:
+            print("   ✅ Moderate training improvement!")
+        elif speedup > 1.02:
+            print("   ⚪ Small training improvement")
+        elif speedup > 0.98:
             print("   ⚪ No significant change")
         else:
-            print("   ❌ Performance regression")
+            print("   ❌ Training performance regression")

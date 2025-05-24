@@ -1,6 +1,5 @@
 """
-Evaluator for MLX-LM performance optimization
-Tests real inference and training performance with Qwen2.5-0.5B-Instruct-bf16
+Evaluator for MLX Training Performance Optimization (Training-Only Focus)
 """
 
 import importlib.util
@@ -10,14 +9,14 @@ import numpy as np
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
-import tempfile
-import os
 import gc
+import sys
+import io
 
 
 def evaluate(program_path):
     """
-    Evaluate MLX-LM optimization by measuring real inference and training performance
+    Evaluate MLX training optimization (training-only focus)
     
     Args:
         program_path: Path to the program file
@@ -27,248 +26,196 @@ def evaluate(program_path):
     """
     
     try:
-        # Load the program
+        # Load the program with better error handling
         spec = importlib.util.spec_from_file_location("program", program_path)
         program = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(program)
+        
+        # Capture any import/execution errors
+        try:
+            spec.loader.exec_module(program)
+        except Exception as load_error:
+            return {
+                "training_speedup": 0.0,
+                "combined_score": 0.0,
+                "error": f"Failed to load program: {str(load_error)}"
+            }
         
         # Check required functions exist
         required_functions = ["get_device_info", "choose_tile_size", "optimized_matmul"]
+        missing_functions = []
         for func_name in required_functions:
             if not hasattr(program, func_name):
-                return {
-                    "inference_speedup": 0.0,
-                    "training_speedup": 0.0,
-                    "combined_score": 0.0,
-                    "error": f"Missing {func_name} function"
-                }
+                missing_functions.append(func_name)
         
-        # Test MLX-LM optimization
-        inference_results = test_mlx_lm_inference(program)
-        training_results = test_mlx_lm_training(program)
+        if missing_functions:
+            return {
+                "training_speedup": 0.0,
+                "combined_score": 0.0,
+                "error": f"Missing functions: {', '.join(missing_functions)}"
+            }
         
-        # Calculate combined score
-        inference_speedup = inference_results.get("speedup", 0.0)
+        # Test training optimization with enhanced evaluation
+        training_results = test_training_performance_enhanced(program)
+        
+        # Calculate combined score (training-only)
         training_speedup = training_results.get("speedup", 0.0)
         
-        # Weighted scoring: 60% inference, 40% training (inference is more common)
-        combined_score = 0.6 * inference_speedup + 0.4 * training_speedup
+        # Simple scoring: training speedup with bonuses for good performance
+        combined_score = training_speedup
         
-        # Bonus for consistency (both working well)
-        if inference_speedup > 1.02 and training_speedup > 1.02:
-            combined_score *= 1.1  # 10% bonus for consistent optimization
+        # Bonus multipliers for significant improvements
+        if training_speedup > 1.20:  # >20% improvement
+            combined_score *= 1.4
+        elif training_speedup > 1.15:  # >15% improvement
+            combined_score *= 1.3
+        elif training_speedup > 1.10:  # >10% improvement
+            combined_score *= 1.2
+        elif training_speedup > 1.05:  # >5% improvement
+            combined_score *= 1.1
         
         return {
-            "inference_speedup": float(inference_speedup),
             "training_speedup": float(training_speedup),
-            "inference_time_original": float(inference_results.get("original_time", 0.0)),
-            "inference_time_optimized": float(inference_results.get("optimized_time", 0.0)),
             "training_time_original": float(training_results.get("original_time", 0.0)),
             "training_time_optimized": float(training_results.get("optimized_time", 0.0)),
             "combined_score": float(combined_score),
-            "peak_memory_mb": float(inference_results.get("peak_memory_mb", 0.0)),
-            "model_loaded": bool(inference_results.get("model_loaded", False)),
-            "error_inference": inference_results.get("error", ""),
-            "error_training": training_results.get("error", "")
+            "optimizations_applied": int(training_results.get("optimizations_applied", 0)),
+            "matrix_operations_count": int(training_results.get("matrix_ops", 0)),
+            "test_successful": bool(training_results.get("test_successful", False)),
+            "debug_info": {
+                "training_error": training_results.get("error", ""),
+                "matrix_sizes_tested": training_results.get("matrix_sizes", []),
+                "device_info": training_results.get("device_info", {})
+            }
         }
         
     except Exception as e:
         print(f"Evaluation failed: {str(e)}")
         traceback.print_exc()
         return {
-            "inference_speedup": 0.0,
             "training_speedup": 0.0,
             "combined_score": 0.0,
-            "error": str(e)
+            "error": f"Evaluation exception: {str(e)}"
         }
 
 
-def test_mlx_lm_inference(program):
-    """Test MLX-LM inference performance with optimization"""
+def test_training_performance_enhanced(program):
+    """Test MLX training performance with enhanced setup and debugging"""
     
     try:
-        # Import MLX-LM
-        try:
-            from mlx_lm import load, generate
-        except ImportError:
-            return {"speedup": 0.0, "error": "mlx-lm not installed"}
-        
         # Store original matmul
         original_matmul = mx.matmul
         
-        # Get device info
-        device_info = program.get_device_info()
+        # Get device info with error handling
+        try:
+            device_info = program.get_device_info()
+        except Exception as e:
+            return {"speedup": 0.0, "error": f"get_device_info failed: {str(e)}", "test_successful": False}
         
-        # Create optimized matmul function
+        # Track optimizations applied
+        optimization_count = 0
+        matrix_sizes = []
+        
+        # Test basic function calls first
+        try:
+            # Test choose_tile_size with simple inputs
+            tile_M, tile_N, tile_K = program.choose_tile_size(256, 256, 256, device_info)
+            if not (isinstance(tile_M, int) and isinstance(tile_N, int) and isinstance(tile_K, int)):
+                return {"speedup": 0.0, "error": "choose_tile_size returned non-integer values", "test_successful": False}
+            if not (1 <= tile_M <= 256 and 1 <= tile_N <= 256 and 1 <= tile_K <= 256):
+                return {"speedup": 0.0, "error": f"choose_tile_size returned invalid sizes: {tile_M}, {tile_N}, {tile_K}", "test_successful": False}
+        except Exception as e:
+            return {"speedup": 0.0, "error": f"choose_tile_size failed: {str(e)}", "test_successful": False}
+        
+        # Test optimized_matmul with simple matrices
+        try:
+            A_test = mx.random.normal((64, 64), dtype=mx.float32)
+            B_test = mx.random.normal((64, 64), dtype=mx.float32)
+            C_test = program.optimized_matmul(A_test, B_test, tile_M, tile_N, tile_K)
+            mx.eval(C_test)  # Force evaluation
+            
+            # Verify correctness
+            C_ref = mx.matmul(A_test, B_test)
+            error = mx.mean(mx.abs(C_test - C_ref))
+            if error > 1e-3:
+                return {"speedup": 0.0, "error": f"optimized_matmul produces incorrect results, error: {float(error)}", "test_successful": False}
+        except Exception as e:
+            return {"speedup": 0.0, "error": f"optimized_matmul failed: {str(e)}", "test_successful": False}
+        
+        # Create optimized matmul with debugging and lower threshold
         def create_optimized_matmul():
-            def optimized_matmul(A, B):
-                # Only optimize 2D matrices above threshold
+            def optimized_matmul_debug(A, B):
+                nonlocal optimization_count, matrix_sizes
+                
+                # Lower threshold for training - catch more operations
                 if (len(A.shape) == 2 and len(B.shape) == 2 and 
-                    A.shape[0] * A.shape[1] * B.shape[1] > 50_000):  # Lower threshold for inference
+                    A.shape[0] * A.shape[1] * B.shape[1] > 15_000):  # Lower threshold
                     
                     M, K1 = A.shape
                     K2, N = B.shape
                     
                     if K1 == K2:
-                        tile_M, tile_N, tile_K = program.choose_tile_size(M, N, K1, device_info)
-                        return program.optimized_matmul(A, B, tile_M, tile_N, tile_K)
+                        matrix_sizes.append((M, K1, N, M * K1 * N))
+                        optimization_count += 1
+                        
+                        try:
+                            tile_M, tile_N, tile_K = program.choose_tile_size(M, N, K1, device_info)
+                            return program.optimized_matmul(A, B, tile_M, tile_N, tile_K)
+                        except Exception as opt_error:
+                            # Fall back to original if optimization fails
+                            print(f"Optimization failed for {M}x{K1}x{N}: {opt_error}")
+                            return original_matmul(A, B)
                 
                 return original_matmul(A, B)
-            return optimized_matmul
+            return optimized_matmul_debug
         
-        # Load model (small model for fast testing)
-        model_name = "mlx-community/Qwen2.5-0.5B-Instruct-bf16"
-        
-        try:
-            model, tokenizer = load(model_name)
-        except Exception as e:
-            # Fallback to any available small model
-            try:
-                model, tokenizer = load("mlx-community/SmolLM-135M")
-            except:
-                return {"speedup": 0.0, "error": f"Could not load model: {str(e)}"}
-        
-        # Test prompts
-        test_prompts = [
-            "Hello, how are you?",
-            "What is machine learning?",
-            "Explain Python programming",
-            "Tell me about Apple Silicon"
-        ]
-        
-        # Test with original MLX
-        mx.matmul = original_matmul
-        
-        # Warmup
-        for _ in range(2):
-            try:
-                _ = generate(model, tokenizer, prompt="Hello", max_tokens=10, verbose=False)
-            except:
-                pass
-        
-        # Benchmark original
-        original_times = []
-        for prompt in test_prompts:
-            start_time = time.perf_counter()
-            try:
-                response = generate(model, tokenizer, prompt=prompt, max_tokens=20, verbose=False)
-                mx.eval(response)
-            except Exception as e:
-                print(f"Generation failed: {e}")
-                continue
-            end_time = time.perf_counter()
-            original_times.append(end_time - start_time)
-        
-        if not original_times:
-            return {"speedup": 0.0, "error": "Could not generate text"}
-        
-        original_time = np.median(original_times)
-        
-        # Test with optimized MLX
-        optimized_matmul_func = create_optimized_matmul()
-        mx.matmul = optimized_matmul_func
-        
-        # Warmup
-        for _ in range(2):
-            try:
-                _ = generate(model, tokenizer, prompt="Hello", max_tokens=10, verbose=False)
-            except:
-                pass
-        
-        # Benchmark optimized
-        optimized_times = []
-        for prompt in test_prompts:
-            start_time = time.perf_counter()
-            try:
-                response = generate(model, tokenizer, prompt=prompt, max_tokens=20, verbose=False)
-                mx.eval(response)
-            except Exception as e:
-                print(f"Optimized generation failed: {e}")
-                continue
-            end_time = time.perf_counter()
-            optimized_times.append(end_time - start_time)
-        
-        # Restore original
-        mx.matmul = original_matmul
-        
-        if not optimized_times:
-            return {"speedup": 0.0, "error": "Optimized generation failed"}
-        
-        optimized_time = np.median(optimized_times)
-        speedup = original_time / optimized_time if optimized_time > 0 else 0.0
-        
-        # Clean up
-        del model, tokenizer
-        gc.collect()
-        
-        return {
-            "speedup": speedup,
-            "original_time": original_time,
-            "optimized_time": optimized_time,
-            "model_loaded": True,
-            "peak_memory_mb": 0.0  # Could add memory monitoring here
-        }
-        
-    except Exception as e:
-        # Always restore original matmul
-        mx.matmul = original_matmul
-        return {"speedup": 0.0, "error": str(e)}
-
-
-def test_mlx_lm_training(program):
-    """Test training performance with optimization"""
-    
-    try:
-        # Store original matmul
-        original_matmul = mx.matmul
-        
-        # Create a minimal training scenario
-        class SimpleLanguageModel(nn.Module):
-            def __init__(self, vocab_size=1000, hidden_dim=256, seq_len=128):
+        # Create enhanced training model - larger and more matrix-heavy
+        class EnhancedTrainingModel(nn.Module):
+            def __init__(self, vocab_size=4000, hidden_dim=768, seq_len=256):  # Smaller for stability
                 super().__init__()
                 self.embedding = nn.Embedding(vocab_size, hidden_dim)
-                self.linear1 = nn.Linear(hidden_dim, hidden_dim * 2)
-                self.linear2 = nn.Linear(hidden_dim * 2, hidden_dim)
-                self.output = nn.Linear(hidden_dim, vocab_size)
+                
+                # Multiple transformer-like layers with heavy matrix operations
+                self.layers = nn.Sequential(
+                    nn.Linear(hidden_dim, hidden_dim * 3),  # MLP expansion  
+                    nn.GELU(),
+                    nn.Linear(hidden_dim * 3, hidden_dim),  # MLP projection
+                    nn.Linear(hidden_dim, hidden_dim),      # Residual connection
+                    nn.Linear(hidden_dim, hidden_dim * 2),  # Another expansion
+                    nn.GELU(), 
+                    nn.Linear(hidden_dim * 2, hidden_dim),  # Another projection
+                )
+                
+                # Attention-like operations
+                self.attention_layers = nn.Sequential(
+                    nn.Linear(hidden_dim, hidden_dim),      # Query projection
+                    nn.Linear(hidden_dim, hidden_dim),      # Key projection  
+                    nn.Linear(hidden_dim, hidden_dim),      # Value projection
+                    nn.Linear(hidden_dim, hidden_dim),      # Output projection
+                )
+                
+                self.output = nn.Linear(hidden_dim, vocab_size)  # Large output
                 
             def __call__(self, x):
-                x = self.embedding(x)
-                x = nn.gelu(self.linear1(x))
-                x = self.linear2(x)
+                x = self.embedding(x)  # [batch, seq, hidden]
+                
+                # Apply multiple linear transformations
+                x = self.layers(x)
+                x = self.attention_layers(x)
+                
                 return self.output(x)
         
-        # Training configuration
-        batch_size = 8
-        seq_len = 128
-        vocab_size = 1000
-        hidden_dim = 256
+        # Enhanced training configuration for more matrix operations but stable
+        batch_size = 16      # Moderate batch size for stability
+        seq_len = 256        # Moderate sequence length
+        vocab_size = 4000    # Moderate vocabulary  
+        hidden_dim = 768     # Moderate hidden dimension
         
-        # Get device info
-        device_info = program.get_device_info()
-        
-        # Create optimized matmul function
-        def create_optimized_matmul():
-            def optimized_matmul(A, B):
-                # Training uses larger matrices, so higher threshold
-                if (len(A.shape) == 2 and len(B.shape) == 2 and 
-                    A.shape[0] * A.shape[1] * B.shape[1] > 100_000):
-                    
-                    M, K1 = A.shape
-                    K2, N = B.shape
-                    
-                    if K1 == K2:
-                        tile_M, tile_N, tile_K = program.choose_tile_size(M, N, K1, device_info)
-                        return program.optimized_matmul(A, B, tile_M, tile_N, tile_K)
-                
-                return original_matmul(A, B)
-            return optimized_matmul
-        
-        # Create model and data
-        model = SimpleLanguageModel(vocab_size, hidden_dim, seq_len)
+        # Create model and optimizer
+        model = EnhancedTrainingModel(vocab_size, hidden_dim, seq_len)
         optimizer = optim.Adam(learning_rate=1e-3)
         
-        # Training function
-        def training_step():
+        # Training function with forward + backward passes
+        def enhanced_training_step():
             # Generate random batch
             inputs = mx.random.randint(0, vocab_size, (batch_size, seq_len))
             targets = mx.random.randint(0, vocab_size, (batch_size, seq_len))
@@ -281,7 +228,7 @@ def test_mlx_lm_training(program):
                     reduction='mean'
                 )
             
-            # Forward and backward pass
+            # Forward and backward pass (this is where the matrix ops happen)
             loss, grads = mx.value_and_grad(loss_fn)(model, inputs, targets)
             optimizer.update(model, grads)
             mx.eval(model.parameters(), optimizer.state, loss)
@@ -291,83 +238,135 @@ def test_mlx_lm_training(program):
         # Test with original MLX
         mx.matmul = original_matmul
         
-        # Warmup
-        for _ in range(3):
-            training_step()
-        
-        # Benchmark original
-        original_times = []
+        # Extended warmup for stable timing
         for _ in range(5):
+            enhanced_training_step()
+        
+        # Benchmark original MLX with more iterations
+        original_times = []
+        for _ in range(12):  # Moderate number for stability
             start_time = time.perf_counter()
-            training_step()
+            enhanced_training_step()
             end_time = time.perf_counter()
             original_times.append(end_time - start_time)
         
+        # Remove outliers (top and bottom 10%)
+        original_times = sorted(original_times)[1:-1]
         original_time = np.median(original_times)
         
         # Test with optimized MLX
         optimized_matmul_func = create_optimized_matmul()
         mx.matmul = optimized_matmul_func
         
-        # Warmup
-        for _ in range(3):
-            training_step()
+        # Reset counters
+        optimization_count = 0
+        matrix_sizes = []
         
-        # Benchmark optimized
-        optimized_times = []
+        # Extended warmup for optimized version
         for _ in range(5):
+            enhanced_training_step()
+        
+        # Benchmark optimized MLX
+        optimized_times = []
+        for _ in range(12):  # Moderate number for stability
             start_time = time.perf_counter()
-            training_step()
+            enhanced_training_step()
             end_time = time.perf_counter()
             optimized_times.append(end_time - start_time)
         
         # Restore original
         mx.matmul = original_matmul
         
+        # Remove outliers
+        optimized_times = sorted(optimized_times)[1:-1]
         optimized_time = np.median(optimized_times)
+        
         speedup = original_time / optimized_time if optimized_time > 0 else 0.0
         
         # Clean up
         del model, optimizer
         gc.collect()
         
+        print(f"   🔧 Matrix optimizations applied: {optimization_count}")
+        print(f"   📊 Unique matrix patterns: {len(set(matrix_sizes))}")
+        if matrix_sizes:
+            largest = max(matrix_sizes, key=lambda x: x[3])
+            print(f"   📏 Largest matrix: {largest[0]}×{largest[1]}×{largest[2]} ({largest[3]:,} elements)")
+        
         return {
             "speedup": speedup,
             "original_time": original_time,
-            "optimized_time": optimized_time
+            "optimized_time": optimized_time,
+            "test_successful": True,
+            "optimizations_applied": optimization_count,
+            "matrix_sizes": matrix_sizes,
+            "matrix_ops": len(matrix_sizes),
+            "device_info": device_info
         }
         
     except Exception as e:
         # Always restore original matmul
         mx.matmul = original_matmul
-        return {"speedup": 0.0, "error": str(e)}
+        return {"speedup": 0.0, "error": f"Training test failed: {str(e)}", "test_successful": False}
 
 
-# Stage-based evaluation for cascade evaluation
+# Stage-based evaluation for cascade evaluation with better error reporting
 def evaluate_stage1(program_path):
-    """First stage - quick validation"""
+    """First stage - quick validation with detailed error reporting"""
     try:
+        # Read the program file first to check for basic structure
+        with open(program_path, 'r') as f:
+            program_code = f.read()
+        
+        # Check if the code has the required structure
+        required_functions = ["get_device_info", "choose_tile_size", "optimized_matmul"]
+        missing_functions = []
+        for func_name in required_functions:
+            if f"def {func_name}(" not in program_code:
+                missing_functions.append(func_name)
+        
+        if missing_functions:
+            return {"valid_structure": 0.0, "error": f"Missing function definitions: {', '.join(missing_functions)}"}
+        
+        # Try to load and execute the program
         spec = importlib.util.spec_from_file_location("program", program_path)
         program = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(program)
         
-        # Check required functions
-        required = ["get_device_info", "choose_tile_size", "optimized_matmul"]
-        for func_name in required:
+        try:
+            spec.loader.exec_module(program)
+        except Exception as load_error:
+            return {"valid_structure": 0.0, "error": f"Failed to load program: {str(load_error)}"}
+        
+        # Check required functions are actually available
+        for func_name in required_functions:
             if not hasattr(program, func_name):
-                return {"valid_structure": 0.0, "error": f"Missing {func_name}"}
+                return {"valid_structure": 0.0, "error": f"Function {func_name} not found after loading"}
         
-        # Quick test
-        device_info = program.get_device_info()
-        tile_M, tile_N, tile_K = program.choose_tile_size(256, 256, 256, device_info)
-        
-        if not (1 <= tile_M <= 256 and 1 <= tile_N <= 256 and 1 <= tile_K <= 256):
-            return {"valid_structure": 0.5, "error": "Invalid tile sizes"}
+        # Quick functional test
+        try:
+            device_info = program.get_device_info()
+            tile_M, tile_N, tile_K = program.choose_tile_size(512, 512, 512, device_info)
+            
+            # Validate tile sizes
+            if not (isinstance(tile_M, int) and isinstance(tile_N, int) and isinstance(tile_K, int)):
+                return {"valid_structure": 0.0, "error": f"choose_tile_size returned non-integers: {type(tile_M)}, {type(tile_N)}, {type(tile_K)}"}
+            
+            if not (1 <= tile_M <= 512 and 1 <= tile_N <= 512 and 1 <= tile_K <= 512):
+                return {"valid_structure": 0.5, "error": f"Invalid tile sizes: {tile_M}, {tile_N}, {tile_K}"}
+            
+            # Test optimized_matmul with small matrices
+            A = mx.random.normal((32, 32), dtype=mx.float32)
+            B = mx.random.normal((32, 32), dtype=mx.float32)
+            C = program.optimized_matmul(A, B, 32, 32, 32)
+            mx.eval(C)  # Force evaluation
+            
+        except Exception as test_error:
+            return {"valid_structure": 0.0, "error": f"Function test failed: {str(test_error)}"}
         
         return {"valid_structure": 1.0}
         
     except Exception as e:
-        return {"valid_structure": 0.0, "error": str(e)}
+        return {"valid_structure": 0.0, "error": f"Stage 1 evaluation failed: {str(e)}"}
 
 
 def evaluate_stage2(program_path):
@@ -377,12 +376,12 @@ def evaluate_stage2(program_path):
         program = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(program)
         
-        # Quick matrix multiplication test
-        A = mx.random.normal((128, 256))
-        B = mx.random.normal((256, 128))
+        # Test with training-sized matrices
+        A = mx.random.normal((128, 512), dtype=mx.float32)
+        B = mx.random.normal((512, 256), dtype=mx.float32)
         
         device_info = program.get_device_info()
-        tile_M, tile_N, tile_K = program.choose_tile_size(128, 128, 256, device_info)
+        tile_M, tile_N, tile_K = program.choose_tile_size(128, 256, 512, device_info)
         
         # Test optimized matmul function
         start_time = time.perf_counter()
@@ -395,20 +394,20 @@ def evaluate_stage2(program_path):
         error = mx.mean(mx.abs(C - C_ref))
         
         if error > 1e-3:
-            return {"valid_structure": 0.0, "error": "Incorrect computation"}
+            return {"valid_structure": 0.0, "error": f"Incorrect computation, error: {float(error)}"}
         
-        quick_score = min(1.0, 0.1 / elapsed)  # Faster = better score
+        quick_score = min(3.0, 0.05 / elapsed)  # Generous scoring for stage 2
         
         return {
             "valid_structure": 1.0,
             "quick_score": float(quick_score),
-            "passes_stage2": quick_score > 0.5
+            "passes_stage2": quick_score > 0.3  # Lower threshold
         }
         
     except Exception as e:
-        return {"valid_structure": 0.0, "error": str(e)}
+        return {"valid_structure": 0.0, "error": f"Stage 2 failed: {str(e)}"}
 
 
 def evaluate_stage3(program_path):
-    """Third stage - full MLX-LM evaluation"""
+    """Third stage - full training evaluation"""
     return evaluate(program_path)

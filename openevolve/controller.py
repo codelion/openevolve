@@ -28,6 +28,34 @@ from openevolve.utils.code_utils import (
 logger = logging.getLogger(__name__)
 
 
+def _format_metrics(metrics: Dict[str, Any]) -> str:
+    """Safely format metrics, handling both numeric and string values"""
+    formatted_parts = []
+    for name, value in metrics.items():
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            try:
+                formatted_parts.append(f"{name}={value:.4f}")
+            except (ValueError, TypeError):
+                formatted_parts.append(f"{name}={value}")
+        else:
+            formatted_parts.append(f"{name}={value}")
+    return ", ".join(formatted_parts)
+
+
+def _format_improvement(improvement: Dict[str, Any]) -> str:
+    """Safely format improvement metrics"""
+    formatted_parts = []
+    for name, diff in improvement.items():
+        if isinstance(diff, (int, float)) and not isinstance(diff, bool):
+            try:
+                formatted_parts.append(f"{name}={diff:+.4f}")
+            except (ValueError, TypeError):
+                formatted_parts.append(f"{name}={diff}")
+        else:
+            formatted_parts.append(f"{name}={diff}")
+    return ", ".join(formatted_parts)
+
+
 class OpenEvolve:
     """
     Main controller for OpenEvolve
@@ -265,7 +293,7 @@ class OpenEvolve:
                         f"🌟 New best solution found at iteration {i+1}: {child_program.id}"
                     )
                     logger.info(
-                        f"Metrics: {', '.join(f'{name}={value:.4f}' for name, value in child_program.metrics.items())}"
+                        f"Metrics: {_format_metrics(child_program.metrics)}"
                     )
 
                 # Save checkpoint
@@ -274,10 +302,13 @@ class OpenEvolve:
 
                 # Check if target score reached
                 if target_score is not None:
-                    avg_score = sum(child_metrics.values()) / max(1, len(child_metrics))
-                    if avg_score >= target_score:
-                        logger.info(f"Target score {target_score} reached after {i+1} iterations")
-                        break
+                    # Only consider numeric metrics for target score calculation
+                    numeric_metrics = [v for v in child_metrics.values() if isinstance(v, (int, float)) and not isinstance(v, bool)]
+                    if numeric_metrics:
+                        avg_score = sum(numeric_metrics) / len(numeric_metrics)
+                        if avg_score >= target_score:
+                            logger.info(f"Target score {target_score} reached after {i+1} iterations")
+                            break
 
             except Exception as e:
                 logger.error(f"Error in iteration {i+1}: {str(e)}")
@@ -318,7 +349,7 @@ class OpenEvolve:
         if best_program:
             logger.info(
                 f"Evolution complete. Best program has metrics: "
-                f"{', '.join(f'{name}={value:.4f}' for name, value in best_program.metrics.items())}"
+                f"{_format_metrics(best_program.metrics)}"
             )
 
             # Save the best program (using our tracked best program)
@@ -350,15 +381,21 @@ class OpenEvolve:
         improvement = {}
         for metric, value in child.metrics.items():
             if metric in parent.metrics:
-                diff = value - parent.metrics[metric]
-                improvement[metric] = diff
+                # Only calculate diff for numeric values
+                if isinstance(value, (int, float)) and isinstance(parent.metrics[metric], (int, float)) and not isinstance(value, bool) and not isinstance(parent.metrics[metric], bool):
+                    try:
+                        diff = value - parent.metrics[metric]
+                        improvement[metric] = diff
+                    except (TypeError, ValueError):
+                        # Skip non-numeric metrics
+                        pass
 
-        improvement_str = ", ".join(f"{name}={diff:+.4f}" for name, diff in improvement.items())
+        improvement_str = _format_improvement(improvement)
 
         logger.info(
             f"Iteration {iteration+1}: Child {child.id} from parent {parent.id} "
             f"in {elapsed_time:.2f}s. Metrics: "
-            f"{', '.join(f'{name}={value:.4f}' for name, value in child.metrics.items())} "
+            f"{_format_metrics(child.metrics)} "
             f"(Δ: {improvement_str})"
         )
 
@@ -414,7 +451,7 @@ class OpenEvolve:
 
             logger.info(
                 f"Saved best program at checkpoint {iteration} with metrics: "
-                f"{', '.join(f'{name}={value:.4f}' for name, value in best_program.metrics.items())}"
+                f"{_format_metrics(best_program.metrics)}"
             )
 
         logger.info(f"Saved checkpoint at iteration {iteration} to {checkpoint_path}")
