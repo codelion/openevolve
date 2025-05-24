@@ -1,0 +1,403 @@
+/* --- Theme Variables --- */
+:root {
+    --background-color: #f4f4f4;
+    --text-color: #333;
+    --primary-color: #333; /* For header background, buttons */
+    --secondary-color: #555; /* For tab borders, hover effects, less prominent elements */
+    --content-bg: white; /* Background for content areas like tabs, inputs */
+    --button-text-color: white;
+    --border-color-light: #ddd; /* Lighter border color, e.g., for content boxes */
+    --border-color-medium: #ccc; /* A medium border color */
+
+    /* Tab specific variables */
+    --tab-bg: #444;
+    --tab-text: white;
+    --tab-active-bg: var(--background-color); /* Active tab matches page background */
+    --tab-active-text: var(--text-color); /* Active tab matches page text color */
+
+    /* Message specific variables */
+    --message-info-bg: #e6f7ff;
+    --message-info-text: #005f80;
+    --message-info-border: #b3e0ff;
+    --message-success-bg: #e6ffed;
+    --message-success-text: #00661a;
+    --message-success-border: #b3ffc6;
+    --message-error-bg: #ffe6e6;
+    --message-error-text: #cc0000;
+    --message-error-border: #ffb3b3;
+}
+
+[data-theme="dark"] {
+    --background-color: #333;
+    --text-color: #f4f4f4;
+    --primary-color: #222; 
+    --secondary-color: #777;
+    --content-bg: #444;
+    --button-text-color: #f4f4f4;
+    --border-color-light: #555; 
+    --border-color-medium: #666;
+
+    /* Tab specific variables for dark theme */
+    --tab-bg: #555;
+    --tab-text: #f4f4f4;
+    --tab-active-bg: var(--background-color); 
+    --tab-active-text: var(--text-color);
+
+    /* Message specific variables for dark theme */
+    --message-info-bg: #002a33;
+    --message-info-text: #e6f7ff;
+    --message-info-border: #005f80;
+    --message-success-bg: #00330d;
+    --message-success-text: #e6ffed;
+    --message-success-border: #00661a;
+    --message-error-bg: #4d0000;
+    --message-error-text: #ffe6e6;
+    --message-error-border: #cc0000;
+}
+
+/* --- General Styles --- */
+body {
+    font-family: sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: var(--background-color);
+    color: var(--text-color);
+    line-height: 1.6;
+}
+
+h1, h2, h3 {
+    color: var(--text-color);
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+}
+
+h1 { /* Main page title, if any outside of tabs */
+    text-align: center;
+    padding: 20px 0;
+}
+
+pre {
+    background-color: var(--background-color); 
+    color: var(--text-color);
+    padding: 10px;
+    border: 1px solid var(--border-color-medium);
+    border-radius: 4px;
+    overflow-x: auto; 
+    font-family: monospace, Consolas, 'Courier New', Courier;
+    white-space: pre-wrap; 
+    word-break: break-all; 
+}
+
+code {
+    font-family: monospace, Consolas, 'Courier New', Courier;
+}
+
+fieldset {
+    border: 1px solid var(--border-color-medium);
+    padding: 15px;
+    margin-bottom: 15px;
+    border-radius: 4px;
+}
+
+legend {
+    font-weight: bold;
+    padding: 0 5px;
+    color: var(--text-color);
+}
+
+label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+    color: var(--text-color);
+}
+
+input[type="text"],
+input[type="number"],
+textarea {
+    width: 100%;
+    padding: 10px;
+    box-sizing: border-box;
+    border: 1px solid var(--border-color-medium);
+    background-color: var(--content-bg);
+    color: var(--text-color);
+    font-family: monospace, Consolas, 'Courier New', Courier; /* Monospace for code/config */
+    border-radius: 4px;
+    resize: vertical; 
+}
+
+input[type="checkbox"] {
+    margin-right: 5px;
+    vertical-align: middle;
+}
+
+
+button, .button-like { /* General button styling */
+    padding: 10px 20px;
+    background-color: var(--primary-color);
+    color: var(--button-text-color);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1em; /* Relative font size */
+    transition: background-color 0.3s ease;
+}
+
+button:hover, .button-like:hover {
+    background-color: var(--secondary-color);
+}
+
+button:disabled, .button-like:disabled {
+    background-color: var(--secondary-color);
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.hidden {
+    display: none !important; /* Important to override other display properties if necessary */
+}
+
+/* --- Message Styling --- */
+.message-info,
+.message-success,
+.message-error,
+.status-message { /* General class for status messages */
+    padding: 10px 15px;
+    margin: 10px 0;
+    border: 1px solid;
+    border-radius: 4px;
+    word-break: break-word; /* Ensure long messages wrap */
+}
+
+.message-info, .status-info {
+    background-color: var(--message-info-bg);
+    color: var(--message-info-text);
+    border-color: var(--message-info-border);
+}
+
+.message-success, .status-completed {
+    background-color: var(--message-success-bg);
+    color: var(--message-success-text);
+    border-color: var(--message-success-border);
+}
+
+.message-error, .status-error, .status-failed {
+    background-color: var(--message-error-bg);
+    color: var(--message-error-text);
+    border-color: var(--message-error-border);
+}
+.status-running, .status-preparing, .status-starting, .status-unknown {
+    /* Can use info or a custom style */
+    background-color: var(--message-info-bg);
+    color: var(--message-info-text);
+    border-color: var(--message-info-border);
+}
+
+
+/* --- Header Styles --- */
+header {
+    background-color: var(--primary-color);
+    color: var(--tab-text); 
+    padding: 10px 0;
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+}
+
+/* --- Tab Navigation Styles --- */
+nav {
+    display: flex;
+    justify-content: center;
+    border-bottom: 2px solid var(--secondary-color);
+    flex-grow: 1; 
+}
+
+.tab-button {
+    padding: 10px 20px;
+    margin: 0 5px;
+    border: 1px solid var(--secondary-color);
+    background-color: var(--tab-bg);
+    color: var(--tab-text);
+    cursor: pointer;
+    border-bottom: none;
+    border-radius: 5px 5px 0 0;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.tab-button.active {
+    background-color: var(--tab-active-bg);
+    color: var(--tab-active-text);
+    /* Create seamless look with content by matching border color or making it transparent */
+    border-bottom: 2px solid var(--tab-active-bg); 
+}
+
+.tab-button:hover:not(.active) { /* Only apply hover to non-active tabs */
+    background-color: var(--secondary-color);
+}
+
+.tab-content {
+    padding: 20px;
+    border: 1px solid var(--border-color-light); 
+    border-top: none; /* Tabs provide the top visual border */
+    background-color: var(--content-bg);
+}
+
+/* --- Theme Toggle Button Styles --- */
+#theme-toggle {
+    margin-right: 20px; 
+    padding: 8px 15px;
+    background-color: var(--secondary-color);
+    color: var(--button-text-color);
+    border: 1px solid var(--primary-color); /* Or var(--border-color-medium) */
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+#theme-toggle:hover {
+    background-color: var(--primary-color);
+}
+
+/* --- Playground Tab Specific Styles --- */
+.input-group { /* Used in Playground and potentially Settings */
+    margin-bottom: 20px;
+}
+
+#playground-content textarea, 
+#playground-content label { /* Specificity for playground if needed */
+    /* General label/textarea styles are above */
+}
+
+#playground-content textarea {
+    min-height: 100px; /* Slightly taller for code */
+}
+
+#run-evolution-btn { /* Uses general button styles, specific overrides here if needed */
+    display: block; 
+    width: auto; 
+    padding: 12px 25px; /* Slightly larger button */
+    margin-top: 15px;
+    margin-bottom: 20px;
+    font-size: 1.1em; /* Slightly larger font */
+}
+
+#evolution-status-display {
+    margin-top: 20px;
+    margin-bottom: 20px;
+    padding: 15px;
+    border: 1px solid var(--border-color-medium);
+    border-radius: 4px;
+    background-color: var(--content-bg); /* Or var(--background-color) if more subtle */
+}
+
+#evolution-status-display h2 {
+    margin-top: 0; 
+    font-size: 1.2em;
+}
+
+#evolution-status-text { /* This is the span inside #evolution-status-display > p */
+    /* Uses general .status-message styling through JS class changes */
+    display: block; /* Make it block to fill width */
+    min-height: 1.5em; 
+    margin-top: 5px; /* Space from the "Status:" text */
+}
+
+progress#evolution-progress {
+    width: 100%;
+    height: 20px; 
+    margin-top: 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color-medium); 
+    background-color: var(--background-color); 
+}
+
+progress#evolution-progress::-webkit-progress-bar {
+    background-color: var(--background-color);
+    border-radius: 3px;
+}
+
+progress#evolution-progress::-webkit-progress-value {
+    background-color: var(--primary-color); /* Bar color */
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+progress#evolution-progress::-moz-progress-bar { /* Firefox */
+    background-color: var(--primary-color); /* Bar color */
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+#evolution-results-display {
+    margin-top: 20px;
+    padding: 15px;
+    border: 1px solid var(--border-color-medium);
+    border-radius: 4px;
+    background-color: var(--content-bg);
+}
+#evolution-results-display h2,
+#evolution-results-display h3 {
+     margin-top: 0;
+     font-size: 1.2em;
+}
+
+#evolution-results-display pre { /* Uses general pre styles */
+    margin-top: 5px;
+}
+
+/* --- Settings Tab Specific Styles --- */
+#settings-content h2 { /* Main heading for settings tab */
+    margin-top: 0; /* If it's the first element */
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+#settings-form-container {
+    /* Styles for individual setting entries */
+}
+
+.setting-entry {
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color-light);
+}
+.setting-entry:last-child {
+    border-bottom: none;
+}
+
+.setting-entry label {
+    /* General label styles are applied */
+    margin-bottom: 5px; /* Adjust spacing if needed */
+}
+
+.setting-entry input[type="text"],
+.setting-entry input[type="number"] {
+    /* General input styles are applied */
+    font-family: sans-serif; /* Settings inputs might not need monospace */
+}
+
+.setting-group fieldset { /* Fieldsets within setting entries */
+    border-color: var(--border-color-light); /* Lighter border for nested fieldsets */
+    margin-top: 10px;
+}
+.setting-group legend {
+    font-size: 0.95em;
+}
+
+
+#save-settings-btn { /* Uses general button styles */
+    display: block;
+    margin: 20px auto 0 auto; /* Center button */
+}
+
+#settings-message { /* Uses general message styling through JS class changes */
+    text-align: center;
+    margin-top: 15px;
+}
+
+/* Ensure headings within specific content areas also use theme text color if not covered by general h1,h2,h3 */
+#playground-content h1, 
+#playground-content h2,
+#settings-content h1, /* if any h1 used */
+#settings-content h2 {
+    color: var(--text-color);
+}

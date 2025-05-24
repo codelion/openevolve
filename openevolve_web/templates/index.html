@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenEvolve Web Interface</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <!-- Header: Contains Tab Navigation and Theme Toggle -->
+    <header>
+        <nav role="tablist">
+            <button id="playground-tab" class="tab-button active" role="tab" aria-selected="true" aria-controls="playground-content">Playground</button>
+            <button id="settings-tab" class="tab-button" role="tab" aria-selected="false" aria-controls="settings-content">Settings</button>
+        </nav>
+        <button id="theme-toggle" title="Toggle light/dark theme">Toggle Theme</button>
+    </header>
+
+    <!-- Main Content Area -->
+    <main>
+        <!-- Playground Tab Panel -->
+        <section id="playground-content" class="tab-content" role="tabpanel" aria-labelledby="playground-tab">
+            <h1>Playground Area</h1>
+
+            <div class="input-group">
+                <label for="initial-program">Initial Program Code:</label>
+                <textarea id="initial-program" name="initial-program" rows="10" placeholder="Paste your initial Python program code here..."></textarea>
+            </div>
+
+            <div class="input-group">
+                <label for="evaluator-script">Evaluator Script Code:</label>
+                <textarea id="evaluator-script" name="evaluator-script" rows="10" placeholder="Paste your Python evaluator script code here..."></textarea>
+            </div>
+
+            <div class="input-group">
+                <label for="config-overrides">Configuration Overrides (YAML format):</label>
+                <textarea id="config-overrides" name="config-overrides" rows="5" placeholder="max_iterations: 50&#10;llm:&#10;  temperature: 0.8"></textarea>
+            </div>
+
+            <button id="run-evolution-btn">Run Evolution</button>
+
+            <div id="evolution-status-container"> <!-- Renamed for clarity -->
+                <h2>Evolution Status</h2>
+                <!-- Status messages will appear here, styled by JS -->
+                <div id="evolution-status-text" class="status-message" role="status" aria-live="polite">Idle. Ready to start evolution.</div>
+                <progress id="evolution-progress" value="0" max="100" style="width: 100%; visibility: hidden;"></progress>
+            </div>
+
+            <div id="evolution-results-display" class="results-display" aria-live="polite">
+                <h2>Evolution Results</h2>
+                <p>Results will appear here.</p>
+                <pre><code id="best-program-code"></code></pre>
+            </div>
+        </section>
+
+        <!-- Settings Tab Panel -->
+        <section id="settings-content" class="tab-content hidden" role="tabpanel" aria-labelledby="settings-tab">
+            <h2>Application Settings</h2>
+            <form id="settings-form">
+                <div id="settings-form-container">
+                    <p>Loading settings...</p> <!-- Placeholder, replaced by JS -->
+                </div>
+                <button type="button" id="save-settings-btn">Save Settings</button>
+            </form>
+            <div id="settings-message" class="status-message" role="status" aria-live="polite" style="margin-top: 15px;"></div> <!-- For save status messages -->
+        </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
