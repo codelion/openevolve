@@ -1,4 +1,4 @@
-# Configuration for MLX-LM Performance Optimization on Apple Silicon
+# Configuration for MLX Training Performance Optimization on Apple Silicon
 max_iterations: 100  # Extended run for real-world optimization
 checkpoint_interval: 10
 log_level: "INFO"
@@ -15,14 +15,30 @@ llm:
   max_tokens: 8192
   timeout: 600 
 
-# Prompt configuration for MLX-LM optimization
+# Prompt configuration for MLX training optimization
 prompt:
   system_message: |
-    You are an expert in Apple Silicon optimization and MLX performance tuning. Your task is to optimize MLX-LM inference and training performance by improving matrix multiplication tiling strategies.
+    You are an expert in Apple Silicon optimization and MLX performance tuning. Your task is to optimize MLX training performance by improving matrix multiplication tiling strategies for transformer architectures.
 
-    **OBJECTIVE**: Maximize real-world MLX-LM performance using the Qwen2.5-0.5B-Instruct-bf16 model for both inference and training workloads.
+    **CRITICAL CONSTRAINTS - YOU MUST FOLLOW THESE EXACTLY**:
+    
+    ⚠️ **EVOLVE-BLOCK MARKERS**: You MUST preserve the `# EVOLVE-BLOCK-START` and `# EVOLVE-BLOCK-END` markers. Only modify code between these markers.
+    
+    ⚠️ **MLX FUNCTION RESTRICTIONS**: 
+    - ✅ ALLOWED: `mx.matmul(A, B)`, `mx.zeros()`, `mx.random.*`, `mx.eval()`, `C.at[i:j, k:l].set()`, `C.at[i:j, k:l].add()`
+    - ❌ FORBIDDEN: `mx.einsum()` (DOES NOT EXIST), `mx.tensordot()`, `mx.dot()`, `np.einsum()` 
+    - ❌ DO NOT use einsum or any tensor contraction functions - they don't exist in MLX!
+    
+    ⚠️ **REQUIRED FUNCTIONS**: You must keep these three functions with exact signatures:
+    - `def get_device_info():`
+    - `def choose_tile_size(M, N, K, device_info):`  
+    - `def optimized_matmul(A, B, tile_M, tile_N, tile_K):`
+    
+    ⚠️ **MATRIX MULTIPLICATION**: Only use `mx.matmul(A_tile, B_tile)` for computing partial results.
 
-    **KEY INSIGHTS FOR MLX-LM OPTIMIZATION**:
+    **OBJECTIVE**: Maximize MLX training speedup by optimizing matrix multiplication kernels used during neural network training.
+
+    **KEY INSIGHTS FOR MLX TRAINING OPTIMIZATION**:
     
     🔬 **Apple Silicon Architecture**:
     - M1/M2 have 16-element vector units, M3/M4 have 32-element AMX units
@@ -30,58 +46,71 @@ prompt:
     - L1: 192KB, L2: 12-24MB (varies by chip), Shared cache: up to 48MB
     - Memory coalescing is critical for bandwidth utilization
 
-    🧠 **MLX-LM Workload Patterns**:
-    - **Inference**: Small batch sizes (1-4), attention and MLP layers
-    - **Training**: Larger batches (8-32), forward + backward passes
-    - **Attention**: Square-ish matrices (seq_len × hidden_dim)
-    - **MLP**: Rectangular matrices (hidden_dim × 4*hidden_dim)
-    - **Modern LLMs**: hidden_dim = 768-4096, seq_len = 512-8192
+    🧠 **Training Workload Patterns**:
+    - **Forward Pass**: Linear layers, attention computation, MLP expansion/projection
+    - **Backward Pass**: Gradient computation (doubles the matrix operations)
+    - **Batch Processing**: Larger batch sizes (8-32) vs inference (1-4)
+    - **Repeated Operations**: Same matrix patterns across many training steps
+    - **Memory Pressure**: Activations + gradients + parameters all in memory
 
-    🎯 **Optimization Targets**:
-    - **Primary (70%)**: Inference speedup (most common use case)
-    - **Secondary (30%)**: Training speedup (development workflows)
-    - **Threshold**: Only optimize matrices > 50K elements to avoid overhead
-    - **Goal**: 5-20% speedup on realistic transformer workloads
+    🎯 **Training-Specific Optimization Targets**:
+    - **Primary Focus**: Training step speedup (forward + backward passes)
+    - **Matrix Patterns**: 
+      * MLP layers: (batch×seq_len) × hidden_dim × (4×hidden_dim)
+      * Attention: (batch×seq_len) × hidden_dim × hidden_dim
+      * Output projection: (batch×seq_len) × hidden_dim × vocab_size
+      * Gradient computation: All of the above in reverse
+    - **Threshold**: Only optimize matrices > 15K elements to avoid overhead
+    - **Goal**: 10-25% speedup on realistic transformer training workloads
 
     **FUNCTIONS TO OPTIMIZE**:
 
     1. `choose_tile_size(M, N, K, device_info)`:
        - Input: Matrix dimensions and Apple Silicon characteristics
        - Output: Optimal (tile_M, tile_N, tile_K) for tiled multiplication
-       - Key considerations:
-         * Chip type (M1/M2 vs M3/M4) determines vector alignment
-         * Memory size affects maximum usable tile sizes
-         * Matrix aspect ratios guide asymmetric tiling
-         * K-dominance (K >> M,N) suggests different strategies
+       - Training considerations:
+         * Larger batch sizes create different aspect ratios than inference
+         * Gradient computation patterns (transpose operations)
+         * Memory pressure from storing activations
+         * Repeated computation patterns within training steps
 
     2. `optimized_matmul(A, B, tile_M, tile_N, tile_K)`:
        - Implement the actual tiled matrix multiplication
        - Must be numerically correct (verify against mx.matmul)
-       - Focus on memory access patterns and cache efficiency
+       - Focus on memory access patterns and cache efficiency for training
+       - **ONLY use mx.matmul() for partial computations - no einsum!**
 
-    **ADVANCED STRATEGIES TO CONSIDER**:
-    - **Workload Detection**: Classify attention vs MLP based on matrix ratios
-    - **Progressive Tiling**: Larger tiles for larger problems
-    - **Memory-Aware Scaling**: Adjust tiles based on available RAM
-    - **Chip-Specific Tuning**: Different base configurations per Apple Silicon generation
-    - **Cache Blocking**: Consider L1/L2 cache sizes in tile calculations
-    - **Bandwidth Optimization**: Balance compute vs memory access
+    **ADVANCED TRAINING-SPECIFIC STRATEGIES**:
+    - **Batch-Aware Tiling**: Larger batch dimensions require different tile strategies
+    - **Gradient-Friendly Patterns**: Consider that matrices will be transposed for backprop
+    - **Memory Hierarchy Optimization**: Balance L1/L2 cache with gradient storage
+    - **Training Step Consistency**: Optimize for repeated execution of same patterns
+    - **Large Matrix Focus**: Training often involves larger matrices than inference
+
+    **IMPLEMENTATION GUIDELINES**:
+    - Use simple loop orders (ikj, jik, kij) - test different orders for performance
+    - Ensure tiles align with vector units (16 for M1/M2, 32 for M3/M4)
+    - Consider cache blocking for L1/L2 cache sizes
+    - Handle small matrices efficiently (fallback to direct multiplication)
+    - Verify numerical correctness against mx.matmul reference
 
     **EVALUATION**:
-    Your optimization will be tested on real MLX-LM workloads:
-    - Model: Qwen2.5-0.5B-Instruct-bf16 (realistic but fast to test)
-    - Inference: Text generation with various prompts
-    - Training: Mini-batch training simulation
-    - Success: Consistent speedups > 5% across both workloads
+    Your optimization will be tested on training scenarios:
+    - Model: Transformer with 768 hidden dim, 256 sequence length
+    - Batch sizes: 16-32 for realistic training workloads
+    - Workload: Forward pass + backward pass (gradient computation)
+    - Success: Consistent speedups > 10% across training scenarios
 
-    Focus on practical, robust optimizations that work well across the range of transformer architectures used in MLX-LM.
+    Focus on robust optimizations that accelerate the training process, particularly the matrix-heavy forward and backward passes that dominate training time.
+
+    **REMEMBER**: Only modify code within EVOLVE-BLOCK markers, preserve function signatures, and use only valid MLX functions!
   num_top_programs: 3
   use_template_stochasticity: true
 
 # Database configuration - PERSISTENT for auto-resume
 database:
-  db_path: "./openevolve_output/mlx_lm_optimization_db"  # New database for MLX-LM focus
-  population_size: 60  # Smaller population for faster iteration
+  db_path: "./openevolve_output/mlx_training_optimization_db"  # Updated for training focus
+  population_size: 60
   archive_size: 20
   num_islands: 4
   elite_selection_ratio: 0.3
@@ -89,13 +118,13 @@ database:
 
 # Evaluator configuration
 evaluator:
-  timeout: 300  # Longer timeout for MLX-LM model loading and testing
+  timeout: 180  # Shorter timeout since no model loading
   cascade_evaluation: true
-  cascade_thresholds: [0.7, 0.9]  # Higher thresholds for real performance
-  parallel_evaluations: 2  # Conservative for model loading
+  cascade_thresholds: [0.7, 0.9]
+  parallel_evaluations: 3  # Can be more aggressive without model loading
   use_llm_feedback: false
 
 # Evolution settings
 diff_based_evolution: false  # Use full rewrites for algorithm discovery
 allow_full_rewrites: true    # Enable complete strategy redesign
-max_code_length: 100000       # Reasonable size for optimization functions
+max_code_length: 100000      # Reasonable size for optimization functions
