@@ -69,6 +69,7 @@ prompt:
 
 # Database configuration for attention evolution
 database:
+  db_path: "./openevolve_output/program_db"  # Updated for training focus
   population_size: 150  # Moderate size for attention optimization
   archive_size: 40
   num_islands: 4
