@@ -120,6 +120,6 @@ evaluator:
   use_llm_feedback: false
 
 # Evolution settings
-diff_based_evolution: false  # Use full rewrites for algorithm discovery
-allow_full_rewrites: true    # Enable complete strategy redesign
+diff_based_evolution: true  # Use full rewrites for algorithm discovery
+allow_full_rewrites: false    # Enable complete strategy redesign
 max_code_length: 100000      # Reasonable size for optimization functions
