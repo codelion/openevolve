@@ -127,7 +127,13 @@ class PromptSampler:
 
     def _format_metrics(self, metrics: Dict[str, float]) -> str:
         """Format metrics for the prompt"""
-        return "\n".join([f"- {name}: {value:.4f}" for name, value in metrics.items()])
+        formatted_lines = []
+        for name, value in metrics.items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                formatted_lines.append(f"- {name}: {value:.4f}")
+            else:
+                formatted_lines.append(f"- {name}: {value}")
+        return "\n".join(formatted_lines)
 
     def _identify_improvement_areas(
         self,
@@ -155,13 +161,22 @@ class PromptSampler:
             metrics_regressed = []
 
             for metric, value in metrics.items():
+                # Only compare numeric metrics
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    continue
+                    
                 improved = True
                 regressed = True
 
                 for attempt in recent_attempts:
-                    if attempt["metrics"].get(metric, 0) <= value:
+                    attempt_value = attempt["metrics"].get(metric, 0)
+                    # Skip comparison if attempt value is not numeric
+                    if not isinstance(attempt_value, (int, float)) or isinstance(attempt_value, bool):
+                        continue
+                        
+                    if attempt_value <= value:
                         regressed = False
-                    if attempt["metrics"].get(metric, 0) >= value:
+                    if attempt_value >= value:
                         improved = False
 
                 if improved and metric not in metrics_improved:
@@ -210,9 +225,14 @@ class PromptSampler:
             changes = program.get("changes", "Unknown changes")
 
             # Format performance metrics
-            performance_str = ", ".join(
-                [f"{name}: {value:.4f}" for name, value in program.get("metrics", {}).items()]
-            )
+            metrics_dict = program.get("metrics", {})
+            performance_parts = []
+            for name, value in metrics_dict.items():
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    performance_parts.append(f"{name}: {value:.4f}")
+                else:
+                    performance_parts.append(f"{name}: {value}")
+            performance_str = ", ".join(performance_parts)
 
             # Determine outcome based on comparison with parent
             parent_metrics = program.get("parent_metrics", {})
@@ -250,18 +270,20 @@ class PromptSampler:
             if len(program_code.split("\n")) > 10:
                 program_snippet += "\n# ... (truncated for brevity)"
 
-            # Calculate a composite score
-            score = sum(program.get("metrics", {}).values()) / max(
-                1, len(program.get("metrics", {}))
-            )
+            # Calculate a composite score from only numeric metrics
+            metrics_dict = program.get("metrics", {})
+            numeric_values = [v for v in metrics_dict.values() if isinstance(v, (int, float)) and not isinstance(v, bool)]
+            score = sum(numeric_values) / max(1, len(numeric_values)) if numeric_values else 0.0
 
             # Extract key features (this could be more sophisticated)
             key_features = program.get("key_features", [])
             if not key_features:
-                key_features = [
-                    f"Performs well on {name} ({value:.4f})"
-                    for name, value in program.get("metrics", {}).items()
-                ]
+                key_features = []
+                for name, value in program.get("metrics", {}).items():
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        key_features.append(f"Performs well on {name} ({value:.4f})")
+                    else:
+                        key_features.append(f"Performs well on {name} ({value})")
 
             key_features_str = ", ".join(key_features)
 
