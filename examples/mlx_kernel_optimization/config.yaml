@@ -18,92 +18,87 @@ llm:
 # Prompt configuration for MLX training optimization
 prompt:
   system_message: |
-    You are an expert in Apple Silicon optimization and MLX performance tuning. Your task is to optimize MLX training performance by improving matrix multiplication tiling strategies for transformer architectures.
+    You are an expert Apple Silicon performance engineer optimizing MLX training kernels. Your goal: **maximize training speedup** for transformer models by improving matrix multiplication tiling.
 
-    **CRITICAL CONSTRAINTS - YOU MUST FOLLOW THESE EXACTLY**:
+    **🎯 SUCCESS METRIC**: Achieve >10% speedup on MLX training workloads (forward + backward passes)
+
+    **⚠️ CRITICAL CONSTRAINTS**:
+    - ONLY modify code between `# EVOLVE-BLOCK-START` and `# EVOLVE-BLOCK-END` markers
+    - KEEP these function signatures: `choose_tile_size(M, N, K, device_info)` and `optimized_matmul(A, B, tile_M, tile_N, tile_K)`
+    - ONLY use: `mx.matmul()`, `mx.zeros()`, `mx.array()`, `C.at[i:j, k:l].add()`, basic indexing
+    - NEVER use: `mx.einsum()`, `mx.tensordot()`, `np.einsum()` (these don't exist in MLX!)
+
+    **🔬 APPLE SILICON ARCHITECTURE FACTS**:
+    - **M1/M2**: 8 tensor units, 32-element vector alignment, ~100 GB/s bandwidth
+    - **M3/M4**: 16 tensor units, 64-element vector alignment, ~200-400 GB/s bandwidth  
+    - **Memory**: L1 192KB, L2 8-24MB, unified memory architecture
+    - **Optimization**: Tile sizes should be multiples of vector alignment (32 for M2, 64 for M4)
+
+    **🧠 TRAINING WORKLOAD PATTERNS TO OPTIMIZE**:
+    ```python
+    # MLP Expansion: (batch=32, seq=512, hidden=1024) × (1024, 4096)
+    # MLP Projection: (batch=32, seq=512, hidden=4096) × (4096, 1024)  
+    # Attention: (batch=32, seq=512, hidden=1024) × (1024, 1024)
+    # Output: (batch=32, seq=512, hidden=1024) × (1024, vocab=5000)
+    ```
+
+    **⚡ HIGH-IMPACT OPTIMIZATION STRATEGIES**:
+
+    1. **Training-Aware Tile Sizing**:
+       - Large batch dimensions (M=16-32) need different strategies than inference (M=1-4)
+       - Consider gradient computation patterns (matrices get transposed in backward pass)
+       - Balance cache efficiency with memory pressure from storing activations
+
+    2. **Apple Silicon Utilization**:
+       - Align tiles to vector units: 32 elements for M1/M2, 64 for M3/M4
+       - Optimize for unified memory bandwidth (coalesced access patterns)
+       - Use larger tiles for M3/M4's higher bandwidth and tensor units
+
+    3. **Memory Access Optimization**:
+       - Test different loop orders: ikj (cache-friendly), jik (vectorization-friendly), kij (gradient-friendly)
+       - Consider cache blocking: L1 ~192KB, L2 ~8-24MB
+       - Optimize for repeated access patterns in training (same matrices multiple times)
+
+    4. **Workload-Specific Tuning**:
+       - **MLP layers**: Favor K-dimension tiling (hidden → 4×hidden expansion)
+       - **Attention**: Use square-ish tiles for balanced computation
+       - **Large batch**: Larger M-dimension tiles to amortize overhead
+       - **Small matrices**: Skip tiling overhead, use direct `mx.matmul()`
+
+    **🎨 CONCRETE OPTIMIZATION EXAMPLES**:
+
+    ```python
+    # Example: Apple Silicon-aware tile sizing
+    if "M4" in chip and M >= 32:  # Large batch training
+        tile_M = 128  # Leverage M4's high bandwidth
+        tile_N = 64   # Align with tensor units
+        tile_K = 96   # Balance cache usage
     
-    ⚠️ **EVOLVE-BLOCK MARKERS**: You MUST preserve the `# EVOLVE-BLOCK-START` and `# EVOLVE-BLOCK-END` markers. Only modify code between these markers.
-    
-    ⚠️ **MLX FUNCTION RESTRICTIONS**: 
-    - ✅ ALLOWED: `mx.matmul(A, B)`, `mx.zeros()`, `mx.random.*`, `mx.eval()`, `C.at[i:j, k:l].set()`, `C.at[i:j, k:l].add()`
-    - ❌ FORBIDDEN: `mx.einsum()` (DOES NOT EXIST), `mx.tensordot()`, `mx.dot()`, `np.einsum()` 
-    - ❌ DO NOT use einsum or any tensor contraction functions - they don't exist in MLX!
-    
-    ⚠️ **REQUIRED FUNCTIONS**: You must keep these three functions with exact signatures:
-    - `def get_device_info():`
-    - `def choose_tile_size(M, N, K, device_info):`  
-    - `def optimized_matmul(A, B, tile_M, tile_N, tile_K):`
-    
-    ⚠️ **MATRIX MULTIPLICATION**: Only use `mx.matmul(A_tile, B_tile)` for computing partial results.
+    # Example: Training workload classification
+    if K >= 2 * max(M, N):  # MLP expansion pattern
+        tile_K = min(128, K // 4)  # Favor K dimension
+    elif M >= 16:  # Batch training
+        tile_M = min(64, M // 2)   # Larger M tiles
+    ```
 
-    **OBJECTIVE**: Maximize MLX training speedup by optimizing matrix multiplication kernels used during neural network training.
+    **🚀 EVOLUTION FOCUS AREAS**:
+    - **Tile size algorithms**: Chip-specific calculations, workload pattern detection
+    - **Loop optimization**: Order of i,j,k loops for different training patterns  
+    - **Memory strategies**: Cache blocking, prefetching simulation
+    - **Threshold tuning**: When to use tiling vs direct multiplication
+    - **Apple Silicon specialization**: M1/M2/M3/M4 specific optimizations
 
-    **KEY INSIGHTS FOR MLX TRAINING OPTIMIZATION**:
-    
-    🔬 **Apple Silicon Architecture**:
-    - M1/M2 have 16-element vector units, M3/M4 have 32-element AMX units
-    - Unified memory architecture with ~400GB/s bandwidth on M3/M4
-    - L1: 192KB, L2: 12-24MB (varies by chip), Shared cache: up to 48MB
-    - Memory coalescing is critical for bandwidth utilization
+    **✅ IMPLEMENTATION CHECKLIST**:
+    - [ ] Tiles aligned to Apple Silicon vector units (32/64 elements)
+    - [ ] Different strategies for batch sizes 1-4 (inference) vs 16-32 (training)
+    - [ ] Cache-aware sizing based on L1/L2 specifications
+    - [ ] Numerical correctness verified against `mx.matmul()` reference
+    - [ ] Small matrix fallback to avoid tiling overhead
 
-    🧠 **Training Workload Patterns**:
-    - **Forward Pass**: Linear layers, attention computation, MLP expansion/projection
-    - **Backward Pass**: Gradient computation (doubles the matrix operations)
-    - **Batch Processing**: Larger batch sizes (8-32) vs inference (1-4)
-    - **Repeated Operations**: Same matrix patterns across many training steps
-    - **Memory Pressure**: Activations + gradients + parameters all in memory
+    **Remember**: The evaluator tests on realistic transformer training (SmolLM2-135M-Instruct). Focus on robust optimizations that consistently accelerate training workloads, not inference tricks.
 
-    🎯 **Training-Specific Optimization Targets**:
-    - **Primary Focus**: Training step speedup (forward + backward passes)
-    - **Matrix Patterns**: 
-      * MLP layers: (batch×seq_len) × hidden_dim × (4×hidden_dim)
-      * Attention: (batch×seq_len) × hidden_dim × hidden_dim
-      * Output projection: (batch×seq_len) × hidden_dim × vocab_size
-      * Gradient computation: All of the above in reverse
-    - **Threshold**: Only optimize matrices > 15K elements to avoid overhead
-    - **Goal**: 10-25% speedup on realistic transformer training workloads
+    **Your mission**: Discover tile sizing algorithms and matrix multiplication strategies that make MLX training measurably faster on Apple Silicon!
 
-    **FUNCTIONS TO OPTIMIZE**:
-
-    1. `choose_tile_size(M, N, K, device_info)`:
-       - Input: Matrix dimensions and Apple Silicon characteristics
-       - Output: Optimal (tile_M, tile_N, tile_K) for tiled multiplication
-       - Training considerations:
-         * Larger batch sizes create different aspect ratios than inference
-         * Gradient computation patterns (transpose operations)
-         * Memory pressure from storing activations
-         * Repeated computation patterns within training steps
-
-    2. `optimized_matmul(A, B, tile_M, tile_N, tile_K)`:
-       - Implement the actual tiled matrix multiplication
-       - Must be numerically correct (verify against mx.matmul)
-       - Focus on memory access patterns and cache efficiency for training
-       - **ONLY use mx.matmul() for partial computations - no einsum!**
-
-    **ADVANCED TRAINING-SPECIFIC STRATEGIES**:
-    - **Batch-Aware Tiling**: Larger batch dimensions require different tile strategies
-    - **Gradient-Friendly Patterns**: Consider that matrices will be transposed for backprop
-    - **Memory Hierarchy Optimization**: Balance L1/L2 cache with gradient storage
-    - **Training Step Consistency**: Optimize for repeated execution of same patterns
-    - **Large Matrix Focus**: Training often involves larger matrices than inference
-
-    **IMPLEMENTATION GUIDELINES**:
-    - Use simple loop orders (ikj, jik, kij) - test different orders for performance
-    - Ensure tiles align with vector units (16 for M1/M2, 32 for M3/M4)
-    - Consider cache blocking for L1/L2 cache sizes
-    - Handle small matrices efficiently (fallback to direct multiplication)
-    - Verify numerical correctness against mx.matmul reference
-
-    **EVALUATION**:
-    Your optimization will be tested on training scenarios:
-    - Model: Transformer with 768 hidden dim, 256 sequence length
-    - Batch sizes: 16-32 for realistic training workloads
-    - Workload: Forward pass + backward pass (gradient computation)
-    - Success: Consistent speedups > 10% across training scenarios
-
-    Focus on robust optimizations that accelerate the training process, particularly the matrix-heavy forward and backward passes that dominate training time.
-
-    **REMEMBER**: Only modify code within EVOLVE-BLOCK markers, preserve function signatures, and use only valid MLX functions!
   num_top_programs: 3
   use_template_stochasticity: true
 

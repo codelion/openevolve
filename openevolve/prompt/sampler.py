@@ -234,20 +234,35 @@ class PromptSampler:
                     performance_parts.append(f"{name}: {value}")
             performance_str = ", ".join(performance_parts)
 
-            # Determine outcome based on comparison with parent
+            # Determine outcome based on comparison with parent (only numeric metrics)
             parent_metrics = program.get("parent_metrics", {})
             outcome = "Mixed results"
 
-            if all(
-                program.get("metrics", {}).get(m, 0) >= parent_metrics.get(m, 0)
-                for m in program.get("metrics", {})
-            ):
-                outcome = "Improvement in all metrics"
-            elif all(
-                program.get("metrics", {}).get(m, 0) <= parent_metrics.get(m, 0)
-                for m in program.get("metrics", {})
-            ):
-                outcome = "Regression in all metrics"
+            # Get only numeric metrics for comparison
+            current_numeric_metrics = {
+                m: v for m, v in program.get("metrics", {}).items() 
+                if isinstance(v, (int, float)) and not isinstance(v, bool)
+            }
+            parent_numeric_metrics = {
+                m: v for m, v in parent_metrics.items()
+                if isinstance(v, (int, float)) and not isinstance(v, bool)
+            }
+
+            if current_numeric_metrics and parent_numeric_metrics:
+                # Only compare metrics that exist in both
+                common_metrics = set(current_numeric_metrics.keys()) & set(parent_numeric_metrics.keys())
+                
+                if common_metrics:
+                    if all(
+                        current_numeric_metrics.get(m, 0) >= parent_numeric_metrics.get(m, 0)
+                        for m in common_metrics
+                    ):
+                        outcome = "Improvement in all metrics"
+                    elif all(
+                        current_numeric_metrics.get(m, 0) <= parent_numeric_metrics.get(m, 0)
+                        for m in common_metrics
+                    ):
+                        outcome = "Regression in all metrics"
 
             previous_attempts_str += (
                 previous_attempt_template.format(
