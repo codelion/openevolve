@@ -1,0 +1,90 @@
+# Configuration for MLX Attention Optimization
+# Inspired by AlphaEvolve's Gemini kernel engineering approach
+# Focused on optimizing real ML workloads for Apple Silicon
+
+max_iterations: 100
+checkpoint_interval: 10
+log_level: "INFO"
+
+# LLM configuration optimized for ML kernel development
+llm:
+  primary_model: "gemini-2.5-flash-preview-05-20"
+  primary_model_weight: 0.8
+  secondary_model: "gemini-2.5-pro-preview-05-06"
+  secondary_model_weight: 0.2
+  api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
+  temperature: 0.7
+  top_p: 0.95
+  max_tokens: 24000 # thinking models require sufficient tokens otherwise the responses are trucated or empty
+  timeout: 600 
+
+# Specialized prompt for attention optimization
+prompt:
+  system_message: |
+    You are an expert ML systems engineer specializing in optimizing transformer attention mechanisms for Apple Silicon and MLX.
+    Your task is to evolve high-performance attention implementations that can outperform standard MLX operations on real model inference and training.
+    
+    Focus on REALISTIC optimizations that can work in Python/MLX:
+    
+    **Memory and Computation Strategies:**
+    - Fused operations to reduce memory bandwidth
+    - Optimal data layouts for Apple Silicon's unified memory
+    - Strategic use of float16/bfloat16 vs float32 for speed/accuracy tradeoffs
+    - Chunking strategies for long sequences to fit in memory
+    - Cache-friendly computation ordering
+    
+    **Apple Silicon Specific Optimizations:**
+    - Leverage unified memory architecture (no GPU-CPU transfers)
+    - Optimize for Apple's GPU compute units and memory hierarchy
+    - Use MLX's optimized primitives as building blocks
+    - Consider Metal Performance Shaders integration patterns
+    
+    **Attention-Specific Optimizations:**
+    - Different scaling strategies (sqrt(d_k), learned, fixed)
+    - Memory layout optimizations for Q, K, V matrices
+    - Softmax approximations that maintain accuracy
+    - Causal masking optimizations
+    - Multi-head attention fusion strategies
+    - KV-cache optimization for inference
+    
+    **Realistic Performance Targets:**
+    - 10-30% speedup over standard MLX attention (realistic for Python optimizations)
+    - Maintain numerical correctness (max error < 1e-3)
+    - Support common model sizes (256-1024 d_model, 128-2048 seq_len)
+    - Optimize for batch sizes 1-8 (typical inference/training)
+    
+    **Key Parameters to Evolve:**
+    - attention_dtype: "float32", "float16", "bfloat16"
+    - memory_layout: "standard", "transposed", "blocked"
+    - chunking_strategy: "none", "query_chunks", "key_chunks", "both"
+    - chunk_size: 128, 256, 512, 1024
+    - softmax_precision: "high", "medium", "fast"
+    - scale_strategy: "sqrt_dk", "learned", "fixed"
+    
+    Always ensure correctness while maximizing real-world performance on transformer models.
+
+  num_top_programs: 4
+  num_diverse_programs: 3  
+  use_template_stochasticity: true
+
+# Database configuration for attention evolution
+database:
+  population_size: 150  # Moderate size for attention optimization
+  archive_size: 40
+  num_islands: 4
+  elite_selection_ratio: 0.2  # Keep more elite solutions for complex optimization
+  exploitation_ratio: 0.6
+  exploration_ratio: 0.3
+
+# Evaluator configuration for attention benchmarking  
+evaluator:
+  timeout: 180  # Longer timeout for model inference testing
+  cascade_evaluation: true
+  cascade_thresholds: [0.4, 0.7]  # Lower thresholds since attention optimization is challenging
+  parallel_evaluations: 2  # Conservative since we're testing full models
+  use_llm_feedback: false
+
+# Evolution settings for attention optimization
+diff_based_evolution: true
+allow_full_rewrites: true  # Allow full rewrites for significant attention improvements
+max_code_length: 100000    # Larger for complex attention implementations
