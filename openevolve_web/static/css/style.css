@@ -1,0 +1,459 @@
+/* --- Theme Variables --- */
+:root {
+    --background-color: #f8f9fa; /* Slightly off-white */
+    --text-color: #212529; /* Darker grey, not pure black */
+    --primary-color: #007bff; /* Bootstrap blue - can be adjusted */
+    --secondary-color: #6c757d; /* Bootstrap secondary grey */
+    --content-bg: #ffffff; 
+    --button-text-color: #ffffff;
+    --border-color-light: #dee2e6; /* Lighter grey for borders */
+    --border-color-medium: #ced4da; /* Medium grey for borders */
+
+    /* Tab specific variables */
+    --tab-bg: #e9ecef; /* Lighter tab background */
+    --tab-text: var(--text-color);
+    --tab-active-bg: var(--content-bg); 
+    --tab-active-text: var(--primary-color); 
+    --tab-hover-bg: #dde2e6;
+
+
+    /* Message specific variables */
+    --message-info-bg: #e6f7ff;
+    --message-info-text: #005f80;
+    --message-info-border: #b3e0ff;
+    --message-success-bg: #d4edda; /* Bootstrap success green */
+    --message-success-text: #155724;
+    --message-success-border: #c3e6cb;
+    --message-error-bg: #f8d7da; /* Bootstrap danger red */
+    --message-error-text: #721c24;
+    --message-error-border: #f5c6cb;
+
+    /* Font sizes */
+    --font-size-base: 14px;
+    --font-size-small: 0.875em; /* 12.25px if base is 14px */
+    --font-size-large: 1.125em; /* 15.75px if base is 14px */
+    --line-height-base: 1.5;
+}
+
+[data-theme="dark"] {
+    --background-color: #212529; /* Dark grey */
+    --text-color: #e9ecef; /* Light grey */
+    --primary-color: #0d6efd; /* Slightly brighter blue for dark mode */
+    --secondary-color: #6c757d; /* Same grey, good contrast */
+    --content-bg: #343a40; /* Darker content background */
+    --button-text-color: #ffffff;
+    --border-color-light: #495057; 
+    --border-color-medium: #6c757d;
+
+    /* Tab specific variables for dark theme */
+    --tab-bg: #495057;
+    --tab-text: var(--text-color);
+    --tab-active-bg: var(--content-bg); 
+    --tab-active-text: var(--primary-color);
+    --tab-hover-bg: #5a6268;
+
+
+    /* Message specific variables for dark theme */
+    --message-info-bg: #002a33;
+    --message-info-text: #e6f7ff;
+    --message-info-border: #005f80;
+    --message-success-bg: #0b2e13;
+    --message-success-text: #d4edda;
+    --message-success-border: #155724;
+    --message-error-bg: #3b0d11;
+    --message-error-text: #f8d7da;
+    --message-error-border: #721c24;
+}
+
+/* --- General Styles --- */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; /* Common system fonts */
+    margin: 0;
+    padding: 0;
+    background-color: var(--background-color);
+    color: var(--text-color);
+    font-size: var(--font-size-base);
+    line-height: var(--line-height-base);
+}
+
+h1, h2, h3 {
+    color: var(--text-color);
+    margin-top: 0.8em; /* Adjusted spacing */
+    margin-bottom: 0.4em; /* Adjusted spacing */
+    font-weight: 500; /* Slightly less bold */
+}
+
+h1 { 
+    font-size: 1.8em; /* Was 2em relative to old base, now relative to 14px */
+    text-align: center;
+    padding: 15px 0; /* Reduced padding */
+}
+h2 { font-size: 1.4em; } /* Was 1.5em */
+h3 { font-size: 1.2em; } /* Was ~1.17em */
+
+
+pre {
+    background-color: var(--background-color); 
+    color: var(--text-color);
+    padding: 8px; /* Reduced padding */
+    border: 1px solid var(--border-color-medium);
+    border-radius: 3px; /* Softer radius */
+    overflow-x: auto; 
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; /* Common mono fonts */
+    font-size: var(--font-size-small); /* Smaller for code */
+    white-space: pre-wrap; 
+    word-break: break-all; 
+}
+
+code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+    font-size: var(--font-size-small);
+}
+
+fieldset {
+    border: 1px solid var(--border-color-light); /* Softer border */
+    padding: 12px; /* Reduced padding */
+    margin-bottom: 12px;
+    border-radius: 3px;
+}
+
+legend {
+    font-weight: 500; /* Consistent with headings */
+    padding: 0 5px;
+    color: var(--text-color);
+    font-size: 1em; /* Match base text size */
+}
+
+label {
+    display: block;
+    margin-bottom: 6px; /* Reduced margin */
+    font-weight: 500; /* Slightly less bold than 'bold' */
+    color: var(--text-color);
+    font-size: 0.95em; /* Slightly smaller than base */
+}
+
+input[type="text"],
+input[type="number"],
+textarea {
+    width: 100%;
+    padding: 8px 10px; /* Adjusted padding */
+    box-sizing: border-box;
+    border: 1px solid var(--border-color-medium);
+    background-color: var(--content-bg);
+    color: var(--text-color);
+    font-family: inherit; /* Inherit body font for settings, monospace for playground textareas specifically */
+    font-size: 0.95em; /* Slightly smaller */
+    border-radius: 3px;
+    resize: vertical; 
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+input[type="text"]:focus,
+input[type="number"]:focus,
+textarea:focus {
+    border-color: var(--primary-color);
+    outline: 0;
+    box-shadow: 0 0 0 0.2rem rgba(var(--primary-color-rgb, 0,123,255), 0.25); /* Needs --primary-color-rgb or adjust */
+}
+
+
+input[type="checkbox"] {
+    margin-right: 5px;
+    vertical-align: middle;
+    font-size: 0.9em;
+}
+
+
+button, .button-like { 
+    padding: 8px 15px; /* Reduced padding */
+    background-color: var(--primary-color);
+    color: var(--button-text-color);
+    border: 1px solid var(--primary-color); /* Added border for definition */
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.95em; /* Slightly smaller */
+    transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+    line-height: 1.4; /* Adjusted line height */
+}
+
+button:hover, .button-like:hover {
+    background-color: color-mix(in srgb, var(--primary-color) 85%, black); /* Darken primary on hover */
+    border-color: color-mix(in srgb, var(--primary-color) 80%, black);
+}
+
+button:disabled, .button-like:disabled {
+    background-color: var(--secondary-color);
+    border-color: var(--secondary-color);
+    cursor: not-allowed;
+    opacity: 0.65; /* Standard disabled opacity */
+}
+
+.hidden {
+    display: none !important; 
+}
+
+/* --- Message Styling --- */
+.message-info,
+.message-success,
+.message-error,
+.status-message { 
+    padding: 8px 12px; /* Reduced padding */
+    margin: 8px 0; /* Reduced margin */
+    border: 1px solid;
+    border-radius: 3px;
+    word-break: break-word; 
+    font-size: var(--font-size-small);
+}
+
+.message-info, .status-info {
+    background-color: var(--message-info-bg);
+    color: var(--message-info-text);
+    border-color: var(--message-info-border);
+}
+
+.message-success, .status-completed {
+    background-color: var(--message-success-bg);
+    color: var(--message-success-text);
+    border-color: var(--message-success-border);
+}
+
+.message-error, .status-error, .status-failed {
+    background-color: var(--message-error-bg);
+    color: var(--message-error-text);
+    border-color: var(--message-error-border);
+}
+.status-running, .status-preparing, .status-starting, .status-unknown {
+    background-color: var(--message-info-bg);
+    color: var(--message-info-text);
+    border-color: var(--message-info-border);
+}
+
+
+/* --- Header Styles --- */
+header {
+    background-color: var(--primary-color);
+    color: var(--button-text-color); /* Consistent with button text */
+    padding: 8px 0; /* Reduced padding */
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    border-bottom: 1px solid color-mix(in srgb, var(--primary-color) 80%, black); /* Subtle border */
+}
+
+/* --- Tab Navigation Styles --- */
+nav {
+    display: flex;
+    justify-content: center;
+    border-bottom: none; /* Removed, header has border now */
+    flex-grow: 1; 
+}
+
+.tab-button {
+    padding: 8px 15px; /* Reduced padding */
+    margin: 0 3px; /* Reduced margin */
+    border: 1px solid transparent; /* Transparent border initially */
+    border-bottom: none;
+    background-color: transparent; /* Tabs are part of header */
+    color: var(--button-text-color); /* Use button text color */
+    cursor: pointer;
+    border-radius: 3px 3px 0 0;
+    transition: background-color 0.15s ease, color 0.15s ease;
+    font-size: 0.9em; /* Smaller tab text */
+}
+
+.tab-button.active {
+    background-color: var(--tab-active-bg);
+    color: var(--tab-active-text);
+    border-color: var(--border-color-light) var(--border-color-light) var(--tab-active-bg); /* Match content border */
+    font-weight: 500;
+}
+
+.tab-button:hover:not(.active) { 
+    background-color: var(--tab-hover-bg); /* Use a specific hover variable */
+    color: var(--text-color); /* Ensure text is readable on hover */
+}
+
+.tab-content {
+    padding: 15px; /* Reduced padding */
+    border: 1px solid var(--border-color-light); 
+    border-top: none; 
+    background-color: var(--content-bg);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05); /* Subtle shadow for content */
+}
+
+/* --- Theme Toggle Button Styles --- */
+#theme-toggle {
+    margin-right: 15px; 
+    padding: 6px 10px; /* Reduced padding */
+    background-color: var(--secondary-color);
+    color: var(--button-text-color);
+    border: 1px solid var(--secondary-color);
+    border-radius: 3px;
+    font-size: var(--font-size-small);
+}
+
+#theme-toggle:hover {
+    background-color: color-mix(in srgb, var(--secondary-color) 85%, black);
+    border-color: color-mix(in srgb, var(--secondary-color) 80%, black);
+}
+
+/* --- Playground Tab Specific Styles --- */
+.input-group { 
+    margin-bottom: 15px; /* Reduced margin */
+}
+
+#playground-content textarea {
+    min-height: 90px; /* Adjusted */
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; /* Monospace for code */
+    font-size: var(--font-size-small); /* Smaller for code */
+}
+
+#run-evolution-btn { 
+    padding: 10px 20px; 
+    margin-top: 10px; /* Reduced margin */
+    margin-bottom: 15px;
+    font-size: 1em; /* Back to base button size or slightly larger */
+}
+
+#evolution-status-container { /* Was #evolution-status-display */
+    margin-top: 15px;
+    margin-bottom: 15px;
+    padding: 12px; /* Reduced padding */
+    border: 1px solid var(--border-color-light); /* Lighter border */
+    border-radius: 3px;
+    background-color: var(--content-bg); 
+}
+
+#evolution-status-container h2 {
+    margin-top: 0; 
+    font-size: 1.1em; /* Adjusted */
+    margin-bottom: 8px;
+}
+
+#evolution-status-text { 
+    display: block; 
+    min-height: 1.4em; 
+    margin-top: 5px; 
+    font-size: var(--font-size-small); /* Consistent with other messages */
+    /* General .status-message styling is applied via JS */
+}
+
+progress#evolution-progress {
+    width: 100%;
+    height: 16px; /* Reduced height */
+    margin-top: 8px;
+    border-radius: 3px;
+    border: 1px solid var(--border-color-medium); 
+    background-color: var(--background-color); 
+}
+
+progress#evolution-progress::-webkit-progress-bar {
+    background-color: var(--background-color);
+    border-radius: 2px; /* Adjusted */
+}
+
+progress#evolution-progress::-webkit-progress-value {
+    background-color: var(--primary-color); 
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+progress#evolution-progress::-moz-progress-bar { 
+    background-color: var(--primary-color); 
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+#evolution-results-display {
+    margin-top: 15px;
+    padding: 12px; /* Reduced padding */
+    border: 1px solid var(--border-color-light);
+    border-radius: 3px;
+    background-color: var(--content-bg);
+}
+#evolution-results-display h2,
+#evolution-results-display h3 {
+     margin-top: 0;
+     font-size: 1.1em; /* Adjusted */
+     margin-bottom: 8px;
+}
+
+#evolution-results-display pre { 
+    margin-top: 5px;
+    font-size: var(--font-size-small); /* Smaller for results pre */
+}
+
+/* --- Settings Tab Specific Styles --- */
+#settings-content h2 { 
+    margin-top: 0; 
+    margin-bottom: 15px; /* Reduced margin */
+    text-align: center;
+    font-size: 1.3em; /* Adjusted */
+}
+
+.setting-entry {
+    margin-bottom: 12px; /* Reduced margin */
+    padding-bottom: 8px; /* Reduced padding */
+    border-bottom: 1px solid var(--border-color-light);
+}
+.setting-entry:last-child {
+    border-bottom: none;
+}
+
+.setting-entry label {
+    margin-bottom: 4px; 
+    font-size: 0.9em; /* Slightly smaller labels in settings */
+}
+
+.setting-entry input[type="text"],
+.setting-entry input[type="number"] {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; /* Standard font for settings */
+    font-size: 0.9em; /* Smaller inputs for settings */
+    padding: 6px 8px; /* Adjusted padding */
+}
+
+.setting-group fieldset { 
+    border-color: var(--border-color-light); 
+    margin-top: 8px;
+    padding: 10px; /* Reduced padding */
+}
+.setting-group legend {
+    font-size: 0.95em; 
+}
+
+
+#save-settings-btn { 
+    display: block;
+    margin: 15px auto 0 auto; /* Adjusted margin */
+    padding: 8px 18px; /* Slightly smaller save button */
+}
+
+#settings-message { 
+    text-align: center;
+    margin-top: 10px; /* Reduced margin */
+    font-size: var(--font-size-small);
+}
+
+/* Ensure headings within specific content areas also use theme text color if not covered by general h1,h2,h3 */
+#playground-content h1, 
+#playground-content h2,
+#settings-content h1, 
+#settings-content h2 {
+    color: var(--text-color);
+}
+
+/* Add focus style for primary color variable for inputs */
+:root {
+    /* ... existing variables ... */
+    --primary-color-rgb: 0,123,255; /* Default primary blue RGB */
+}
+[data-theme="dark"] {
+    /* ... existing variables ... */
+    --primary-color-rgb: 13,110,253; /* Dark theme primary blue RGB */
+}
+input[type="text"]:focus,
+input[type="number"]:focus,
+textarea:focus {
+    border-color: var(--primary-color);
+    outline: 0;
+    box-shadow: 0 0 0 0.2rem rgba(var(--primary-color-rgb), 0.25);
+}
