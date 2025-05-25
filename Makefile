@@ -6,6 +6,17 @@ PYTHON := $(VENV_DIR)/bin/python
 PIP := $(VENV_DIR)/bin/pip
 
 # Default target
+.PHONY: help
+help:
+	@echo "Available targets:"
+	@echo "  all            - Install dependencies and run tests"
+	@echo "  venv           - Create a virtual environment"
+	@echo "  install        - Install Python dependencies"
+	@echo "  lint           - Run Black code formatting"
+	@echo "  test           - Run tests"
+	@echo "  docker-build   - Build the Docker image"
+	@echo "  docker-run     - Run the Docker container with the example"
+
 .PHONY: all
 all: install test
 

@@ -43,7 +43,7 @@ pip install -e .
 ### Quick Start
 
 We use the OpenAI SDK, so you can use any LLM or provider that supports an OpenAI compatible API. Just set the `OPENAI_API_KEY` environment variable
-and update the `api_base` in config.yaml if you are using a provider other than OpenAI. For local models, you can use 
+and update the `api_base` in config.yaml if you are using a provider other than OpenAI. For local models, you can use
 an inference server like [optillm](https://github.com/codelion/optillm).
 
 ```python
@@ -133,7 +133,7 @@ cat checkpoints/checkpoint_*/best_program_info.json | grep -A 10 metrics
 You can also install and execute via Docker:
 ```bash
 docker build -t openevolve .
-docker run --rm -v .:/app openevolve examples/function_minimization/initial_program.py examples/function_minimization/evaluator.py --config examples/function_minimization/config.yaml --iterations 1000
+docker run --rm -v $(pwd):/app openevolve examples/function_minimization/initial_program.py examples/function_minimization/evaluator.py --config examples/function_minimization/config.yaml --iterations 1000
 ```
 
 ## Configuration
@@ -183,7 +183,7 @@ We have sucessfully replicated the results from the AlphaEvolve paper, below is 
 
 ![alpha-evolve-replication](https://github.com/user-attachments/assets/00100f9e-2ac3-445b-9266-0398b7174193)
 
-This is exactly the packing reported by AlphaEolve in their paper (Figure 14): 
+This is exactly the packing reported by AlphaEvolve in their paper (Figure 14):
 
 ![alpha-evolve-results](https://github.com/user-attachments/assets/0c9affa5-053d-404e-bb2d-11479ab248c9)
 
