@@ -86,5 +86,5 @@ evaluator:
 
 # Evolution settings for attention optimization
 diff_based_evolution: true
-allow_full_rewrites: true  # Allow full rewrites for significant attention improvements
+allow_full_rewrites: false  # Allow full rewrites for significant attention improvements
 max_code_length: 100000    # Larger for complex attention implementations

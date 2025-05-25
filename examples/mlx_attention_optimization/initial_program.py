@@ -80,9 +80,9 @@ def optimized_attention_kernel(
         if value.dtype != mx.float32:
             value = value.astype(mx.float32)
     
-    # Determine scale factor
+    # Determine scale factor - make sure it matches reference implementation
     if scale_strategy == "sqrt_dk":
-        scale = 1.0 / math.sqrt(d_model)
+        scale = 1.0 / math.sqrt(d_model)  # This should match reference
     elif scale_strategy == "learned":
         # Slightly different scale as a heuristic
         scale = 0.9 / math.sqrt(d_model) 
@@ -92,24 +92,20 @@ def optimized_attention_kernel(
     # For now, implement basic attention to ensure correctness
     # More complex optimizations will be evolved
     
-    # Compute attention scores
-    scores = mx.matmul(query, mx.transpose(key, axes=(0, 2, 1)))
+    # Compute attention scores - match reference implementation exactly
+    if scale_strategy == "sqrt_dk":
+        # Match reference exactly: scores = matmul(...) / sqrt(d_k)
+        scores = mx.matmul(query, mx.transpose(key, axes=(0, 2, 1))) / math.sqrt(d_model)
+    else:
+        # For other strategies, compute separately
+        scores = mx.matmul(query, mx.transpose(key, axes=(0, 2, 1)))
+        scores = scores * scale
     
-    # Apply scaling
-    scores = scores * scale
-    
-    # Apply mask if provided
+    # Apply mask if provided - match reference implementation
     if mask is not None:
-        # Ensure mask has the right shape and dtype
-        if mask.shape != scores.shape:
-            # Handle different mask shapes - broadcast if needed
-            if len(mask.shape) == 2:  # [seq_len, seq_len]
-                mask = mx.broadcast_to(mask[None, :, :], scores.shape)
-            elif len(mask.shape) == 3 and mask.shape[0] == 1:  # [1, seq_len, seq_len]
-                mask = mx.broadcast_to(mask, scores.shape)
-        
-        mask_value = -1e9 if compute_dtype == mx.float32 else -1e4
-        scores = scores + mask * mask_value
+        # Reference implementation does: scores = scores + mask
+        # So mask should already contain the large negative values
+        scores = scores + mask
     
     # Compute attention weights (always use high precision initially)
     attention_weights = mx.softmax(scores, axis=-1)
@@ -138,18 +134,13 @@ def _chunked_attention(
     """
     # For now, fall back to standard attention to ensure correctness
     # Evolution will implement proper chunking
-    scores = mx.matmul(query, mx.transpose(key, axes=(0, 2, 1)))
-    scores = scores * scale
+    d_model = query.shape[-1]
+    
+    # Match reference implementation exactly
+    scores = mx.matmul(query, mx.transpose(key, axes=(0, 2, 1))) / math.sqrt(d_model)
     
     if mask is not None:
-        if mask.shape != scores.shape:
-            if len(mask.shape) == 2:  # [seq_len, seq_len]
-                mask = mx.broadcast_to(mask[None, :, :], scores.shape)
-            elif len(mask.shape) == 3 and mask.shape[0] == 1:  # [1, seq_len, seq_len]
-                mask = mx.broadcast_to(mask, scores.shape)
-        
-        mask_value = -1e9 if scores.dtype == mx.float32 else -1e4
-        scores = scores + mask * mask_value
+        scores = scores + mask
     
     attention_weights = mx.softmax(scores, axis=-1)
     output = mx.matmul(attention_weights, value)
@@ -230,7 +221,7 @@ def benchmark_attention(
                     
                     # Create causal mask for decoder attention
                     mask = mx.triu(mx.ones((seq_len, seq_len)), k=1) * -1e9
-                    mask = mx.broadcast_to(mask[None, None, :, :], (batch_size, 1, seq_len, seq_len))
+                    mask = mx.broadcast_to(mask[None, :, :], (batch_size, seq_len, seq_len))
                     
                     # Warmup
                     _ = optimized_attention_kernel(query, key, value, mask, **config)

@@ -18,6 +18,28 @@ import json
 import os
 
 
+def safe_float_conversion(value, default=0.0):
+    """Safely convert a value to float, handling infinity and NaN"""
+    try:
+        float_val = float(value)
+        if np.isnan(float_val) or np.isinf(float_val):
+            return default
+        return float_val
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
+def safe_division(numerator, denominator, default=0.0):
+    """Safely perform division, handling zero denominators and infinity"""
+    try:
+        if denominator == 0 or denominator is None:
+            return default
+        result = numerator / denominator
+        return safe_float_conversion(result, default)
+    except (TypeError, ValueError, OverflowError, ZeroDivisionError):
+        return default
+
+
 def run_with_timeout(func, args=(), kwargs={}, timeout_seconds=60):
     """Run a function with timeout using concurrent.futures"""
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
@@ -280,19 +302,19 @@ def benchmark_model_inference(program, config: Dict[str, Any]) -> Dict[str, Any]
                 opt_time = np.mean(opt_times)
                 
                 # Calculate speedup
-                speedup = ref_time / opt_time if opt_time > 0 else 0.0
+                speedup = safe_division(ref_time, opt_time, 0.0)
                 
-                # Calculate throughput (tokens/second)
+                # Calculate throughput (tokens/second)  
                 total_tokens = batch_size * seq_len
-                ref_throughput = total_tokens / ref_time
-                opt_throughput = total_tokens / opt_time
+                ref_throughput = safe_division(total_tokens, ref_time, 0.0)
+                opt_throughput = safe_division(total_tokens, opt_time, 0.0)
                 
                 results[config_name] = {
-                    "reference_time": ref_time,
-                    "optimized_time": opt_time,
-                    "speedup": speedup,
-                    "ref_throughput": ref_throughput,
-                    "opt_throughput": opt_throughput,
+                    "reference_time": safe_float_conversion(ref_time),
+                    "optimized_time": safe_float_conversion(opt_time),
+                    "speedup": safe_float_conversion(speedup),
+                    "ref_throughput": safe_float_conversion(ref_throughput),
+                    "opt_throughput": safe_float_conversion(opt_throughput),
                     "model_config": model_config
                 }
                 
