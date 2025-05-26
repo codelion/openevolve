@@ -22,28 +22,29 @@ def run_with_timeout(func, args=(), kwargs={}, timeout_seconds=5):
     Returns:
         Result of the function or raises TimeoutError
     """
+
     def wrapper(queue, func, args, kwargs):
         try:
             result = func(*args, **kwargs)
-            queue.put(('success', result))
+            queue.put(("success", result))
         except Exception as e:
-            queue.put(('error', e))
-    
+            queue.put(("error", e))
+
     queue = multiprocessing.Queue()
     process = multiprocessing.Process(target=wrapper, args=(queue, func, args, kwargs))
     process.start()
     process.join(timeout=timeout_seconds)
-    
+
     if process.is_alive():
         process.terminate()
         process.join()
         raise TimeoutError(f"Function timed out after {timeout_seconds} seconds")
-    
+
     if queue.empty():
         raise TimeoutError("Function ended without returning a result")
-    
+
     status, result = queue.get()
-    if status == 'error':
+    if status == "error":
         raise result
     return result
 
@@ -197,7 +198,11 @@ def evaluate(program_path):
         # Value and distance scores (quality of solution) get 90% of the weight
         # Speed and reliability get only 10% combined
         combined_score = float(
-            0.35 * value_score + 0.35 * distance_score + standard_deviation_score * 0.20 + 0.05 * speed_score + 0.05 * reliability_score
+            0.35 * value_score
+            + 0.35 * distance_score
+            + standard_deviation_score * 0.20
+            + 0.05 * speed_score
+            + 0.05 * reliability_score
         )
 
         # Also compute an "overall" score that will be the primary metric for selection
