@@ -31,6 +31,7 @@ def search_algorithm(iterations=1000, bounds=(-5, 5)):
 
     return best_x, best_y, best_value
 
+
 # EVOLVE-BLOCK-END
 
 
