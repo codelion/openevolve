@@ -5,10 +5,8 @@ Evaluator for the function minimization example
 import importlib.util
 import numpy as np
 import time
-import concurrent.futures
-import threading
+import multiprocessing
 import traceback
-import sys
 
 
 def run_with_timeout(func, args=(), kwargs={}, timeout_seconds=5):
@@ -24,14 +22,30 @@ def run_with_timeout(func, args=(), kwargs={}, timeout_seconds=5):
     Returns:
         Result of the function or raises TimeoutError
     """
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(func, *args, **kwargs)
+    def wrapper(queue, func, args, kwargs):
         try:
-            return future.result(timeout=timeout_seconds)
-        except concurrent.futures.TimeoutError:
-            raise TimeoutError(
-                f"Function {func.__name__} timed out after {timeout_seconds} seconds"
-            )
+            result = func(*args, **kwargs)
+            queue.put(('success', result))
+        except Exception as e:
+            queue.put(('error', e))
+    
+    queue = multiprocessing.Queue()
+    process = multiprocessing.Process(target=wrapper, args=(queue, func, args, kwargs))
+    process.start()
+    process.join(timeout=timeout_seconds)
+    
+    if process.is_alive():
+        process.terminate()
+        process.join()
+        raise TimeoutError(f"Function timed out after {timeout_seconds} seconds")
+    
+    if queue.empty():
+        raise TimeoutError("Function ended without returning a result")
+    
+    status, result = queue.get()
+    if status == 'error':
+        raise result
+    return result
 
 
 def safe_float(value):
@@ -78,6 +92,8 @@ def evaluate(program_path):
 
         # Run multiple trials
         num_trials = 10
+        x_values = []
+        y_values = []
         values = []
         distances = []
         times = []
@@ -119,14 +135,15 @@ def evaluate(program_path):
                     continue
 
                 # Calculate metrics
-                x_diff = safe_float(x) - GLOBAL_MIN_X
-                y_diff = safe_float(y) - GLOBAL_MIN_Y
+                x_diff = x - GLOBAL_MIN_X
+                y_diff = y - GLOBAL_MIN_Y
                 distance_to_global = np.sqrt(x_diff**2 + y_diff**2)
-                value_difference = abs(value - GLOBAL_MIN_VALUE)
 
-                values.append(float(value))
-                distances.append(float(distance_to_global))
-                times.append(float(end_time - start_time))
+                x_values.append(x)
+                y_values.append(y)
+                values.append(value)
+                distances.append(distance_to_global)
+                times.append(end_time - start_time)
                 success_count += 1
 
             except TimeoutError as e:
@@ -164,6 +181,11 @@ def evaluate(program_path):
         distance_score = float(1.0 / (1.0 + avg_distance))
         speed_score = float(1.0 / avg_time) if avg_time > 0 else 0.0
 
+        # calculate standard deviation scores
+        x_std_score = float(1.0 / (1.0 + np.std(x_values)))
+        y_std_score = float(1.0 / (1.0 + np.std(x_values)))
+        standard_deviation_score = (x_std_score + y_std_score) / 2.0
+
         # Normalize speed score (so it doesn't dominate)
         speed_score = float(min(speed_score, 10.0) / 10.0)
 
@@ -175,7 +197,7 @@ def evaluate(program_path):
         # Value and distance scores (quality of solution) get 90% of the weight
         # Speed and reliability get only 10% combined
         combined_score = float(
-            0.6 * value_score + 0.3 * distance_score + 0.05 * speed_score + 0.05 * reliability_score
+            0.35 * value_score + 0.35 * distance_score + standard_deviation_score * 0.20 + 0.05 * speed_score + 0.05 * reliability_score
         )
 
         # Also compute an "overall" score that will be the primary metric for selection
@@ -194,6 +216,7 @@ def evaluate(program_path):
         return {
             "value_score": value_score,
             "distance_score": distance_score,
+            "standard_deviation_score": standard_deviation_score,
             "speed_score": speed_score,
             "reliability_score": reliability_score,
             "combined_score": combined_score,
@@ -282,8 +305,6 @@ def evaluate_stage1(program_path):
             # Basic metrics with overall score
             return {
                 "runs_successfully": 1.0,
-                "value": float(value),
-                "distance": distance,
                 "value_score": value_score,
                 "distance_score": distance_score,
                 "overall_score": solution_quality,  # This becomes a strong guiding metric
