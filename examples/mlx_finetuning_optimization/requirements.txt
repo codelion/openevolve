@@ -1,0 +1,16 @@
+# Requirements for MLX Fine-tuning Optimization Example
+
+# Core MLX dependencies
+mlx>=0.8.0
+mlx-lm>=0.8.0
+
+# Utilities
+numpy>=1.21.0
+psutil>=5.8.0
+
+# Optional: For better tokenization (if not using default)
+transformers>=4.25.0
+tokenizers>=0.13.0
+
+# Development/testing
+pytest>=7.0.0

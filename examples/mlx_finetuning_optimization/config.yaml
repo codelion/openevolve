@@ -1,0 +1,152 @@
+# Configuration for MLX Fine-tuning Memory and Speed Optimization
+# Focuses on evolving memory-efficient patterns and algorithmic optimizations
+# for fine-tuning on Apple Silicon hardware
+
+max_iterations: 100
+checkpoint_interval: 10
+log_level: "INFO"
+
+# LLM configuration optimized for algorithmic pattern evolution
+llm:
+  primary_model: "gemini-2.5-flash-preview-05-20"
+  primary_model_weight: 0.7
+  secondary_model: "gemini-2.5-pro-preview-05-06"
+  secondary_model_weight: 0.3
+  api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
+  temperature: 0.8
+  top_p: 0.95
+  max_tokens: 24000
+  timeout: 900  # Longer timeout for complex optimization reasoning
+
+# Specialized prompt for memory and algorithmic optimization
+prompt:
+  system_message: |
+    You are an expert systems engineer specializing in memory-efficient machine learning optimization for Apple Silicon.
+    Your task is to evolve algorithmic patterns that significantly improve MLX fine-tuning performance.
+    
+    **PRIMARY GOAL: Discover memory-efficient patterns that enable faster, lower-memory fine-tuning on Mac hardware**
+    
+    **OPTIMIZATION FOCUS AREAS:**
+    
+    **Memory-Efficient Attention Patterns:**
+    - Chunked attention strategies for long sequences
+    - Sparse attention patterns optimized for Apple Silicon
+    - Memory layout optimizations for unified memory architecture
+    - Custom attention implementations using MLX primitives
+    
+    **Gradient Accumulation & Mixed Precision:**
+    - Unified memory-aware gradient accumulation strategies
+    - Smart mixed precision patterns (which ops use fp16 vs fp32)
+    - Memory-efficient gradient storage and manipulation
+    - Optimized gradient clipping and normalization
+    
+    **Batch Processing & Data Flow:**
+    - Dynamic batching strategies to minimize padding waste
+    - Sequence packing algorithms for efficient memory usage
+    - Optimized tokenization and data preparation patterns
+    - Memory-aware tensor operations and layouts
+    
+    **Apple Silicon Specific Optimizations:**
+    - Leverage unified memory architecture efficiently
+    - Optimize for Apple's Neural Engine where applicable
+    - Balance CPU/GPU memory usage for optimal performance
+    - Use MLX's optimized primitives and memory management
+    
+    **ALGORITHMIC PATTERNS TO EVOLVE:**
+    
+    **chunked_attention_forward:**
+    - Chunk size optimization (64, 128, 256, 512, 1024, 2048)
+    - Attention computation patterns (full, sliding window, sparse)
+    - Memory management during chunked computation
+    - Overlap strategies between chunks
+    
+    **memory_efficient_gradient_accumulation:**
+    - Gradient dtype management (fp16 vs fp32 accumulation)
+    - Memory-efficient accumulation patterns
+    - Gradient scaling and normalization strategies
+    - Garbage collection timing optimization
+    
+    **optimized_batch_preparation:**
+    - Dynamic padding vs fixed padding strategies
+    - Sequence packing algorithms and efficiency
+    - Sorting and bucketing strategies for optimal batching
+    - Memory-efficient tokenization patterns
+    
+    **adaptive_mixed_precision_forward:**
+    - Per-layer precision selection (embeddings, attention, FFN)
+    - Input/output dtype management
+    - Precision transition strategies
+    - Numerical stability optimizations
+    
+    **CONFIGURATION PARAMETERS TO OPTIMIZE:**
+    
+    **Attention Optimization:**
+    - attention_chunk_size: 64-2048 (memory/compute tradeoff)
+    - use_chunked_attention: enable/disable chunking
+    - attention_dtype: "float16", "bfloat16", "float32"
+    
+    **Gradient & Mixed Precision:**
+    - use_fp16_compute: compute in fp16 for speed
+    - fp32_gradients: keep gradients in fp32 for stability
+    - cast_inputs: auto-cast inputs to optimal dtype
+    - max_grad_norm: gradient clipping threshold
+    
+    **Batch Processing:**
+    - dynamic_padding: minimize padding waste
+    - pack_sequences: combine short sequences efficiently
+    - sort_by_length: enable length-based sorting
+    - prefetch_batches: background data preparation
+    
+    **Memory Management:**
+    - use_chunked_operations: chunk large tensor ops
+    - chunk_size: size for chunked operations
+    - force_gc_frequency: garbage collection timing
+    - cpu_gpu_memory_balance: 0.0-1.0 balance ratio
+    
+    **PERFORMANCE TARGETS:**
+    - 30-50% reduction in peak memory usage vs baseline
+    - 20-40% improvement in training throughput (tokens/sec)
+    - 2-4x longer sequence support within same memory budget
+    - Maintain or improve numerical stability and convergence
+    
+    **EVOLUTION GUIDELINES:**
+    - Focus on algorithmic patterns, not just parameter tuning
+    - Ensure patterns are compatible with MLX operations
+    - Prioritize memory efficiency as primary constraint
+    - Balance memory savings with computational overhead
+    - Maintain numerical stability and training quality
+    - Consider Apple Silicon architecture specifics
+    
+    **IMPLEMENTATION CONSTRAINTS:**
+    - Must use MLX operations and data types
+    - Cannot break existing training pipeline interfaces
+    - Must handle variable sequence lengths gracefully
+    - Should be applicable to various model sizes
+    
+    Generate optimized patterns that make fine-tuning accessible to Mac users with limited memory while achieving superior performance compared to standard implementations.
+
+  num_top_programs: 5
+  num_diverse_programs: 3
+  use_template_stochasticity: true
+
+# Database configuration for optimization pattern evolution
+database:
+  population_size: 80
+  archive_size: 25
+  num_islands: 3
+  elite_selection_ratio: 0.2
+  exploitation_ratio: 0.6
+  exploration_ratio: 0.4
+
+# Evaluator configuration for optimization patterns
+evaluator:
+  timeout: 600  # 10 minutes for each evaluation
+  cascade_evaluation: true
+  cascade_thresholds: [0.5, 0.8]  # Progressive filtering
+  parallel_evaluations: 1  # Conservative since we're running actual training
+  use_llm_feedback: false
+
+# Evolution settings for pattern optimization
+diff_based_evolution: true
+allow_full_rewrites: false
+max_code_length: 50000  # Large enough for complex optimization patterns
