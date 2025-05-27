@@ -145,7 +145,7 @@ Through evolutionary iterations, OpenEvolve discovered several key algorithmic c
 2. **Adaptive Step Size**: The step size is adjusted dynamically—shrinking as the search converges and expanding if progress stalls—leading to better coverage and faster convergence.
     ```python
     if i > iterations * 0.75:  # Reduce step size towards the end
-            step_size *= 0.5
+        step_size *= 0.5
     if no_improvement_count > step_size_increase_threshold: # Increase step size if stuck
         step_size *= 1.1
         no_improvement_count = 0 # Reset the counter
