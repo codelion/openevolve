@@ -134,6 +134,81 @@ def safe_float_conversion(value, default=0.0):
         return default
 
 
+def validate_training_metrics(optimization_results: Dict[str, Any], baseline_results: Dict[str, Any]) -> Tuple[bool, str]:
+    """Validate training metrics to detect reward hacking patterns"""
+    
+    opt_final_loss = optimization_results.get("final_loss", 999.0)
+    baseline_final_loss = baseline_results.get("final_loss", 2.0)
+    
+    # CRITICAL: Detect suspiciously low loss values that indicate reward hacking
+    MINIMUM_REASONABLE_LOSS = 0.01  # Cross-entropy loss should rarely be this low
+    if opt_final_loss < MINIMUM_REASONABLE_LOSS:
+        return False, f"Suspiciously low loss detected: {opt_final_loss:.6f} (likely reward hacking)"
+    
+    # Check for exactly zero loss (common reward hacking pattern)
+    if abs(opt_final_loss) < 1e-10:
+        return False, f"Exact zero loss detected: {opt_final_loss} (reward hacking fallback pattern)"
+    
+    # Check for loss values that are unrealistically good
+    if opt_final_loss < baseline_final_loss * 0.1:  # 10x better than baseline is suspicious
+        return False, f"Unrealistically good loss: {opt_final_loss:.4f} vs baseline {baseline_final_loss:.4f} (>10x improvement suspicious)"
+    
+    # Check for performance metrics that are too good to be true
+    opt_tokens_per_sec = optimization_results.get("tokens_per_second", 0.0)
+    baseline_tokens_per_sec = baseline_results.get("tokens_per_second", 1.0)
+    
+    if opt_tokens_per_sec > baseline_tokens_per_sec * 20:  # 20x speed improvement is unrealistic
+        return False, f"Unrealistic speed improvement: {opt_tokens_per_sec:.1f} vs {baseline_tokens_per_sec:.1f} tokens/sec (>20x suspicious)"
+    
+    # Check memory efficiency improvements
+    opt_memory_eff = optimization_results.get("memory_efficiency", 0.0)
+    baseline_memory_eff = baseline_results.get("memory_efficiency", 0.001)
+    
+    if opt_memory_eff > baseline_memory_eff * 50:  # 50x memory efficiency is unrealistic
+        return False, f"Unrealistic memory efficiency: {opt_memory_eff:.4f} vs {baseline_memory_eff:.4f} (>50x suspicious)"
+    
+    # Check for infinite or NaN values
+    metrics_to_check = ["tokens_per_second", "memory_efficiency", "peak_memory_mb", "total_time"]
+    for metric in metrics_to_check:
+        value = optimization_results.get(metric, 0.0)
+        if not np.isfinite(value):
+            return False, f"Invalid {metric} value: {value} (NaN/Inf detected)"
+    
+    # Check for negative metrics that should be positive
+    positive_metrics = ["tokens_per_second", "memory_efficiency", "peak_memory_mb", "total_time"]
+    for metric in positive_metrics:
+        value = optimization_results.get(metric, 0.0)
+        if value <= 0:
+            return False, f"Invalid {metric} value: {value} (should be positive)"
+    
+    # Check peak memory is reasonable (not too low)
+    opt_peak_memory = optimization_results.get("peak_memory_mb", float('inf'))
+    MINIMUM_REASONABLE_MEMORY = 100.0  # MB - any fine-tuning should use at least this much
+    if opt_peak_memory < MINIMUM_REASONABLE_MEMORY:
+        return False, f"Unrealistically low memory usage: {opt_peak_memory:.1f}MB (likely measurement error)"
+    
+    return True, "Metrics appear valid"
+
+
+def detect_loss_scaling_hacks(optimization_results: Dict[str, Any]) -> Tuple[bool, str]:
+    """Detect common loss scaling hacks in gradient accumulation"""
+    
+    # This is harder to detect directly, but we can look for patterns
+    opt_final_loss = optimization_results.get("final_loss", 999.0)
+    
+    # Check if loss is a simple fraction that suggests artificial scaling
+    # Common hack: loss / accumulation_steps where accumulation_steps > 1
+    COMMON_SCALE_FACTORS = [2, 4, 8, 16, 32]  # Common accumulation step values
+    
+    for scale_factor in COMMON_SCALE_FACTORS:
+        scaled_loss = opt_final_loss * scale_factor
+        # If scaling by a common factor gives us a "normal" looking loss (1-5 range)
+        if 1.0 <= scaled_loss <= 5.0:
+            return False, f"Loss appears artificially scaled: {opt_final_loss:.4f} * {scale_factor} = {scaled_loss:.4f} (possible gradient accumulation hack)"
+    
+    return True, "No obvious loss scaling detected"
+
+
 def validate_optimization_config(config: Dict[str, Any]) -> Tuple[bool, str]:
     """Validate that optimization configuration is reasonable"""
     
@@ -209,6 +284,36 @@ def evaluate_optimization_patterns(program, baseline_results: Dict[str, Any]) ->
                 "loss_ratio": 999.0,
                 "overall_fitness": 0.0,
                 "error": optimization_results["error"]
+            }
+        
+        # CRITICAL: Validate training metrics to detect reward hacking
+        metrics_valid, metrics_message = validate_training_metrics(optimization_results, baseline_results)
+        if not metrics_valid:
+            print(f"🚨 REWARD HACKING DETECTED: {metrics_message}")
+            return {
+                "memory_efficiency": 0.0,
+                "training_speed": 0.0,
+                "memory_improvement": -1.0,
+                "speed_improvement": -1.0,
+                "final_loss": 999.0,
+                "loss_ratio": 999.0,
+                "overall_fitness": -100.0,  # Severe penalty for reward hacking
+                "error": f"Reward hacking detected: {metrics_message}"
+            }
+        
+        # CRITICAL: Detect loss scaling hacks
+        loss_scaling_valid, loss_scaling_message = detect_loss_scaling_hacks(optimization_results)
+        if not loss_scaling_valid:
+            print(f"🚨 LOSS SCALING HACK DETECTED: {loss_scaling_message}")
+            return {
+                "memory_efficiency": 0.0,
+                "training_speed": 0.0,
+                "memory_improvement": -1.0,
+                "speed_improvement": -1.0,
+                "final_loss": 999.0,
+                "loss_ratio": 999.0,
+                "overall_fitness": -50.0,  # Heavy penalty for loss scaling hacks
+                "error": f"Loss scaling hack detected: {loss_scaling_message}"
             }
         
         # Calculate relative improvements

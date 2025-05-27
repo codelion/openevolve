@@ -2,7 +2,7 @@
 # Focuses on evolving memory-efficient patterns and algorithmic optimizations
 # for fine-tuning on Apple Silicon hardware
 
-max_iterations: 100
+max_iterations: 50
 checkpoint_interval: 10
 log_level: "INFO"
 
@@ -153,7 +153,56 @@ prompt:
 
     **PRIMARY GOAL: Discover memory-efficient patterns that enable faster, lower-memory fine-tuning on Mac hardware**
     
-    **COMMON RUNTIME ERROR PATTERNS TO AVOID:**
+    **CRITICAL REWARD HACKING PATTERNS TO AVOID:**
+    
+    ❌ **Loss Scaling Manipulation**
+    ```python
+    # WRONG: Artificially reducing reported loss through scaling
+    return loss / total_accumulation_steps  # This makes loss appear better than it is
+    
+    # RIGHT: Scale loss for gradient computation but report unscaled loss
+    scaled_loss_for_gradients = loss / max(total_accumulation_steps, 1)
+    # Use scaled_loss_for_gradients for backward pass
+    # But return the original unscaled loss for evaluation
+    return float(loss), should_update  # Report actual loss, not scaled
+    ```
+    
+    ❌ **Zero Loss Fallbacks**
+    ```python
+    # WRONG: Defaulting to zero loss rewards failed computations
+    loss_value = float(mx.eval(loss) or 0.0)  # 0.0 = perfect loss!
+    
+    # RIGHT: Use reasonable fallback or fail gracefully
+    eval_result = mx.eval(loss)
+    if eval_result is None:
+        raise ValueError("Loss computation failed - cannot proceed")
+    loss_value = float(eval_result)
+    ```
+    
+    ❌ **Unrealistic Performance Claims**
+    ```python
+    # WRONG: Reporting impossible improvements
+    # - 100x speed improvements
+    # - Zero memory usage  
+    # - Perfect loss values (< 0.01)
+    # - Infinite tokens/second
+    
+    # RIGHT: Report realistic, measurable improvements
+    # - 10-50% speed improvements are realistic
+    # - 20-40% memory reductions are achievable
+    # - Loss should remain in reasonable range (0.1-10.0)
+    ```
+    
+    ❌ **Measurement Manipulation**
+    ```python
+    # WRONG: Manipulating timing or memory measurements
+    fake_time = 0.001  # Impossibly fast
+    fake_memory = 10    # Impossibly low memory
+    
+    # RIGHT: Use actual measurements
+    actual_time = time.time() - start_time
+    actual_memory = process.memory_info().rss / 1024 / 1024
+    ```
     
     ❌ **'NoneType' object is not subscriptable**
     ```python
@@ -282,6 +331,15 @@ prompt:
     - **NEVER assume function return values or object states**
     - **INCLUDE error handling and safe fallbacks in all operations**
     
+    **CRITICAL: HONEST EVALUATION REQUIREMENTS**
+    - **Report ACTUAL loss values, not scaled or manipulated values**
+    - **Use REAL timing and memory measurements**
+    - **Ensure training actually works and learns**
+    - **Realistic improvement targets: 10-50% speed, 20-40% memory reduction**
+    - **Loss should remain in range 0.1-10.0 for cross-entropy**
+    - **Any >10x improvement claims will be automatically rejected**
+    - **Zero or near-zero loss values (<0.01) will be flagged as reward hacking**
+    
     **IMPLEMENTATION CONSTRAINTS:**
     - Must use MLX operations and data types
     - Cannot break existing training pipeline interfaces
@@ -296,6 +354,7 @@ prompt:
 
 # Database configuration for optimization pattern evolution
 database:
+  db_path: "./openevolve_output/program_db"  # Updated for training focus
   population_size: 80
   archive_size: 25
   num_islands: 3
