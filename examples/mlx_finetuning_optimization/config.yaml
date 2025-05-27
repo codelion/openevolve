@@ -32,6 +32,45 @@ prompt:
     ❌ `grads.astype()` when grads is a dict - Only works on mx.array
     ❌ Any JAX/PyTorch tree utilities - MLX doesn't have these
     ❌ `mlx.utils.tree_*` functions - These don't exist
+    ❌ `model.update_parameters()` - MLX models don't have this method
+    ❌ `float(loss_tuple)` - Loss might be tuple, extract properly
+    ❌ `batch[:, :-1]` on 1D arrays - Check array dimensions first
+    ❌ Assuming tensor shapes without verification
+
+    **CRITICAL MLX VALUE AND SHAPE HANDLING:**
+
+    🚨 **Loss Value Extraction:**
+    ```python
+    # WRONG: float(loss_value) when loss_value might be tuple
+    # CORRECT: Handle MLX loss properly
+    if isinstance(loss_value, tuple):
+        loss_scalar = float(loss_value[0])  # Extract first element
+    elif isinstance(loss_value, mx.array):
+        loss_scalar = float(mx.eval(loss_value))  # Evaluate and convert
+    else:
+        loss_scalar = float(loss_value)
+    ```
+
+    🚨 **Array Indexing Safety:**
+    ```python
+    # WRONG: batch[:, :-1] without checking dimensions
+    # CORRECT: Check shape before indexing
+    if batch.ndim >= 2:
+        inputs = batch[:, :-1]
+        targets = batch[:, 1:]
+    else:
+        # Handle 1D case or reshape
+        inputs = batch[:-1]
+        targets = batch[1:]
+    ```
+
+    🚨 **Model Parameter Updates:**
+    ```python
+    # WRONG: model.update_parameters(new_params)
+    # CORRECT: Use optimizer.update()
+    optimizer.update(model, grads)
+    mx.eval(model.parameters(), optimizer.state)
+    ```
     ❌ `mx.value_and_grad(fn, has_aux=True)` - has_aux parameter does NOT exist in MLX
     ❌ `mx.value_and_grad(fn, **kwargs)` - No keyword arguments supported except argnums/argnames
     ❌ Assuming `mx.eval()` always returns arrays - Can return None
