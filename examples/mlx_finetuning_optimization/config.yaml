@@ -1,7 +1,7 @@
 # Configuration for MLX Fine-tuning Memory and Speed Optimization
 # Streamlined for better evolution success
 
-max_iterations: 100  # Increased for better exploration
+max_iterations: 50  # Increased for better exploration
 checkpoint_interval: 10
 log_level: "INFO"
 
@@ -14,7 +14,7 @@ llm:
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
   temperature: 0.9  # Higher for more exploration
   top_p: 0.95
-  max_tokens: 8000  # Reduced for faster responses
+  max_tokens: 24000  # Reduced for faster responses
   timeout: 600
 
 # Concise MLX-focused prompt
@@ -72,6 +72,7 @@ prompt:
 
 # Database configuration for better evolution
 database:
+  db_path: "./openevolve_output/program_db" 
   population_size: 50  # Smaller for faster iterations
   archive_size: 20
   num_islands: 4  # More diversity
