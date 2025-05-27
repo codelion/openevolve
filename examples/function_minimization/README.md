@@ -137,17 +137,33 @@ def search_algorithm(bounds=(-5, 5), iterations=2000, initial_temperature=100, c
 
 Through evolutionary iterations, OpenEvolve discovered several key algorithmic concepts:
 
-1. **Memory and Exploitation**: The evolved algorithm tracks and updates the best solution seen so far, allowing for continual improvement rather than random restarting.
+1. **Exploration via Temperature**: Simulated annealing uses a `temperature` parameter to allow uphill moves early in the search, helping escape local minima that would trap simpler methods.
+    ```python
+    probability = np.exp((current_value - new_value) / temperature)
+    ```
 
-2. **Exploration via Temperature**: Simulated annealing uses a “temperature” parameter to allow uphill moves early in the search, helping escape local minima that would trap simpler methods.
+2. **Adaptive Step Size**: The step size is adjusted dynamically—shrinking as the search converges and expanding if progress stalls—leading to better coverage and faster convergence.
+    ```python
+    if i > iterations * 0.75:  # Reduce step size towards the end
+            step_size *= 0.5
+    if no_improvement_count > step_size_increase_threshold: # Increase step size if stuck
+        step_size *= 1.1
+        no_improvement_count = 0 # Reset the counter
+    ```
 
-3. **Adaptive Step Size**: The step size is adjusted dynamically—shrinking as the search converges and expanding if progress stalls—leading to better coverage and faster convergence.
+3. **Bounded Moves**: The algorithm ensures all candidate solutions remain within the feasible domain, avoiding wasted evaluations.
+    ```python
+    # Keep the new points within the bounds
+    new_x = max(bounds[0], min(new_x, bounds[1]))
+    new_y = max(bounds[0], min(new_y, bounds[1]))
+    ```
 
-4. **Bounded Moves**: The algorithm ensures all candidate solutions remain within the feasible domain, avoiding wasted evaluations.
-
-5. **Stagnation Handling**: By counting iterations without improvement, the algorithm responds by boosting exploration when progress stalls.
-
-6. **Probabilistic Acceptance**: Moves to worse solutions are allowed with a probability that decays over time, providing a principled way to balance exploration and exploitation.
+4. **Stagnation Handling**: By counting iterations without improvement, the algorithm responds by boosting exploration when progress stalls.
+    ```python
+    if no_improvement_count > step_size_increase_threshold: # Increase step size if stuck
+        step_size *= 1.1
+        no_improvement_count = 0 # Reset the counter
+    ```
 
 ## Results
 
