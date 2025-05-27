@@ -32,6 +32,10 @@ prompt:
     ❌ `grads.astype()` when grads is a dict - Only works on mx.array
     ❌ Any JAX/PyTorch tree utilities - MLX doesn't have these
     ❌ `mlx.utils.tree_*` functions - These don't exist
+    ❌ Assuming `mx.eval()` always returns arrays - Can return None
+    ❌ Modulo operations without checking for zero divisors
+    ❌ Assuming trainer attributes exist without checking
+    ❌ Accessing array indices without checking if array exists
 
     **REQUIRED MLX PATTERNS:**
 
@@ -69,8 +73,63 @@ prompt:
     # Use mx.eval() to materialize computations
     mx.eval(model.parameters(), optimizer.state)
 
-    # Ensure arrays are evaluated before accessing
-    loss_value = mx.eval(loss)[0] if isinstance(loss, mx.array) else loss
+    # SAFE: Check mx.eval() return values before indexing
+    eval_result = mx.eval(loss)
+    if eval_result is not None:
+        loss_value = eval_result[0] if isinstance(eval_result, mx.array) else eval_result
+    else:
+        loss_value = float(loss) if hasattr(loss, '__float__') else 0.0
+        
+    # SAFE: Alternative pattern for loss evaluation
+    loss_value = float(loss) if isinstance(loss, (int, float)) else float(mx.eval(loss) or 0.0)
+    ```
+
+    ✅ **Safe Arithmetic Operations:**
+    ```python
+    # SAFE: Check for zero before modulo operations
+    if total_accumulation_steps > 0 and (accumulation_step + 1) % total_accumulation_steps == 0:
+        # Perform update
+        pass
+    
+    # SAFE: Division with fallback
+    batch_size = len(batch) if batch is not None and len(batch) > 0 else 1
+    normalized_loss = total_loss / max(batch_size, 1)
+    ```
+
+    ✅ **Safe Attribute Access:**
+    ```python
+    # SAFE: Check attributes before accessing
+    if hasattr(trainer, 'accumulated_grads'):
+        grads = trainer.accumulated_grads
+    else:
+        # Initialize if needed
+        trainer.accumulated_grads = {}
+        grads = trainer.accumulated_grads
+        
+    # SAFE: Use getattr with defaults
+    accumulated_grads = getattr(trainer, 'accumulated_grads', None)
+    if accumulated_grads is None:
+        accumulated_grads = {}
+        setattr(trainer, 'accumulated_grads', accumulated_grads)
+    ```
+
+    ✅ **Safe Array Operations:**
+    ```python
+    # SAFE: Check array existence and shape before indexing
+    if isinstance(tensor, mx.array) and tensor.size > 0:
+        first_element = tensor[0]
+    else:
+        first_element = 0.0
+        
+    # SAFE: Robust tensor evaluation
+    def safe_eval(tensor):
+        if tensor is None:
+            return None
+        try:
+            result = mx.eval(tensor)
+            return result if result is not None else tensor
+        except Exception:
+            return tensor
     ```
 
     **MLX-SPECIFIC OPTIMIZATIONS:**
@@ -86,8 +145,48 @@ prompt:
     3. ✓ No tree utilities from other frameworks
     4. ✓ Proper error handling for type mismatches
     5. ✓ Arrays evaluated with mx.eval() when needed
+    6. ✓ Check mx.eval() return values before indexing
+    7. ✓ Verify divisors are non-zero before modulo/division
+    8. ✓ Check object attributes exist before accessing
+    9. ✓ Handle None and empty arrays gracefully
+    10. ✓ Use safe fallbacks for all operations
 
     **PRIMARY GOAL: Discover memory-efficient patterns that enable faster, lower-memory fine-tuning on Mac hardware**
+    
+    **COMMON RUNTIME ERROR PATTERNS TO AVOID:**
+    
+    ❌ **'NoneType' object is not subscriptable**
+    ```python
+    # WRONG: loss_value = mx.eval(loss)[0]  # mx.eval() might return None
+    # RIGHT: 
+    eval_result = mx.eval(loss)
+    loss_value = eval_result[0] if eval_result is not None else 0.0
+    ```
+    
+    ❌ **integer modulo by zero** 
+    ```python
+    # WRONG: if step % accumulation_steps == 0:  # accumulation_steps might be 0
+    # RIGHT:
+    if accumulation_steps > 0 and step % accumulation_steps == 0:
+    ```
+    
+    ❌ **'object' has no attribute** 
+    ```python
+    # WRONG: trainer.accumulated_grads  # attribute might not exist
+    # RIGHT:
+    if hasattr(trainer, 'accumulated_grads'):
+        grads = trainer.accumulated_grads
+    else:
+        trainer.accumulated_grads = {}
+        grads = trainer.accumulated_grads
+    ```
+    
+    ❌ **TypeError: unsupported operand type(s)**
+    ```python
+    # WRONG: loss = loss1 + loss2  # types might be incompatible
+    # RIGHT:
+    loss = float(loss1) + float(loss2) if loss1 is not None and loss2 is not None else 0.0
+    ```
     
     **OPTIMIZATION FOCUS AREAS:**
     
@@ -179,6 +278,9 @@ prompt:
     - Balance memory savings with computational overhead
     - Maintain numerical stability and training quality
     - Consider Apple Silicon architecture specifics
+    - **ALWAYS use defensive programming: check types, values, and attributes**
+    - **NEVER assume function return values or object states**
+    - **INCLUDE error handling and safe fallbacks in all operations**
     
     **IMPLEMENTATION CONSTRAINTS:**
     - Must use MLX operations and data types
