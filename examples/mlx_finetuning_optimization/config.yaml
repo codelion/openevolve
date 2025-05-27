@@ -552,7 +552,7 @@ database:
 
 # Evaluator configuration for optimization patterns
 evaluator:
-  timeout: 600  # 10 minutes for each evaluation
+  timeout: 900  # 10 minutes for each evaluation
   cascade_evaluation: true
   cascade_thresholds: [0.5, 0.8]  # Progressive filtering
   parallel_evaluations: 1  # Conservative since we're running actual training
@@ -561,4 +561,4 @@ evaluator:
 # Evolution settings for pattern optimization
 diff_based_evolution: true
 allow_full_rewrites: false
-max_code_length: 50000  # Large enough for complex optimization patterns
+max_code_length: 100000  # Large enough for complex optimization patterns
