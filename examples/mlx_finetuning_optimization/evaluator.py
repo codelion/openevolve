@@ -188,6 +188,8 @@ def evaluate_optimization_patterns(program, baseline_results: Dict[str, Any]) ->
                 "training_speed": 0.0,
                 "memory_improvement": 0.0,
                 "speed_improvement": 0.0,
+                "final_loss": 999.0,  # Very bad loss
+                "loss_ratio": 999.0,
                 "overall_fitness": 0.0,
                 "error": f"Invalid configuration: {validation_message}"
             }
@@ -203,6 +205,8 @@ def evaluate_optimization_patterns(program, baseline_results: Dict[str, Any]) ->
                 "training_speed": 0.0,
                 "memory_improvement": 0.0,
                 "speed_improvement": 0.0,
+                "final_loss": 999.0,
+                "loss_ratio": 999.0,
                 "overall_fitness": 0.0,
                 "error": optimization_results["error"]
             }
@@ -212,11 +216,35 @@ def evaluate_optimization_patterns(program, baseline_results: Dict[str, Any]) ->
         baseline_memory_efficiency = baseline_results.get("memory_efficiency", 0.001)
         baseline_peak_memory = baseline_results.get("peak_memory_mb", 1000.0)
         baseline_total_time = baseline_results.get("total_time", 100.0)
+        baseline_final_loss = baseline_results.get("final_loss", 2.0)  # CRITICAL: Add final loss
         
         opt_tokens_per_sec = optimization_results.get("tokens_per_second", 0.0)
         opt_memory_efficiency = optimization_results.get("memory_efficiency", 0.0)
         opt_peak_memory = optimization_results.get("peak_memory_mb", float('inf'))
         opt_total_time = optimization_results.get("total_time", float('inf'))
+        opt_final_loss = optimization_results.get("final_loss", 999.0)  # CRITICAL: Add final loss
+        
+        # Calculate loss ratio (optimized loss / baseline loss)
+        loss_ratio = opt_final_loss / baseline_final_loss if baseline_final_loss > 0 else 999.0
+        
+        # CRITICAL CONSTRAINT: Reject if final loss is significantly worse
+        MAX_LOSS_DEGRADATION = 1.20  # Allow max 20% worse loss
+        if loss_ratio > MAX_LOSS_DEGRADATION:
+            print(f"❌ REJECTING optimization: Final loss too high!")
+            print(f"   Baseline loss: {baseline_final_loss:.4f}")
+            print(f"   Optimized loss: {opt_final_loss:.4f}")
+            print(f"   Loss ratio: {loss_ratio:.2f} (max allowed: {MAX_LOSS_DEGRADATION})")
+            
+            return {
+                "memory_efficiency": 0.0,
+                "training_speed": 0.0,
+                "memory_improvement": -1.0,
+                "speed_improvement": -1.0,
+                "final_loss": float(opt_final_loss),
+                "loss_ratio": float(loss_ratio),
+                "overall_fitness": -10.0,  # Heavy penalty
+                "error": f"Final loss degraded too much: {loss_ratio:.2f}x vs baseline"
+            }
         
         # Calculate percentage improvements
         speed_improvement = (opt_tokens_per_sec - baseline_tokens_per_sec) / baseline_tokens_per_sec if baseline_tokens_per_sec > 0 else 0.0
@@ -224,46 +252,69 @@ def evaluate_optimization_patterns(program, baseline_results: Dict[str, Any]) ->
         memory_usage_improvement = (baseline_peak_memory - opt_peak_memory) / baseline_peak_memory if baseline_peak_memory > 0 else 0.0
         time_improvement = (baseline_total_time - opt_total_time) / baseline_total_time if baseline_total_time > 0 else 0.0
         
+        # Loss improvement (lower is better, so we want negative loss_ratio improvement)
+        loss_improvement = (baseline_final_loss - opt_final_loss) / baseline_final_loss if baseline_final_loss > 0 else 0.0
+        
         # Ensure improvements are reasonable (cap at 10x improvement to avoid outliers)
         speed_improvement = max(-0.9, min(speed_improvement, 10.0))
         memory_efficiency_improvement = max(-0.9, min(memory_efficiency_improvement, 10.0))
         memory_usage_improvement = max(-0.9, min(memory_usage_improvement, 0.9))  # Max 90% memory reduction
         time_improvement = max(-0.9, min(time_improvement, 0.9))  # Max 90% time reduction
+        loss_improvement = max(-2.0, min(loss_improvement, 2.0))  # Loss can be 3x better or 2x worse
         
-        # Calculate overall fitness with emphasis on memory efficiency (key constraint for Mac users)
-        # Positive improvements should increase fitness, negative should decrease it
+        # Calculate overall fitness with LOSS AS PRIMARY FACTOR
         fitness_components = {
-            "memory_efficiency_score": memory_efficiency_improvement * 0.4,  # 40% weight
-            "speed_score": speed_improvement * 0.25,                        # 25% weight  
-            "memory_usage_score": memory_usage_improvement * 0.25,          # 25% weight
-            "time_score": time_improvement * 0.1                            # 10% weight
+            "loss_quality_score": loss_improvement * 0.5,           # 50% weight - MOST IMPORTANT
+            "memory_efficiency_score": memory_efficiency_improvement * 0.2,  # 20% weight
+            "speed_score": speed_improvement * 0.2,                 # 20% weight  
+            "memory_usage_score": memory_usage_improvement * 0.1,   # 10% weight
         }
         
         overall_fitness = sum(fitness_components.values())
         
         # Add stability bonus/penalty
-        if opt_peak_memory < float('inf') and opt_tokens_per_sec > 0:
+        if opt_peak_memory < float('inf') and opt_tokens_per_sec > 0 and opt_final_loss < 50.0:
             stability_bonus = 0.1
         else:
             stability_bonus = -0.5  # Heavy penalty for failed runs
         
         overall_fitness += stability_bonus
         
+        # Add loss quality bonus for maintaining good learning
+        if loss_ratio <= 1.05:  # Within 5% of baseline loss
+            loss_quality_bonus = 0.2  # Bonus for maintaining learning quality
+        elif loss_ratio <= 1.10:  # Within 10%
+            loss_quality_bonus = 0.1
+        else:
+            loss_quality_bonus = 0.0
+        
+        overall_fitness += loss_quality_bonus
+        
         # Normalize fitness to reasonable range
-        overall_fitness = max(-1.0, min(overall_fitness, 5.0))
+        overall_fitness = max(-10.0, min(overall_fitness, 5.0))
+        
+        print(f"✅ Optimization ACCEPTED:")
+        print(f"   Final loss: {opt_final_loss:.4f} vs baseline {baseline_final_loss:.4f} (ratio: {loss_ratio:.2f})")
+        print(f"   Speed: {speed_improvement:.1%} improvement")
+        print(f"   Memory efficiency: {memory_efficiency_improvement:.1%} improvement")
+        print(f"   Overall fitness: {overall_fitness:.4f}")
         
         return {
             "memory_efficiency": float(opt_memory_efficiency),
             "training_speed": float(opt_tokens_per_sec),
             "peak_memory_mb": float(opt_peak_memory),
             "total_time": float(opt_total_time),
+            "final_loss": float(opt_final_loss),
+            "loss_ratio": float(loss_ratio),
             "speed_improvement": float(speed_improvement),
             "memory_efficiency_improvement": float(memory_efficiency_improvement),
             "memory_usage_improvement": float(memory_usage_improvement),
             "time_improvement": float(time_improvement),
+            "loss_improvement": float(loss_improvement),
             "overall_fitness": float(overall_fitness),
             "baseline_tokens_per_sec": float(baseline_tokens_per_sec),
             "baseline_memory_efficiency": float(baseline_memory_efficiency),
+            "baseline_final_loss": float(baseline_final_loss),
             "config_valid": True,
             "fitness_components": fitness_components
         }
