@@ -244,13 +244,15 @@ def create_optimized_trainer(model_name: str = "mlx-community/Qwen3-0.6B-bf16",
 
 
 def benchmark_optimization_improvement(model_name: str = "mlx-community/Qwen3-0.6B-bf16",
-                                     num_samples: int = 100) -> Dict[str, Any]:
+                                     num_samples: int = 100,
+                                     optimization_path: Optional[str] = None) -> Dict[str, Any]:
     """
     Benchmark the improvement from evolved optimizations
     
     Args:
         model_name: Model to benchmark
         num_samples: Number of training samples
+        optimization_path: Path to optimization patterns (None for auto-detection)
     
     Returns:
         Benchmark results comparing baseline vs optimized
@@ -264,7 +266,7 @@ def benchmark_optimization_improvement(model_name: str = "mlx-community/Qwen3-0.
     baseline_results = baseline_trainer.train(baseline_dataset, "./benchmark_baseline")
     
     print("Benchmarking optimized trainer...")
-    optimized_trainer = create_optimized_trainer(model_name)
+    optimized_trainer = create_optimized_trainer(model_name, optimization_path)
     optimized_trainer.config.batch_size = 2
     optimized_dataset = optimized_trainer.create_sample_dataset(num_samples)
     optimized_results = optimized_trainer.train(optimized_dataset, "./benchmark_optimized")

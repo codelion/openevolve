@@ -58,29 +58,73 @@ def run_baseline(num_samples: int = 200, output_dir: str = "./demo_baseline"):
     return results
 
 
+def check_best_program_exists():
+    """Check if best_program.py exists and exit if not found"""
+    # Check current directory first
+    current_dir_best = os.path.join(os.getcwd(), "best_program.py")
+    if os.path.exists(current_dir_best):
+        print(f"✅ Found best_program.py in current directory: {current_dir_best}")
+        return current_dir_best
+    
+    # Check openevolve output directory
+    script_dir = os.path.dirname(__file__)
+    openevolve_output = os.path.join(script_dir, "openevolve_output")
+    
+    if os.path.exists(openevolve_output):
+        # Look for the best program
+        best_dir = os.path.join(openevolve_output, "best")
+        if os.path.exists(best_dir):
+            best_program = os.path.join(best_dir, "best_program.py")
+            if os.path.exists(best_program):
+                print(f"✅ Found best_program.py in openevolve output: {best_program}")
+                return best_program
+        
+        # Look in checkpoints for latest
+        checkpoints_dir = os.path.join(openevolve_output, "checkpoints")
+        if os.path.exists(checkpoints_dir):
+            checkpoints = [d for d in os.listdir(checkpoints_dir) if d.startswith("checkpoint_")]
+            if checkpoints:
+                latest_checkpoint = max(checkpoints, key=lambda x: int(x.split("_")[1]))
+                checkpoint_program = os.path.join(checkpoints_dir, latest_checkpoint, "best_program.py")
+                if os.path.exists(checkpoint_program):
+                    print(f"✅ Found best_program.py in latest checkpoint: {checkpoint_program}")
+                    return checkpoint_program
+    
+    # If we get here, no best_program.py was found
+    print("❌ Error: best_program.py not found!")
+    print("")
+    print("The demo requires a best_program.py file with evolved optimizations.")
+    print("")
+    print("To get best_program.py, you can:")
+    print("  1. Run evolution: python demo.py --evolve --iterations 50")
+    print("  2. Copy from openevolve_output/best/ if it exists")
+    print("  3. Copy from a checkpoint: openevolve_output/checkpoints/checkpoint_*/best_program.py")
+    print("")
+    print("Searched locations:")
+    print(f"  • Current directory: {current_dir_best}")
+    print(f"  • OpenEvolve output: {os.path.join(script_dir, 'openevolve_output', 'best', 'best_program.py')}")
+    print(f"  • Latest checkpoint: {os.path.join(script_dir, 'openevolve_output', 'checkpoints', '*', 'best_program.py')}")
+    print("")
+    sys.exit(1)
+
+
 def run_optimized(num_samples: int = 200, output_dir: str = "./demo_optimized"):
     """Run optimized MLX fine-tuning"""
     print("⚡ Running Optimized MLX Fine-tuning")
     print("=" * 50)
     
+    # Check that best_program.py exists before proceeding
+    best_program_path = check_best_program_exists()
+    
     try:
-        # Create trainer with automatic optimization loading
-        trainer = create_optimized_trainer("mlx-community/Qwen3-0.6B-bf16")
+        # Create trainer with specific optimization path
+        trainer = create_optimized_trainer("mlx-community/Qwen3-0.6B-bf16", best_program_path)
         trainer.config.batch_size = 2
         trainer.config.num_epochs = 1
+        print(f"✅ Created optimized trainer using {best_program_path}")
     except Exception as e:
-        print(f"⚠️  Failed to create optimized trainer: {e}")
-        print("Falling back to baseline with default optimizations...")
-        trainer = BaselineTrainer("mlx-community/Qwen3-0.6B-bf16")
-        trainer.config.batch_size = 2
-        trainer.config.num_epochs = 1
-        # Try to apply any available optimizations
-        try:
-            apply_optimizations(trainer)
-            print("✅ Applied optimizations to baseline trainer")
-        except Exception as opt_error:
-            print(f"⚠️  Could not apply optimizations: {opt_error}")
-            print("Using baseline trainer without optimizations")
+        print(f"❌ Failed to create optimized trainer: {e}")
+        sys.exit(1)
     
     print(f"Creating {num_samples} training samples...")
     dataset = trainer.create_sample_dataset(num_samples)
@@ -105,10 +149,16 @@ def compare_performance(num_samples: int = 200):
     print("🏁 Comparing Baseline vs Optimized Performance")
     print("=" * 50)
     
+    # Check that best_program.py exists before proceeding
+    best_program_path = check_best_program_exists()
+    
     print("Running comprehensive benchmark...")
+    # Pass the specific best program path to ensure we use the evolved optimizations
+    from mlx_optimization_patch import benchmark_optimization_improvement
     results = benchmark_optimization_improvement(
         model_name="mlx-community/Qwen3-0.6B-bf16",
-        num_samples=num_samples
+        num_samples=num_samples,
+        optimization_path=best_program_path
     )
     
     baseline = results["baseline"]
@@ -213,6 +263,9 @@ def demo_context_manager():
     print("🎭 Demonstrating Context Manager Usage")
     print("=" * 50)
     
+    # Check that best_program.py exists before proceeding
+    best_program_path = check_best_program_exists()
+    
     # Example of how users would integrate into existing code
     trainer = BaselineTrainer("mlx-community/Qwen3-0.6B-bf16")
     trainer.config.batch_size = 1
@@ -222,7 +275,7 @@ def demo_context_manager():
     
     print("Training with automatic optimizations...")
     
-    with mlx_optimizations():
+    with mlx_optimizations(best_program_path):
         # All training inside this context will use optimized patterns
         results = trainer.train(dataset, "./demo_context_output")
     
