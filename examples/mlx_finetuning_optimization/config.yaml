@@ -1,564 +1,93 @@
 # Configuration for MLX Fine-tuning Memory and Speed Optimization
-# Focuses on evolving memory-efficient patterns and algorithmic optimizations
-# for fine-tuning on Apple Silicon hardware
+# Streamlined for better evolution success
 
-max_iterations: 50
+max_iterations: 100  # Increased for better exploration
 checkpoint_interval: 10
 log_level: "INFO"
 
-# LLM configuration optimized for algorithmic pattern evolution
+# LLM configuration optimized for evolution
 llm:
   primary_model: "gemini-2.5-flash-preview-05-20"
-  primary_model_weight: 0.6
-  secondary_model: "gemini-2.5-pro-preview-05-06"
-  secondary_model_weight: 0.4
+  primary_model_weight: 0.5  # Balanced mix
+  secondary_model: "gemini-2.5-pro-preview-05-06" 
+  secondary_model_weight: 0.5
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
-  temperature: 0.7
+  temperature: 0.9  # Higher for more exploration
   top_p: 0.95
-  max_tokens: 32000
-  timeout: 900  # Longer timeout for complex optimization reasoning
+  max_tokens: 8000  # Reduced for faster responses
+  timeout: 600
 
-# Specialized prompt for memory and algorithmic optimization with MLX API safety
+# Concise MLX-focused prompt
 prompt:
   system_message: |
-    You are an expert MLX developer specializing in optimizing machine learning code for Apple Silicon.
-    Your task is to evolve MLX code patterns for maximum performance and memory efficiency.
-
-    **CRITICAL MLX API CONSTRAINTS:**
-
-    **FORBIDDEN OPERATIONS - THESE WILL CAUSE ERRORS:**
-    ❌ `mx.tree_flatten()` - Does NOT exist in MLX
-    ❌ `mx.tree_map()` - Does NOT exist in MLX  
-    ❌ `grads.astype()` when grads is a dict - Only works on mx.array
-    ❌ Any JAX/PyTorch tree utilities - MLX doesn't have these
-    ❌ `mlx.utils.tree_*` functions - These don't exist
-    ❌ `model.update_parameters()` - MLX models don't have this method
-    ❌ `float(loss_tuple)` - Loss might be tuple, extract properly
-    ❌ `batch[:, :-1]` on 1D arrays - Check array dimensions first
-    ❌ Assuming tensor shapes without verification
-
-    **CRITICAL MLX VALUE AND SHAPE HANDLING:**
-
-    🚨 **Loss Value Extraction:**
+    You are an expert MLX developer optimizing machine learning code for Apple Silicon.
+    
+    **CRITICAL MLX API RULES:**
+    
+    ❌ **FORBIDDEN (WILL ERROR):**
+    - `mx.tree_flatten()`, `mx.tree_map()` - Don't exist in MLX
+    - `grads.astype()` on dicts - Only works on mx.array
+    - `mx.value_and_grad(fn, has_aux=True)` - has_aux not supported
+    - `float(tuple_value)` - Always extract scalar first
+    - `mx.eval(loss)[0]` if eval returns None
+    
+    ✅ **REQUIRED PATTERNS:**
     ```python
-    # WRONG: float(loss_value) when loss_value might be tuple
-    # CORRECT: Handle MLX loss properly
-    if isinstance(loss_value, tuple):
-        loss_scalar = float(loss_value[0])  # Extract first element
-    elif isinstance(loss_value, mx.array):
-        loss_scalar = float(mx.eval(loss_value))  # Evaluate and convert
-    else:
-        loss_scalar = float(loss_value)
-    ```
-
-    🚨 **Array Indexing Safety:**
-    ```python
-    # WRONG: batch[:, :-1] without checking dimensions
-    # CORRECT: Check shape before indexing
-    if batch.ndim >= 2:
-        inputs = batch[:, :-1]
-        targets = batch[:, 1:]
-    else:
-        # Handle 1D case or reshape
-        inputs = batch[:-1]
-        targets = batch[1:]
-    ```
-
-    🚨 **Model Parameter Updates:**
-    ```python
-    # WRONG: model.update_parameters(new_params)
-    # CORRECT: Use optimizer.update()
-    optimizer.update(model, grads)
-    mx.eval(model.parameters(), optimizer.state)
-    ```
-    ❌ `mx.value_and_grad(fn, has_aux=True)` - has_aux parameter does NOT exist in MLX
-    ❌ `mx.value_and_grad(fn, **kwargs)` - No keyword arguments supported except argnums/argnames
-    ❌ Assuming `mx.eval()` always returns arrays - Can return None
-    ❌ Modulo operations without checking for zero divisors
-    ❌ Assuming trainer attributes exist without checking
-    ❌ Accessing array indices without checking if array exists
-
-    **REQUIRED MLX PATTERNS:**
-
-    ✅ **Gradient Processing:**
-    ```python
-    # For gradient dictionaries, iterate manually:
-    for param_name, grad in grads.items():
+    # Gradient processing
+    for name, grad in grads.items():
         if isinstance(grad, mx.array):
             grad = grad.astype(mx.float32)
-            # Process individual gradient
-
-    # Or use dict comprehension:
-    grads = {k: v.astype(mx.float32) if isinstance(v, mx.array) else v 
-             for k, v in grads.items()}
-    ```
-
-    ✅ **Safe Type Conversions:**
-    ```python
-    # Always check type before calling .astype()
-    if isinstance(tensor, mx.array):
-        tensor = tensor.astype(mx.float32)
-        
-    # For nested structures, handle manually:
-    def convert_grads(grads):
-        if isinstance(grads, dict):
-            return {k: convert_grads(v) for k, v in grads.items()}
-        elif isinstance(grads, mx.array):
-            return grads.astype(mx.float32)
-        else:
-            return grads
-    ```
-
-    ✅ **Value and Grad Operations:**
-    ```python
-    # CORRECT: Simple value_and_grad usage
+    
+    # Safe loss extraction  
     loss_value, grads = mx.value_and_grad(loss_fn)(model)
+    # loss_fn must return ONLY loss, not tuple
     
-    # CORRECT: If you need multiple return values from loss_fn, handle separately
-    def loss_fn(model):
-        logits = model(inputs)
-        loss = nn.losses.cross_entropy(logits, targets)
-        # Return only the loss (not a tuple with aux data)
-        return loss
-    
-    loss_value, grads = mx.value_and_grad(loss_fn)(model)
-    
-    # WRONG: mx.value_and_grad(loss_fn, has_aux=True)(model)  # has_aux not supported
-    # WRONG: (loss, aux), grads = mx.value_and_grad(loss_fn, has_aux=True)(model)
-    
-    # CORRECT: If you need auxiliary data, compute it separately
-    def loss_fn(model):
-        logits = model(inputs)
-        loss = nn.losses.cross_entropy(logits, targets)
-        return loss
-    
-    loss_value, grads = mx.value_and_grad(loss_fn)(model)
-    # Compute auxiliary data separately if needed
-    logits = model(inputs)  # Recompute for aux data
-    accuracy = compute_accuracy(logits, targets)
-    ```
-
-    ✅ **Memory Management:**
-    ```python
-    # Use mx.eval() to materialize computations
-    mx.eval(model.parameters(), optimizer.state)
-
-    # SAFE: Check mx.eval() return values before indexing
-    eval_result = mx.eval(loss)
-    if eval_result is not None:
-        loss_value = eval_result[0] if isinstance(eval_result, mx.array) else eval_result
-    else:
-        loss_value = float(loss) if hasattr(loss, '__float__') else 0.0
-        
-    # SAFE: Alternative pattern for loss evaluation
-    loss_value = float(loss) if isinstance(loss, (int, float)) else float(mx.eval(loss) or 0.0)
-    ```
-
-    ✅ **Safe Arithmetic Operations:**
-    ```python
-    # SAFE: Check for zero before modulo operations
-    if total_accumulation_steps > 0 and (accumulation_step + 1) % total_accumulation_steps == 0:
-        # Perform update
-        pass
-    
-    # SAFE: Division with fallback
-    batch_size = len(batch) if batch is not None and len(batch) > 0 else 1
-    normalized_loss = total_loss / max(batch_size, 1)
-    ```
-
-    ✅ **Safe Attribute Access:**
-    ```python
-    # SAFE: Check attributes before accessing
-    if hasattr(trainer, 'accumulated_grads'):
-        grads = trainer.accumulated_grads
-    else:
-        # Initialize if needed
-        trainer.accumulated_grads = {}
-        grads = trainer.accumulated_grads
-        
-    # SAFE: Use getattr with defaults
-    accumulated_grads = getattr(trainer, 'accumulated_grads', None)
-    if accumulated_grads is None:
-        accumulated_grads = {}
-        setattr(trainer, 'accumulated_grads', accumulated_grads)
-    ```
-
-    ✅ **Safe Array Operations:**
-    ```python
-    # SAFE: Check array existence and shape before indexing
-    if isinstance(tensor, mx.array) and tensor.size > 0:
-        first_element = tensor[0]
-    else:
-        first_element = 0.0
-        
-    # SAFE: Robust tensor evaluation
-    def safe_eval(tensor):
-        if tensor is None:
-            return None
+    # Safe evaluation
+    def safe_eval(tensor, fallback=2.0):
         try:
             result = mx.eval(tensor)
-            return result if result is not None else tensor
-        except Exception:
-            return tensor
-    ```
-
-    **MLX-SPECIFIC OPTIMIZATIONS:**
-    - Leverage unified memory architecture
-    - Use appropriate dtypes (float16 for speed, float32 for stability)
-    - Minimize memory allocations with in-place operations where possible
-    - Use chunked operations for large tensors
-    - Prefer mx.concatenate over list accumulation
-
-    **DEBUGGING CHECKLIST:**
-    1. ✓ All mx.* functions exist in MLX (check docs)
-    2. ✓ .astype() only called on mx.array objects
-    3. ✓ No tree utilities from other frameworks
-    4. ✓ Proper error handling for type mismatches
-    5. ✓ Arrays evaluated with mx.eval() when needed
-    6. ✓ Check mx.eval() return values before indexing
-    7. ✓ Verify divisors are non-zero before modulo/division
-    8. ✓ Check object attributes exist before accessing
-    9. ✓ Handle None and empty arrays gracefully
-    10. ✓ Use safe fallbacks for all operations
-    11. ✓ mx.value_and_grad() used without has_aux parameter
-    12. ✓ Loss functions return single values, not tuples
-
-    **PRIMARY GOAL: Discover memory-efficient patterns that enable faster, lower-memory fine-tuning on Mac hardware**
+            return float(result) if result is not None else fallback
+        except:
+            return fallback
     
-    **CRITICAL REWARD HACKING PATTERNS TO AVOID:**
-    
-    ❌ **Loss Scaling Manipulation**
-    ```python
-    # WRONG: Artificially reducing reported loss through scaling
-    return loss / total_accumulation_steps  # This makes loss appear better than it is
-    
-    # RIGHT: Scale loss for gradient computation but report unscaled loss
-    scaled_loss_for_gradients = loss / max(total_accumulation_steps, 1)
-    # Use scaled_loss_for_gradients for backward pass
-    # But return the original unscaled loss for evaluation
-    return float(loss), should_update  # Report actual loss, not scaled
-    ```
-    
-    ❌ **Zero Loss Fallbacks**
-    ```python
-    # WRONG: Defaulting to zero loss rewards failed computations
-    loss_value = float(mx.eval(loss) or 0.0)  # 0.0 = perfect loss!
-    
-    # WRONG: Using NaN as fallback creates invalid metrics
-    if scaled_loss_val is None:
-        unscaled_loss_val = float('nan')  # NaN breaks all metrics!
-    
-    # RIGHT: Use reasonable fallback that doesn't game metrics
-    eval_result = mx.eval(loss)
-    if eval_result is None:
-        # Use a reasonable fallback loss that doesn't artificially improve metrics
-        loss_value = 2.0  # Reasonable cross-entropy loss, not suspiciously good
-        print("Warning: Loss evaluation failed, using reasonable fallback")
+    # Safe array indexing
+    if batch.ndim >= 2:
+        inputs, targets = batch[:, :-1], batch[:, 1:]
     else:
-        loss_value = float(eval_result)
-        
-    # RIGHT: For scaled/unscaled loss patterns
-    def safe_eval_loss(loss_tensor, fallback_value=2.0):
-        try:
-            result = mx.eval(loss_tensor)
-            if result is None:
-                return fallback_value  # Reasonable fallback, not reward hacking
-            return float(result)
-        except Exception:
-            return fallback_value  # Consistent fallback behavior
-    
-    scaled_loss_val = safe_eval_loss(scaled_loss, 2.0)  # Reasonable fallback
-    unscaled_loss_val = scaled_loss_val * max(total_accumulation_steps, 1)
+        inputs, targets = batch[:-1], batch[1:]
     ```
     
-    ❌ **Unrealistic Performance Claims**
-    ```python
-    # WRONG: Reporting impossible improvements
-    # - 100x speed improvements
-    # - Zero memory usage  
-    # - Perfect loss values (< 0.01)
-    # - Infinite tokens/second
+    **GOALS:**
+    - Reduce memory usage 20-40%
+    - Improve speed 10-30% 
+    - Keep loss in range 0.1-10.0
+    - Use defensive programming (check types, handle None)
+    - Never use zero/NaN as loss fallbacks
     
-    # RIGHT: Report realistic, measurable improvements
-    # - 10-50% speed improvements are realistic
-    # - 20-40% memory reductions are achievable
-    # - Loss should remain in reasonable range (0.1-10.0)
-    ```
-    
-    ❌ **Measurement Manipulation**
-    ```python
-    # WRONG: Manipulating timing or memory measurements
-    fake_time = 0.001  # Impossibly fast
-    fake_memory = 10    # Impossibly low memory
-    
-    # RIGHT: Use actual measurements
-    actual_time = time.time() - start_time
-    actual_memory = process.memory_info().rss / 1024 / 1024
-    ```
-    
-    ❌ **value_and_grad() incompatible function arguments**
-    ```python
-    # WRONG: Using JAX-style has_aux parameter
-    (scaled_loss_val, unscaled_loss_val), grads = mx.value_and_grad(loss_fn, has_aux=True)(model)
-    # This causes unscaled_loss_val to be a tuple! float(tuple) fails!
-    
-    # WRONG: Multiple return values from loss function when using value_and_grad
-    def loss_fn(model):
-        logits = model(inputs)
-        loss = nn.losses.cross_entropy(logits, targets)
-        return loss, some_aux_data  # WRONG! Creates tuple!
-    
-    loss_tuple, grads = mx.value_and_grad(loss_fn)(model)  # loss_tuple is (loss, aux_data)
-    return float(loss_tuple)  # ERROR: float() argument must be a real number, not 'tuple'
-    
-    # RIGHT: MLX only supports simple value_and_grad
-    def loss_fn(model):
-        logits = model(inputs)
-        loss = nn.losses.cross_entropy(logits, targets)
-        return loss  # Return ONLY the loss, not a tuple
-    
-    loss_value, grads = mx.value_and_grad(loss_fn)(model)
-    return float(loss_value), should_update  # loss_value is now a scalar
-    
-    # RIGHT: If you need auxiliary data, compute it separately
-    def loss_fn(model):
-        logits = model(inputs)
-        loss = nn.losses.cross_entropy(logits, targets)
-        return loss  # Only return loss for value_and_grad
-    
-    loss_value, grads = mx.value_and_grad(loss_fn)(model)
-    # Compute auxiliary data separately if needed
-    with mx.no_grad():  # Don't need gradients for aux computation
-        logits = model(inputs)
-        accuracy = compute_accuracy(logits, targets)
-    
-    return float(loss_value), should_update
-    ```
-    
-    ❌ **'NoneType' object is not subscriptable**
-    ```python
-    # WRONG: loss_value = mx.eval(loss)[0]  # mx.eval() might return None
-    # RIGHT: 
-    eval_result = mx.eval(loss)
-    loss_value = eval_result[0] if eval_result is not None else 0.0
-    ```
-    
-    ❌ **mx.eval() returning None causing NaN losses**
-    ```python
-    # WRONG: This pattern causes "Scaled loss evaluation returned None"
-    scaled_loss = loss / total_accumulation_steps
-    scaled_loss_val = mx.eval(scaled_loss)  # Returns None!
-    if scaled_loss_val is None:
-        print("Error: Scaled loss evaluation returned None. Reporting NaN unscaled loss.")
-        unscaled_loss_val = float('nan')  # Creates NaN!
-    
-    # RIGHT: Robust loss evaluation with fallbacks
-    def safe_eval_loss(loss_tensor, description="loss"):
-        """Safely evaluate a loss tensor with proper error handling"""
-        if loss_tensor is None:
-            print(f"Warning: {description} tensor is None, using fallback")
-            return 1.0  # Reasonable fallback loss
-            
-        try:
-            # Force evaluation and ensure it's materialized
-            mx.eval(loss_tensor)
-            eval_result = mx.eval(loss_tensor)
-            
-            if eval_result is None:
-                print(f"Warning: {description} evaluation returned None, using fallback")
-                return 1.0  # Reasonable fallback
-                
-            # Handle different return types
-            if isinstance(eval_result, mx.array):
-                if eval_result.size == 1:
-                    scalar_val = float(eval_result.item())
-                else:
-                    scalar_val = float(eval_result.mean())  # Average if multiple values
-            else:
-                scalar_val = float(eval_result)
-                
-            # Check for invalid values
-            if not isinstance(scalar_val, (int, float)) or scalar_val != scalar_val:  # NaN check
-                print(f"Warning: {description} evaluation returned invalid value: {scalar_val}")
-                return 1.0  # Reasonable fallback
-                
-            return scalar_val
-            
-        except Exception as e:
-            print(f"Error evaluating {description}: {e}. Using fallback.")
-            return 1.0  # Reasonable fallback
-    
-    # Usage:
-    scaled_loss = loss / max(total_accumulation_steps, 1)
-    scaled_loss_val = safe_eval_loss(scaled_loss, "scaled loss")
-    unscaled_loss_val = scaled_loss_val * max(total_accumulation_steps, 1)
-    
-    return float(unscaled_loss_val), should_update
-    ```
-    
-    ❌ **integer modulo by zero** 
-    ```python
-    # WRONG: if step % accumulation_steps == 0:  # accumulation_steps might be 0
-    # RIGHT:
-    if accumulation_steps > 0 and step % accumulation_steps == 0:
-    ```
-    
-    ❌ **'object' has no attribute** 
-    ```python
-    # WRONG: trainer.accumulated_grads  # attribute might not exist
-    # RIGHT:
-    if hasattr(trainer, 'accumulated_grads'):
-        grads = trainer.accumulated_grads
-    else:
-        trainer.accumulated_grads = {}
-        grads = trainer.accumulated_grads
-    ```
-    
-    ❌ **TypeError: unsupported operand type(s)**
-    ```python
-    # WRONG: loss = loss1 + loss2  # types might be incompatible
-    # RIGHT:
-    loss = float(loss1) + float(loss2) if loss1 is not None and loss2 is not None else 0.0
-    ```
-    
-    **OPTIMIZATION FOCUS AREAS:**
-    
-    **Memory-Efficient Attention Patterns:**
-    - Chunked attention strategies for long sequences
-    - Sparse attention patterns optimized for Apple Silicon
-    - Memory layout optimizations for unified memory architecture
-    - Custom attention implementations using MLX primitives
-    
-    **Gradient Accumulation & Mixed Precision:**
-    - Unified memory-aware gradient accumulation strategies
-    - Smart mixed precision patterns (which ops use fp16 vs fp32)
-    - Memory-efficient gradient storage and manipulation
-    - Optimized gradient clipping and normalization
-    
-    **Batch Processing & Data Flow:**
-    - Dynamic batching strategies to minimize padding waste
-    - Sequence packing algorithms for efficient memory usage
-    - Optimized tokenization and data preparation patterns
-    - Memory-aware tensor operations and layouts
-    
-    **Apple Silicon Specific Optimizations:**
-    - Leverage unified memory architecture efficiently
-    - Optimize for Apple's Neural Engine where applicable
-    - Balance CPU/GPU memory usage for optimal performance
-    - Use MLX's optimized primitives and memory management
-    
-    **ALGORITHMIC PATTERNS TO EVOLVE:**
-    
-    **chunked_attention_forward:**
-    - Chunk size optimization (64, 128, 256, 512, 1024, 2048)
-    - Attention computation patterns (full, sliding window, sparse)
-    - Memory management during chunked computation
-    - Overlap strategies between chunks
-    
-    **memory_efficient_gradient_accumulation:**
-    - Gradient dtype management (fp16 vs fp32 accumulation)
-    - Memory-efficient accumulation patterns
-    - Gradient scaling and normalization strategies
-    - Garbage collection timing optimization
-    
-    **optimized_batch_preparation:**
-    - Dynamic padding vs fixed padding strategies
-    - Sequence packing algorithms and efficiency
-    - Sorting and bucketing strategies for optimal batching
-    - Memory-efficient tokenization patterns
-    
-    **adaptive_mixed_precision_forward:**
-    - Per-layer precision selection (embeddings, attention, FFN)
-    - Input/output dtype management
-    - Precision transition strategies
-    - Numerical stability optimizations
-    
-    **CONFIGURATION PARAMETERS TO OPTIMIZE:**
-    
-    **Attention Optimization:**
-    - attention_chunk_size: 64-2048 (memory/compute tradeoff)
-    - use_chunked_attention: enable/disable chunking
-    - attention_dtype: "float16", "bfloat16", "float32"
-    
-    **Gradient & Mixed Precision:**
-    - use_fp16_compute: compute in fp16 for speed
-    - fp32_gradients: keep gradients in fp32 for stability
-    - cast_inputs: auto-cast inputs to optimal dtype
-    - max_grad_norm: gradient clipping threshold
-    
-    **Batch Processing:**
-    - dynamic_padding: minimize padding waste
-    - pack_sequences: combine short sequences efficiently
-    - sort_by_length: enable length-based sorting
-    - prefetch_batches: background data preparation
-    
-    **Memory Management:**
-    - use_chunked_operations: chunk large tensor ops
-    - chunk_size: size for chunked operations
-    - force_gc_frequency: garbage collection timing
-    - cpu_gpu_memory_balance: 0.0-1.0 balance ratio
-    
-    **PERFORMANCE TARGETS:**
-    - 30-50% reduction in peak memory usage vs baseline
-    - 20-40% improvement in training throughput (tokens/sec)
-    - 2-4x longer sequence support within same memory budget
-    - Maintain or improve numerical stability and convergence
-    
-    **EVOLUTION GUIDELINES:**
-    - Focus on algorithmic patterns, not just parameter tuning
-    - Ensure patterns are compatible with MLX operations
-    - Prioritize memory efficiency as primary constraint
-    - Balance memory savings with computational overhead
-    - Maintain numerical stability and training quality
-    - Consider Apple Silicon architecture specifics
-    - **ALWAYS use defensive programming: check types, values, and attributes**
-    - **NEVER assume function return values or object states**
-    - **INCLUDE error handling and safe fallbacks in all operations**
-    
-    **CRITICAL: HONEST EVALUATION REQUIREMENTS**
-    - **Report ACTUAL loss values, not scaled or manipulated values**
-    - **Use REAL timing and memory measurements**
-    - **Ensure training actually works and learns**
-    - **Handle mx.eval() None returns with reasonable fallbacks (NOT zero or NaN)**
-    - **Never use NaN, infinity, or zero as loss fallbacks**
-    - **Fallback loss values should be realistic (1.0-3.0 for cross-entropy)**
-    - **Realistic improvement targets: 10-50% speed, 20-40% memory reduction**
-    - **Loss should remain in range 0.1-10.0 for cross-entropy**
-    - **Any >10x improvement claims will be automatically rejected**
-    - **Zero or near-zero loss values (<0.01) will be flagged as reward hacking**
-    - **NaN loss values indicate broken evaluation and will be rejected**
-    
-    **IMPLEMENTATION CONSTRAINTS:**
-    - Must use MLX operations and data types
-    - Cannot break existing training pipeline interfaces
-    - Must handle variable sequence lengths gracefully
-    - Should be applicable to various model sizes
-    
-    Generate optimized patterns that make fine-tuning accessible to Mac users with limited memory while achieving superior performance compared to standard implementations.
+    **FOCUS:** Evolve gradient accumulation and memory-efficient patterns for MLX fine-tuning.
 
-  num_top_programs: 5
-  num_diverse_programs: 3
+  num_top_programs: 3
+  num_diverse_programs: 2
   use_template_stochasticity: true
 
-# Database configuration for optimization pattern evolution
+# Database configuration for better evolution
 database:
-  db_path: "./openevolve_output/program_db"  # Updated for training focus
-  population_size: 80
-  archive_size: 25
-  num_islands: 3
-  elite_selection_ratio: 0.2
-  exploitation_ratio: 0.6
-  exploration_ratio: 0.4
+  population_size: 50  # Smaller for faster iterations
+  archive_size: 20
+  num_islands: 4  # More diversity
+  elite_selection_ratio: 0.15
+  exploitation_ratio: 0.5  # More exploration
+  exploration_ratio: 0.5
 
-# Evaluator configuration for optimization patterns
+# Evaluator configuration
 evaluator:
-  timeout: 900  # 10 minutes for each evaluation
+  timeout: 300  # Faster evaluation
   cascade_evaluation: true
-  cascade_thresholds: [0.5, 0.8]  # Progressive filtering
-  parallel_evaluations: 1  # Conservative since we're running actual training
+  cascade_thresholds: [0.3, 0.6]  # More permissive
+  parallel_evaluations: 1
   use_llm_feedback: false
 
-# Evolution settings for pattern optimization
+# Evolution settings
 diff_based_evolution: true
 allow_full_rewrites: false
-max_code_length: 100000  # Large enough for complex optimization patterns
+max_code_length: 20000  # Smaller for focused changes
