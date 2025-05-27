@@ -43,15 +43,27 @@ def memory_efficient_gradient_accumulation(model, optimizer, batch: mx.array,
     try:
         loss_value, grads = mx.value_and_grad(loss_fn)(model)
         
-        # Safe loss evaluation with fallback
+        # Robust loss evaluation - ensure proper MLX array evaluation
         if isinstance(loss_value, mx.array):
-            loss_scalar = float(mx.eval(loss_value) or 2.0)
+            # Force evaluation and ensure it's not None
+            evaluated_loss = mx.eval(loss_value)
+            if evaluated_loss is not None:
+                loss_scalar = float(evaluated_loss)
+            else:
+                print("Warning: mx.eval returned None for loss_value.")
+                # This indicates a problem with loss computation, not just evaluation
+                return 10.0, False  # Return failure rather than fake success
         else:
             loss_scalar = float(loss_value)
+        
+        # Sanity check the loss value
+        if not (0.01 <= loss_scalar <= 50.0):
+            print(f"Warning: Loss value {loss_scalar:.6f} outside reasonable range [0.01, 50.0]")
+            return loss_scalar, False  # Don't claim success for unreasonable loss
             
     except Exception as e:
         print(f"Gradient computation failed: {e}")
-        return 2.0, False  # Reasonable fallback
+        return 10.0, False  # Reasonable fallback that indicates failure
     
     # Safe gradient processing - no tree operations
     if isinstance(grads, dict):

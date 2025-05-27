@@ -1,16 +1,12 @@
 """
-Evaluator for MLX Fine-tuning Memory Optimization
+Enhanced MLX Fine-tuning Evaluator with Robust Reward Hacking Detection
 
-This evaluator compares evolved optimization patterns against the baseline MLX fine-tuning
-implementation. It measures improvements in memory efficiency, training speed, and
-convergence quality.
-
-Key metrics:
-- Memory efficiency: tokens/second per MB memory used
-- Training speed: tokens processed per second
-- Memory usage: peak memory consumption
-- Convergence quality: loss reduction and stability
-- Overall fitness: combined metric for evolution
+This enhanced evaluator includes comprehensive detection mechanisms for:
+- MLX API errors and warnings
+- Suspicious performance improvements
+- Fallback loss values
+- Exact percentage patterns
+- Training failure detection
 """
 
 import importlib.util
@@ -22,69 +18,16 @@ import psutil
 import gc
 import sys
 import numpy as np
+import re
+import io
 from pathlib import Path
 from typing import Dict, List, Tuple, Any, Optional
-
-
-def get_openevolve_output_dir():
-    """Get the OpenEvolve output directory, creating it if needed"""
-    # Look for openevolve_output in current directory or parent directories
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Check current directory first
-    output_dir = os.path.join(current_dir, "openevolve_output")
-    if not os.path.exists(output_dir):
-        # Check parent directory (common case)
-        parent_dir = os.path.dirname(current_dir)
-        parent_output_dir = os.path.join(parent_dir, "openevolve_output")
-        if os.path.exists(parent_output_dir):
-            output_dir = parent_output_dir
-        else:
-            # Create in current directory if neither exists
-            output_dir = os.path.join(current_dir, "openevolve_output")
-    
-    # Ensure it exists
-    os.makedirs(output_dir, exist_ok=True)
-    return output_dir
-
-
-def get_baseline_output_dir():
-    """Get the baseline output directory within openevolve_output"""
-    baseline_dir = os.path.join(get_openevolve_output_dir(), "baseline")
-    os.makedirs(baseline_dir, exist_ok=True)
-    return baseline_dir
-
-
-def get_evaluation_output_dir():
-    """Get the evaluation output directory within openevolve_output"""
-    eval_dir = os.path.join(get_openevolve_output_dir(), "evaluation")
-    os.makedirs(eval_dir, exist_ok=True)
-    return eval_dir
-
-
-def load_baseline_results() -> Optional[Dict[str, Any]]:
-    """Load baseline results if available"""
-    baseline_results_path = os.path.join(
-        os.path.dirname(__file__), 
-        "baseline_output", 
-        "training_results.json"
-    )
-    
-    if os.path.exists(baseline_results_path):
-        try:
-            with open(baseline_results_path, 'r') as f:
-                return json.load(f)
-        except Exception as e:
-            print(f"Failed to load baseline results: {e}")
-    
-    return None
+from contextlib import redirect_stdout, redirect_stderr
 
 
 def run_baseline_if_needed() -> Dict[str, Any]:
     """Run baseline training if results don't exist"""
     
-    # FIXED: Always regenerate baseline for consistency
-    # The cached baseline results can be inconsistent due to different parameters
     print("Regenerating baseline results for consistency...")
     
     # Find baseline_finetuning.py with robust path handling
@@ -160,120 +103,6 @@ def run_baseline_if_needed() -> Dict[str, Any]:
     return baseline_results
 
 
-def safe_float_conversion(value, default=0.0):
-    """Safely convert a value to float, handling infinity and NaN"""
-    try:
-        float_val = float(value)
-        if np.isnan(float_val) or np.isinf(float_val):
-            return default
-        return float_val
-    except (TypeError, ValueError, OverflowError):
-        return default
-
-
-def validate_training_metrics(optimization_results: Dict[str, Any], baseline_results: Dict[str, Any]) -> Tuple[bool, str]:
-    """Validate training metrics to detect reward hacking patterns"""
-    
-    opt_final_loss = optimization_results.get("final_loss", 999.0)
-    baseline_final_loss = baseline_results.get("final_loss", 2.0)
-    
-    # CRITICAL: Detect suspiciously low loss values that indicate reward hacking
-    MINIMUM_REASONABLE_LOSS = 0.01  # Cross-entropy loss should rarely be this low
-    if opt_final_loss < MINIMUM_REASONABLE_LOSS:
-        return False, f"Suspiciously low loss detected: {opt_final_loss:.6f} (likely reward hacking)"
-    
-    # Check for exactly zero loss (common reward hacking pattern)
-    if abs(opt_final_loss) < 1e-10:
-        return False, f"Exact zero loss detected: {opt_final_loss} (reward hacking fallback pattern)"
-    
-    # Check for loss values that are unrealistically good
-    if opt_final_loss < baseline_final_loss * 0.1:  # 10x better than baseline is suspicious
-        return False, f"Unrealistically good loss: {opt_final_loss:.4f} vs baseline {baseline_final_loss:.4f} (>10x improvement suspicious)"
-    
-    # Check for performance metrics that are too good to be true
-    opt_tokens_per_sec = optimization_results.get("tokens_per_second", 0.0)
-    baseline_tokens_per_sec = baseline_results.get("tokens_per_second", 1.0)
-    
-    # FIXED: More lenient speed improvement detection (50x instead of 20x)
-    # and allow for reasonable baseline variations
-    speed_ratio = opt_tokens_per_sec / max(baseline_tokens_per_sec, 1.0)
-    if speed_ratio > 50:  # 50x speed improvement is unrealistic
-        return False, f"Unrealistic speed improvement: {opt_tokens_per_sec:.1f} vs {baseline_tokens_per_sec:.1f} tokens/sec (>{speed_ratio:.1f}x suspicious)"
-    
-    # FIXED: Don't flag reasonable performance differences that could be due to:
-    # - Different dataset sizes
-    # - Different sequence lengths
-    # - Different batch sizes
-    # - Different hardware states
-    if speed_ratio > 2.0 and speed_ratio <= 20.0:
-        print(f"ℹ️ Performance difference detected but within reasonable range: {speed_ratio:.1f}x vs baseline")
-        print(f"   This could be due to dataset size, sequence length, or hardware differences")
-    
-    # Check memory efficiency improvements
-    opt_memory_eff = optimization_results.get("memory_efficiency", 0.0)
-    baseline_memory_eff = baseline_results.get("memory_efficiency", 0.001)
-    
-    if opt_memory_eff > baseline_memory_eff * 100:  # 100x memory efficiency is unrealistic
-        return False, f"Unrealistic memory efficiency: {opt_memory_eff:.4f} vs {baseline_memory_eff:.4f} (>100x suspicious)"
-    
-    # Check for infinite or NaN values
-    metrics_to_check = ["tokens_per_second", "memory_efficiency", "peak_memory_mb", "total_time"]
-    for metric in metrics_to_check:
-        value = optimization_results.get(metric, 0.0)
-        if not np.isfinite(value):
-            return False, f"Invalid {metric} value: {value} (NaN/Inf detected)"
-    
-    # Check for negative metrics that should be positive
-    positive_metrics = ["tokens_per_second", "memory_efficiency", "peak_memory_mb", "total_time"]
-    for metric in positive_metrics:
-        value = optimization_results.get(metric, 0.0)
-        if value <= 0:
-            return False, f"Invalid {metric} value: {value} (should be positive)"
-    
-    # Check peak memory is reasonable (not too low)
-    opt_peak_memory = optimization_results.get("peak_memory_mb", float('inf'))
-    MINIMUM_REASONABLE_MEMORY = 100.0  # MB - any fine-tuning should use at least this much
-    if opt_peak_memory < MINIMUM_REASONABLE_MEMORY:
-        return False, f"Unrealistically low memory usage: {opt_peak_memory:.1f}MB (likely measurement error)"
-    
-    return True, "Metrics appear valid"
-
-
-def detect_loss_scaling_hacks(optimization_results: Dict[str, Any]) -> Tuple[bool, str]:
-    """Detect common loss scaling hacks in gradient accumulation"""
-    
-    # This is harder to detect directly, but we can look for patterns
-    opt_final_loss = optimization_results.get("final_loss", 999.0)
-    
-    # FIXED: Only flag extremely suspicious patterns, not normal losses
-    # A loss between 0.5 and 10.0 is reasonable for language modeling
-    REASONABLE_LOSS_RANGE = (0.1, 15.0)  # Expanded reasonable range
-    
-    if not (REASONABLE_LOSS_RANGE[0] <= opt_final_loss <= REASONABLE_LOSS_RANGE[1]):
-        # Only check for scaling hacks if the loss is outside reasonable range
-        COMMON_SCALE_FACTORS = [2, 4, 8, 16, 32]  # Common accumulation step values
-        
-        for scale_factor in COMMON_SCALE_FACTORS:
-            scaled_loss = opt_final_loss * scale_factor
-            # If scaling by a common factor gives us a "normal" looking loss (1-5 range)
-            # AND the original loss was suspiciously low (< 0.1), then flag it
-            if opt_final_loss < 0.1 and 1.0 <= scaled_loss <= 5.0:
-                return False, f"Loss appears artificially scaled: {opt_final_loss:.4f} * {scale_factor} = {scaled_loss:.4f} (possible gradient accumulation hack)"
-    
-    # Additional check: Flag exact multiples that suggest division hacks
-    # But only if the loss is suspiciously low to begin with
-    if opt_final_loss < 0.05:  # Only very low losses
-        for scale_factor in [2, 4, 8, 16]:
-            scaled_loss = opt_final_loss * scale_factor
-            # Check if scaled loss is very close to a "normal" value
-            normal_targets = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
-            for target in normal_targets:
-                if abs(scaled_loss - target) < 0.01:  # Very close match
-                    return False, f"Suspiciously exact loss scaling: {opt_final_loss:.4f} * {scale_factor} ≈ {target:.1f}"
-    
-    return True, "No obvious loss scaling detected"
-
-
 def validate_optimization_config(config: Dict[str, Any]) -> Tuple[bool, str]:
     """Validate that optimization configuration is reasonable"""
     
@@ -309,206 +138,410 @@ def validate_optimization_config(config: Dict[str, Any]) -> Tuple[bool, str]:
     return True, "Configuration appears valid"
 
 
-def evaluate_optimization_patterns(program, baseline_results: Dict[str, Any]) -> Dict[str, float]:
+def detect_mlx_api_errors(captured_output: str) -> Tuple[bool, str]:
     """
-    Evaluate evolved optimization patterns against baseline
+    Detect MLX API errors and warnings in captured output
     
-    Returns metrics for evolution including relative improvements
+    Returns:
+        (is_valid, error_message)
     """
+    # Separate critical errors from warnings
+    critical_error_patterns = [
+        # MLX API misuse - these are real errors
+        (r"mx\.tree_flatten", "Illegal use of mx.tree_flatten (doesn't exist in MLX)"),
+        (r"mx\.tree_map", "Illegal use of mx.tree_map (doesn't exist in MLX)"),
+        (r"has_aux=True", "Illegal use of has_aux parameter (not supported in MLX)"),
+        
+        # Complete failures
+        (r"gradient.*is None", "Gradient computation returned None"),
+        (r"failed.*gradient", "Gradient computation failed"),
+        (r"failed.*loss", "Loss computation failed"),
+        (r"Training.*failed", "Training explicitly failed"),
+        (r"Error.*training", "Training error detected"),
+        (r"Exception.*training", "Training exception detected"),
+        
+        # Memory/array errors that prevent training
+        (r"memory.*error", "Memory allocation error"),
+        (r"array.*error", "Array operation error"),
+        (r"shape.*mismatch", "Array shape mismatch"),
+    ]
+    
+    # Warning patterns - indicate issues but training may still work
+    warning_patterns = [
+        (r"Warning.*mx\.eval.*None", "MLX eval warnings detected"),
+        (r"mx\.eval returned None", "MLX eval returned None warnings"),
+        (r"loss.*is None", "Loss computation warnings"),
+    ]
+    
+    # Check for critical errors first
+    for pattern, message in critical_error_patterns:
+        if re.search(pattern, captured_output, re.IGNORECASE):
+            return False, f"MLX API Error: {message}"
+    
+    # Count warnings but don't fail immediately
+    warning_count = 0
+    warning_messages = []
+    for pattern, message in warning_patterns:
+        matches = re.findall(pattern, captured_output, re.IGNORECASE)
+        if matches:
+            warning_count += len(matches)
+            warning_messages.append(f"{len(matches)}x {message}")
+    
+    # Allow some warnings but flag excessive warnings
+    if warning_count > 10:  # Too many warnings indicate a serious problem
+        return False, f"Excessive MLX warnings ({warning_count}): {'; '.join(warning_messages)}"
+    elif warning_count > 0:
+        print(f"⚠️ MLX Warnings detected ({warning_count}): {'; '.join(warning_messages)}")
+        print("   Allowing program to continue but monitoring for improvements...")
+    
+    return True, "No critical MLX API errors detected"
+
+
+def detect_fallback_patterns(optimization_results: Dict[str, Any]) -> Tuple[bool, str]:
+    """
+    Detect patterns indicating fallback to hardcoded values
+    """
+    # Check for exact fallback loss values
+    opt_final_loss = optimization_results.get("final_loss", 999.0)
+    
+    # Suspicious fallback values that clearly indicate broken training
+    SUSPICIOUS_FALLBACK_VALUES = [999.0, 999999.0, 0.0]  # Removed 2.0, 10.0 as they can be reasonable
+    
+    for fallback in SUSPICIOUS_FALLBACK_VALUES:
+        if abs(opt_final_loss - fallback) < 1e-6:
+            return False, f"Loss appears to be obvious fallback value: {opt_final_loss} (exactly {fallback})"
+    
+    # Check for other suspicious exact values
+    tokens_per_sec = optimization_results.get("tokens_per_second", 0.0)
+    
+    # Very suspiciously round numbers
+    if tokens_per_sec > 0 and tokens_per_sec == int(tokens_per_sec) and tokens_per_sec % 1000 == 0:
+        if tokens_per_sec > 5000:  # Very round numbers above 5000 are suspicious
+            return False, f"Suspiciously round tokens_per_sec: {tokens_per_sec} (likely fallback)"
+    
+    # Check for unreasonable loss values
+    if opt_final_loss > 100.0:  # Cross-entropy loss should rarely be this high
+        return False, f"Unreasonably high loss value: {opt_final_loss} (likely fallback or broken training)"
+    
+    return True, "No obvious fallback patterns detected"
+
+
+def detect_suspicious_improvements(optimization_results: Dict[str, Any], 
+                                 baseline_results: Dict[str, Any],
+                                 is_initial_program: bool = False) -> Tuple[bool, str]:
+    """
+    Enhanced detection of suspicious performance improvements
+    """
+    opt_tokens_per_sec = optimization_results.get("tokens_per_second", 0.0)
+    baseline_tokens_per_sec = baseline_results.get("tokens_per_second", 1.0)
+    
+    opt_memory_efficiency = optimization_results.get("memory_efficiency", 0.0)
+    baseline_memory_efficiency = baseline_results.get("memory_efficiency", 0.001)
+    
+    # More lenient thresholds for initial program (since it's essentially the same as baseline)
+    if is_initial_program:
+        MAX_REASONABLE_SPEED_IMPROVEMENT = 20.0  # 20x max for initial program
+        MAX_REASONABLE_MEMORY_EFFICIENCY_IMPROVEMENT = 50.0  # 50x max for initial program
+        print(f"🔍 Using lenient thresholds for initial program comparison")
+    else:
+        # Stringent thresholds for evolved programs
+        MAX_REASONABLE_SPEED_IMPROVEMENT = 5.0  # 5x max (was 50x)
+        MAX_REASONABLE_MEMORY_EFFICIENCY_IMPROVEMENT = 10.0  # 10x max (was 100x)
+    
+    # Check speed improvements
+    if baseline_tokens_per_sec > 0:
+        speed_ratio = opt_tokens_per_sec / baseline_tokens_per_sec
+        if speed_ratio > MAX_REASONABLE_SPEED_IMPROVEMENT:
+            return False, f"Unrealistic speed improvement: {speed_ratio:.1f}x (max reasonable: {MAX_REASONABLE_SPEED_IMPROVEMENT}x)"
+        
+        # Check for exact suspicious ratios (but be more lenient for initial program)
+        suspicious_ratios = [100.0] if is_initial_program else [10.0, 11.0, 100.0]
+        if speed_ratio in suspicious_ratios:
+            return False, f"Suspiciously exact speed ratio: {speed_ratio:.1f}x"
+    
+    # Check memory efficiency improvements
+    if baseline_memory_efficiency > 0:
+        memory_ratio = opt_memory_efficiency / baseline_memory_efficiency
+        if memory_ratio > MAX_REASONABLE_MEMORY_EFFICIENCY_IMPROVEMENT:
+            return False, f"Unrealistic memory efficiency improvement: {memory_ratio:.1f}x (max reasonable: {MAX_REASONABLE_MEMORY_EFFICIENCY_IMPROVEMENT}x)"
+        
+        # Check for exact suspicious ratios
+        suspicious_ratios = [100.0] if is_initial_program else [10.0, 11.0, 100.0]
+        if memory_ratio in suspicious_ratios:
+            return False, f"Suspiciously exact memory efficiency ratio: {memory_ratio:.1f}x"
+    
+    return True, "Improvements appear reasonable"
+
+
+def detect_exact_percentage_patterns(optimization_results: Dict[str, Any],
+                                   baseline_results: Dict[str, Any]) -> Tuple[bool, str]:
+    """
+    Detect suspiciously exact percentage improvements (like exactly 1000%)
+    """
+    metrics_to_check = [
+        ("tokens_per_second", "speed"),
+        ("memory_efficiency", "memory efficiency"),
+    ]
+    
+    for metric, display_name in metrics_to_check:
+        opt_value = optimization_results.get(metric, 0.0)
+        baseline_value = baseline_results.get(metric, 1.0)
+        
+        if baseline_value > 0 and opt_value > 0:
+            improvement_ratio = opt_value / baseline_value
+            improvement_percent = (improvement_ratio - 1.0) * 100
+            
+            # Check for exact suspicious percentages
+            SUSPICIOUS_EXACT_PERCENTAGES = [
+                1000.0,  # Exactly 1000%
+                999.0,   # Close to 1000%
+                500.0,   # Exactly 500%
+                200.0,   # Exactly 200%
+                100.0,   # Exactly 100%
+            ]
+            
+            for suspicious_pct in SUSPICIOUS_EXACT_PERCENTAGES:
+                if abs(improvement_percent - suspicious_pct) < 0.1:  # Very close to exact percentage
+                    return False, f"Suspiciously exact {display_name} improvement: {improvement_percent:.1f}% (exactly {suspicious_pct}%)"
+    
+    return True, "No exact percentage patterns detected"
+
+
+def detect_training_progression_issues(optimization_results: Dict[str, Any]) -> Tuple[bool, str]:
+    """
+    Detect issues with training progression (e.g., no actual learning happening)
+    """
+    # Check if training stats show progression
+    training_stats = optimization_results.get("training_stats", [])
+    
+    if not training_stats:
+        return False, "No training statistics available - indicates training didn't run properly"
+    
+    # Check if loss values are all the same (indicating no learning)
+    if len(training_stats) > 1:
+        loss_values = [stat.get("loss", 999.0) for stat in training_stats]
+        loss_values = [loss for loss in loss_values if loss < 900.0]  # Filter out obvious fallbacks
+        
+        if len(loss_values) > 1:
+            loss_variance = np.var(loss_values)
+            if loss_variance < 1e-10:  # All losses are essentially identical
+                return False, f"All loss values identical: {loss_values[0]:.6f} (no learning occurred)"
+    
+    # Check final loss reasonableness
+    final_loss = optimization_results.get("final_loss", 999.0)
+    if final_loss > 50.0:  # Cross-entropy loss should rarely be this high
+        return False, f"Unreasonably high final loss: {final_loss:.4f} (training likely failed)"
+    
+    return True, "Training progression appears normal"
+
+
+def capture_output_and_evaluate(program, baseline_results: Dict[str, Any]) -> Dict[str, float]:
+    """
+    Run evaluation while capturing all output to detect errors
+    """
+    # Capture stdout and stderr
+    stdout_capture = io.StringIO()
+    stderr_capture = io.StringIO()
+    
+    results = {}
+    captured_output = ""
     
     try:
-        # Get optimization configuration from the evolved program
+        with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+            # Get optimization configuration from the evolved program
+            config = program.get_optimization_config()
+            
+            # Benchmark the optimization patterns (this is where errors typically occur)
+            results = program.benchmark_optimization_patterns(config, baseline_results)
+        
+        # Get captured output
+        captured_output = stdout_capture.getvalue() + stderr_capture.getvalue()
+        
+    except Exception as e:
+        # If the evaluation itself failed, that's definitely suspicious
+        return {
+            "memory_efficiency": 0.0,
+            "training_speed": 0.0,
+            "overall_fitness": -100.0,
+            "error": f"Evaluation crashed: {str(e)}"
+        }
+    
+    # Now run all our enhanced detection mechanisms
+    
+    # 1. Check for MLX API errors in output
+    mlx_valid, mlx_message = detect_mlx_api_errors(captured_output)
+    if not mlx_valid:
+        print(f"🚨 MLX API ERROR DETECTED: {mlx_message}")
+        return {
+            "memory_efficiency": 0.0,
+            "training_speed": 0.0,
+            "overall_fitness": -100.0,
+            "error": f"MLX API Error: {mlx_message}"
+        }
+    
+    # 2. Check for fallback patterns
+    fallback_valid, fallback_message = detect_fallback_patterns(results)
+    if not fallback_valid:
+        print(f"🚨 FALLBACK PATTERN DETECTED: {fallback_message}")
+        return {
+            "memory_efficiency": 0.0,
+            "training_speed": 0.0,
+            "overall_fitness": -100.0,
+            "error": f"Fallback pattern: {fallback_message}"
+        }
+    
+    # 3. Check for suspicious improvements
+    improvement_valid, improvement_message = detect_suspicious_improvements(results, baseline_results)
+    if not improvement_valid:
+        print(f"🚨 SUSPICIOUS IMPROVEMENT DETECTED: {improvement_message}")
+        return {
+            "memory_efficiency": 0.0,
+            "training_speed": 0.0,
+            "overall_fitness": -100.0,
+            "error": f"Suspicious improvement: {improvement_message}"
+        }
+    
+    # 4. Check for exact percentage patterns
+    percentage_valid, percentage_message = detect_exact_percentage_patterns(results, baseline_results)
+    if not percentage_valid:
+        print(f"🚨 EXACT PERCENTAGE PATTERN DETECTED: {percentage_message}")
+        return {
+            "memory_efficiency": 0.0,
+            "training_speed": 0.0,
+            "overall_fitness": -100.0,
+            "error": f"Exact percentage pattern: {percentage_message}"
+        }
+    
+    # 5. Check training progression
+    progression_valid, progression_message = detect_training_progression_issues(results)
+    if not progression_valid:
+        print(f"🚨 TRAINING PROGRESSION ISSUE DETECTED: {progression_message}")
+        return {
+            "memory_efficiency": 0.0,
+            "training_speed": 0.0,
+            "overall_fitness": -100.0,
+            "error": f"Training progression issue: {progression_message}"
+        }
+    
+    # If we get here, add some basic sanity checks
+    if "error" in results:
+        return {
+            "memory_efficiency": 0.0,
+            "training_speed": 0.0,
+            "overall_fitness": -10.0,
+            "error": results["error"]
+        }
+    
+    # If all checks pass, calculate fitness conservatively
+    baseline_tokens_per_sec = baseline_results.get("tokens_per_second", 1.0)
+    baseline_memory_efficiency = baseline_results.get("memory_efficiency", 0.001)
+    baseline_final_loss = baseline_results.get("final_loss", 2.0)
+    
+    opt_tokens_per_sec = results.get("tokens_per_second", 0.0)
+    opt_memory_efficiency = results.get("memory_efficiency", 0.0)
+    opt_final_loss = results.get("final_loss", 999.0)
+    
+    # Conservative improvement calculations
+    speed_improvement = 0.0
+    memory_improvement = 0.0
+    loss_improvement = 0.0
+    
+    if baseline_tokens_per_sec > 0 and opt_tokens_per_sec > 0:
+        speed_improvement = min((opt_tokens_per_sec - baseline_tokens_per_sec) / baseline_tokens_per_sec, 2.0)  # Cap at 200%
+    
+    if baseline_memory_efficiency > 0 and opt_memory_efficiency > 0:
+        memory_improvement = min((opt_memory_efficiency - baseline_memory_efficiency) / baseline_memory_efficiency, 3.0)  # Cap at 300%
+    
+    if baseline_final_loss > 0 and opt_final_loss < 50.0:
+        loss_improvement = (baseline_final_loss - opt_final_loss) / baseline_final_loss
+        loss_improvement = max(-1.0, min(loss_improvement, 1.0))  # Cap between -100% and 100%
+    
+    # Conservative fitness calculation
+    fitness = 0.1  # Base fitness for working solutions
+    
+    # Add conservative bonuses
+    if speed_improvement > 0:
+        fitness += min(speed_improvement * 0.3, 0.5)  # Max 0.5 bonus for speed
+    
+    if memory_improvement > 0:
+        fitness += min(memory_improvement * 0.2, 0.3)  # Max 0.3 bonus for memory
+    
+    if loss_improvement > 0:
+        fitness += min(loss_improvement * 0.4, 0.4)  # Max 0.4 bonus for loss
+    
+    # Penalty for degraded loss
+    if opt_final_loss > baseline_final_loss * 1.1:  # More than 10% worse loss
+        fitness -= 0.5
+    
+    fitness = max(-10.0, min(fitness, 2.0))  # Conservative fitness range
+    
+    print(f"✅ Enhanced validation PASSED:")
+    print(f"   Speed improvement: {speed_improvement:.2%} (capped)")
+    print(f"   Memory improvement: {memory_improvement:.2%} (capped)")
+    print(f"   Loss improvement: {loss_improvement:.2%}")
+    print(f"   Conservative fitness: {fitness:.4f}")
+    
+    # Return enhanced results
+    enhanced_results = {
+        "memory_efficiency": float(opt_memory_efficiency),
+        "training_speed": float(opt_tokens_per_sec),
+        "final_loss": float(opt_final_loss),
+        "speed_improvement": float(speed_improvement),
+        "memory_efficiency_improvement": float(memory_improvement),
+        "loss_improvement": float(loss_improvement),
+        "overall_fitness": float(fitness),
+        "validation_passed": True,
+        "conservative_scoring": True,
+    }
+    
+    # Add original results for completeness
+    enhanced_results.update(results)
+    enhanced_results["overall_fitness"] = float(fitness)  # Override with conservative fitness
+    
+    return enhanced_results
+
+
+def enhanced_evaluate_optimization_patterns(program, baseline_results: Dict[str, Any]) -> Dict[str, float]:
+    """
+    Enhanced evaluation with comprehensive reward hacking detection
+    """
+    try:
+        # Validate configuration first
         config = program.get_optimization_config()
         
-        # Validate configuration
         is_valid, validation_message = validate_optimization_config(config)
         if not is_valid:
             return {
                 "memory_efficiency": 0.0,
                 "training_speed": 0.0,
-                "memory_improvement": 0.0,
-                "speed_improvement": 0.0,
-                "final_loss": 999.0,  # Very bad loss
-                "loss_ratio": 999.0,
-                "overall_fitness": 0.0,
+                "overall_fitness": -10.0,
                 "error": f"Invalid configuration: {validation_message}"
             }
         
-        print(f"Evaluating optimization config: {json.dumps(config, indent=2)}")
+        print(f"🔍 Running ENHANCED evaluation with comprehensive detection...")
+        print(f"Evaluating config: {json.dumps(config, indent=2)}")
         
-        # Benchmark the optimization patterns
-        optimization_results = program.benchmark_optimization_patterns(config, baseline_results)
+        # Run evaluation with output capture and enhanced detection
+        results = capture_output_and_evaluate(program, baseline_results)
         
-        if "error" in optimization_results:
-            return {
-                "memory_efficiency": 0.0,
-                "training_speed": 0.0,
-                "memory_improvement": 0.0,
-                "speed_improvement": 0.0,
-                "final_loss": 999.0,
-                "loss_ratio": 999.0,
-                "overall_fitness": 0.0,
-                "error": optimization_results["error"]
-            }
-        
-        # CRITICAL: Validate training metrics to detect reward hacking
-        metrics_valid, metrics_message = validate_training_metrics(optimization_results, baseline_results)
-        if not metrics_valid:
-            print(f"🚨 REWARD HACKING DETECTED: {metrics_message}")
-            return {
-                "memory_efficiency": 0.0,
-                "training_speed": 0.0,
-                "memory_improvement": -1.0,
-                "speed_improvement": -1.0,
-                "final_loss": 999.0,
-                "loss_ratio": 999.0,
-                "overall_fitness": -100.0,  # Severe penalty for reward hacking
-                "error": f"Reward hacking detected: {metrics_message}"
-            }
-        
-        # CRITICAL: Detect loss scaling hacks
-        loss_scaling_valid, loss_scaling_message = detect_loss_scaling_hacks(optimization_results)
-        if not loss_scaling_valid:
-            print(f"🚨 LOSS SCALING HACK DETECTED: {loss_scaling_message}")
-            return {
-                "memory_efficiency": 0.0,
-                "training_speed": 0.0,
-                "memory_improvement": -1.0,
-                "speed_improvement": -1.0,
-                "final_loss": 999.0,
-                "loss_ratio": 999.0,
-                "overall_fitness": -50.0,  # Heavy penalty for loss scaling hacks
-                "error": f"Loss scaling hack detected: {loss_scaling_message}"
-            }
-        
-        # Calculate relative improvements
-        baseline_tokens_per_sec = baseline_results.get("tokens_per_second", 1.0)
-        baseline_memory_efficiency = baseline_results.get("memory_efficiency", 0.001)
-        baseline_peak_memory = baseline_results.get("peak_memory_mb", 1000.0)
-        baseline_total_time = baseline_results.get("total_time", 100.0)
-        baseline_final_loss = baseline_results.get("final_loss", 2.0)  # CRITICAL: Add final loss
-        
-        opt_tokens_per_sec = optimization_results.get("tokens_per_second", 0.0)
-        opt_memory_efficiency = optimization_results.get("memory_efficiency", 0.0)
-        opt_peak_memory = optimization_results.get("peak_memory_mb", float('inf'))
-        opt_total_time = optimization_results.get("total_time", float('inf'))
-        opt_final_loss = optimization_results.get("final_loss", 999.0)  # CRITICAL: Add final loss
-        
-        # Calculate loss ratio (optimized loss / baseline loss)
-        loss_ratio = opt_final_loss / baseline_final_loss if baseline_final_loss > 0 else 999.0
-        
-        # CRITICAL CONSTRAINT: Reject if final loss is significantly worse
-        MAX_LOSS_DEGRADATION = 1.20  # Allow max 20% worse loss
-        if loss_ratio > MAX_LOSS_DEGRADATION:
-            print(f"❌ REJECTING optimization: Final loss too high!")
-            print(f"   Baseline loss: {baseline_final_loss:.4f}")
-            print(f"   Optimized loss: {opt_final_loss:.4f}")
-            print(f"   Loss ratio: {loss_ratio:.2f} (max allowed: {MAX_LOSS_DEGRADATION})")
-            
-            return {
-                "memory_efficiency": 0.0,
-                "training_speed": 0.0,
-                "memory_improvement": -1.0,
-                "speed_improvement": -1.0,
-                "final_loss": float(opt_final_loss),
-                "loss_ratio": float(loss_ratio),
-                "overall_fitness": -10.0,  # Heavy penalty
-                "error": f"Final loss degraded too much: {loss_ratio:.2f}x vs baseline"
-            }
-        
-        # Calculate percentage improvements
-        speed_improvement = (opt_tokens_per_sec - baseline_tokens_per_sec) / baseline_tokens_per_sec if baseline_tokens_per_sec > 0 else 0.0
-        memory_efficiency_improvement = (opt_memory_efficiency - baseline_memory_efficiency) / baseline_memory_efficiency if baseline_memory_efficiency > 0 else 0.0
-        memory_usage_improvement = (baseline_peak_memory - opt_peak_memory) / baseline_peak_memory if baseline_peak_memory > 0 else 0.0
-        time_improvement = (baseline_total_time - opt_total_time) / baseline_total_time if baseline_total_time > 0 else 0.0
-        
-        # Loss improvement (lower is better, so we want negative loss_ratio improvement)
-        loss_improvement = (baseline_final_loss - opt_final_loss) / baseline_final_loss if baseline_final_loss > 0 else 0.0
-        
-        # Ensure improvements are reasonable (cap at 10x improvement to avoid outliers)
-        speed_improvement = max(-0.9, min(speed_improvement, 10.0))
-        memory_efficiency_improvement = max(-0.9, min(memory_efficiency_improvement, 10.0))
-        memory_usage_improvement = max(-0.9, min(memory_usage_improvement, 0.9))  # Max 90% memory reduction
-        time_improvement = max(-0.9, min(time_improvement, 0.9))  # Max 90% time reduction
-        loss_improvement = max(-2.0, min(loss_improvement, 2.0))  # Loss can be 3x better or 2x worse
-        
-        # Calculate overall fitness with LOSS AS PRIMARY FACTOR
-        fitness_components = {
-            "loss_quality_score": loss_improvement * 0.5,           # 50% weight - MOST IMPORTANT
-            "memory_efficiency_score": memory_efficiency_improvement * 0.2,  # 20% weight
-            "speed_score": speed_improvement * 0.2,                 # 20% weight  
-            "memory_usage_score": memory_usage_improvement * 0.1,   # 10% weight
-        }
-        
-        overall_fitness = sum(fitness_components.values())
-        
-        # Add stability bonus/penalty
-        if opt_peak_memory < float('inf') and opt_tokens_per_sec > 0 and opt_final_loss < 50.0:
-            stability_bonus = 0.1
-        else:
-            stability_bonus = -0.5  # Heavy penalty for failed runs
-        
-        overall_fitness += stability_bonus
-        
-        # Add loss quality bonus for maintaining good learning
-        if loss_ratio <= 1.05:  # Within 5% of baseline loss
-            loss_quality_bonus = 0.2  # Bonus for maintaining learning quality
-        elif loss_ratio <= 1.10:  # Within 10%
-            loss_quality_bonus = 0.1
-        else:
-            loss_quality_bonus = 0.0
-        
-        overall_fitness += loss_quality_bonus
-        
-        # Normalize fitness to reasonable range
-        overall_fitness = max(-10.0, min(overall_fitness, 5.0))
-        
-        print(f"✅ Optimization ACCEPTED:")
-        print(f"   Final loss: {opt_final_loss:.4f} vs baseline {baseline_final_loss:.4f} (ratio: {loss_ratio:.2f})")
-        print(f"   Speed: {speed_improvement:.1%} improvement")
-        print(f"   Memory efficiency: {memory_efficiency_improvement:.1%} improvement")
-        print(f"   Overall fitness: {overall_fitness:.4f}")
-        
-        return {
-            "memory_efficiency": float(opt_memory_efficiency),
-            "training_speed": float(opt_tokens_per_sec),
-            "peak_memory_mb": float(opt_peak_memory),
-            "total_time": float(opt_total_time),
-            "final_loss": float(opt_final_loss),
-            "loss_ratio": float(loss_ratio),
-            "speed_improvement": float(speed_improvement),
-            "memory_efficiency_improvement": float(memory_efficiency_improvement),
-            "memory_usage_improvement": float(memory_usage_improvement),
-            "time_improvement": float(time_improvement),
-            "loss_improvement": float(loss_improvement),
-            "overall_fitness": float(overall_fitness),
-            "baseline_tokens_per_sec": float(baseline_tokens_per_sec),
-            "baseline_memory_efficiency": float(baseline_memory_efficiency),
-            "baseline_final_loss": float(baseline_final_loss),
-            "config_valid": True,
-            "fitness_components": fitness_components
-        }
+        return results
         
     except Exception as e:
-        print(f"Evaluation failed: {e}")
+        print(f"Enhanced evaluation failed: {e}")
         print(traceback.format_exc())
         return {
             "memory_efficiency": 0.0,
             "training_speed": 0.0,
-            "memory_improvement": 0.0,
-            "speed_improvement": 0.0,
-            "overall_fitness": 0.0,
-            "error": str(e)
+            "overall_fitness": -100.0,
+            "error": f"Enhanced evaluation crashed: {str(e)}"
         }
 
 
+# Main evaluation function
 def evaluate(program_path: str) -> Dict[str, Any]:
     """
-    Main evaluation function for MLX fine-tuning optimization
-    
-    Compares evolved optimization patterns against baseline performance
+    Enhanced evaluation function with robust reward hacking detection
     """
-    
     try:
         # Load the evolved program
         spec = importlib.util.spec_from_file_location("program", program_path)
@@ -527,7 +560,7 @@ def evaluate(program_path: str) -> Dict[str, Any]:
                 return {
                     "memory_efficiency": 0.0,
                     "training_speed": 0.0,
-                    "overall_fitness": 0.0,
+                    "overall_fitness": -10.0,
                     "error": "Missing get_optimization_config function"
                 }
             
@@ -535,28 +568,27 @@ def evaluate(program_path: str) -> Dict[str, Any]:
                 return {
                     "memory_efficiency": 0.0,
                     "training_speed": 0.0,
-                    "overall_fitness": 0.0,
+                    "overall_fitness": -10.0,
                     "error": "Missing benchmark_optimization_patterns function"
                 }
             
-            # Ensure baseline results are available
+            # Get baseline results
             baseline_results = run_baseline_if_needed()
             
             # Force garbage collection before evaluation
             gc.collect()
             
-            # Evaluate the optimization patterns
-            results = evaluate_optimization_patterns(program, baseline_results)
+            # Run enhanced evaluation
+            results = enhanced_evaluate_optimization_patterns(program, baseline_results)
             
-            # Log key metrics
-            print(f"Evaluation results:")
+            # Log results
+            print(f"\n📊 ENHANCED Evaluation Results:")
             print(f"  Overall fitness: {results.get('overall_fitness', 0.0):.4f}")
-            print(f"  Speed improvement: {results.get('speed_improvement', 0.0):.2%}")
-            print(f"  Memory efficiency improvement: {results.get('memory_efficiency_improvement', 0.0):.2%}")
-            print(f"  Memory usage improvement: {results.get('memory_usage_improvement', 0.0):.2%}")
+            print(f"  Validation passed: {results.get('validation_passed', False)}")
+            print(f"  Conservative scoring: {results.get('conservative_scoring', False)}")
             
-            if "fitness_components" in results:
-                print(f"  Fitness components: {results['fitness_components']}")
+            if "error" in results:
+                print(f"  ❌ Error: {results['error']}")
             
             return results
             
@@ -566,20 +598,19 @@ def evaluate(program_path: str) -> Dict[str, Any]:
                 sys.path.remove(program_dir)
         
     except Exception as e:
-        print(f"Evaluation failed: {e}")
+        print(f"Enhanced evaluation failed: {e}")
         print(traceback.format_exc())
         return {
             "memory_efficiency": 0.0,
             "training_speed": 0.0,
-            "overall_fitness": 0.0,
-            "error": str(e)
+            "overall_fitness": -100.0,
+            "error": f"Enhanced evaluation crashed: {str(e)}"
         }
 
 
+# Stage evaluations for compatibility
 def evaluate_stage1(program_path: str) -> Dict[str, Any]:
-    """
-    Stage 1 evaluation: Quick validation to filter out broken configurations
-    """
+    """Stage 1: Quick validation with enhanced checks"""
     try:
         # Load the program
         spec = importlib.util.spec_from_file_location("program", program_path)
@@ -610,10 +641,9 @@ def evaluate_stage1(program_path: str) -> Dict[str, Any]:
             
             # Quick validation of required optimization functions
             required_functions = [
-                "chunked_attention_forward",
                 "memory_efficient_gradient_accumulation", 
-                "optimized_batch_preparation",
-                "adaptive_mixed_precision_forward"
+                "get_optimization_config",
+                "benchmark_optimization_patterns"
             ]
             
             missing_functions = [func for func in required_functions if not hasattr(program, func)]
@@ -640,20 +670,21 @@ def evaluate_stage1(program_path: str) -> Dict[str, Any]:
 
 
 def evaluate_stage2(program_path: str) -> Dict[str, Any]:
-    """
-    Stage 2 evaluation: Full evaluation with baseline comparison
-    """
+    """Stage 2: Full evaluation with enhanced detection"""
     return evaluate(program_path)
 
 
-# For compatibility with evaluation cascade
+# For compatibility
 def evaluate_detailed(program_path: str) -> Dict[str, Any]:
     """Alias for main evaluate function"""
     return evaluate(program_path)
 
 
 if __name__ == "__main__":
-    # Test the evaluator
+    # Test the enhanced evaluator
+    print("🔍 Enhanced MLX Fine-tuning Evaluator")
+    print("=" * 50)
+    
     import sys
     
     if len(sys.argv) > 1:
@@ -661,17 +692,8 @@ if __name__ == "__main__":
     else:
         program_path = os.path.join(os.path.dirname(__file__), "initial_program.py")
     
-    print(f"Testing evaluator with {program_path}")
+    print(f"Testing enhanced evaluator with {program_path}")
     
-    # Test stage 1 evaluation
-    print("\n=== Stage 1 Evaluation ===")
-    stage1_results = evaluate_stage1(program_path)
-    print(f"Stage 1 results: {stage1_results}")
-    
-    if stage1_results.get("config_valid", 0) > 0.5:
-        # Test full evaluation
-        print("\n=== Full Evaluation ===")
-        results = evaluate(program_path)
-        print(f"Full results: {results}")
-    else:
-        print("Skipping full evaluation due to stage 1 failure")
+    # Test enhanced evaluation
+    results = evaluate(program_path)
+    print(f"\nEnhanced evaluation results: {results}")

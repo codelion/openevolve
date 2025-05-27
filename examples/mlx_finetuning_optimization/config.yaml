@@ -57,12 +57,14 @@ prompt:
         inputs, targets = batch[:-1], batch[1:]
     ```
     
-    **GOALS:**
-    - Reduce memory usage 20-40%
-    - Improve speed 10-30% 
-    - Keep loss in range 0.1-10.0
+    **GOALS & CONSTRAINTS:**
+    - Reduce memory usage 20-40% (MAX 5x improvement)
+    - Improve speed 10-30% (MAX 3x improvement) 
+    - Keep loss in range 0.1-10.0 (NEVER use fallback values)
     - Use defensive programming (check types, handle None)
-    - Never use zero/NaN as loss fallbacks
+    - NEVER return hardcoded loss values (2.0, 10.0, etc.)
+    - NEVER claim success when mx.eval() returns None
+    - Improvements must be from actual optimizations, not measurement errors
     
     **FOCUS:** Evolve gradient accumulation and memory-efficient patterns for MLX fine-tuning.
 
