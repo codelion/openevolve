@@ -196,15 +196,31 @@ def detect_loss_scaling_hacks(optimization_results: Dict[str, Any]) -> Tuple[boo
     # This is harder to detect directly, but we can look for patterns
     opt_final_loss = optimization_results.get("final_loss", 999.0)
     
-    # Check if loss is a simple fraction that suggests artificial scaling
-    # Common hack: loss / accumulation_steps where accumulation_steps > 1
-    COMMON_SCALE_FACTORS = [2, 4, 8, 16, 32]  # Common accumulation step values
+    # FIXED: Only flag extremely suspicious patterns, not normal losses
+    # A loss between 0.5 and 10.0 is reasonable for language modeling
+    REASONABLE_LOSS_RANGE = (0.1, 15.0)  # Expanded reasonable range
     
-    for scale_factor in COMMON_SCALE_FACTORS:
-        scaled_loss = opt_final_loss * scale_factor
-        # If scaling by a common factor gives us a "normal" looking loss (1-5 range)
-        if 1.0 <= scaled_loss <= 5.0:
-            return False, f"Loss appears artificially scaled: {opt_final_loss:.4f} * {scale_factor} = {scaled_loss:.4f} (possible gradient accumulation hack)"
+    if not (REASONABLE_LOSS_RANGE[0] <= opt_final_loss <= REASONABLE_LOSS_RANGE[1]):
+        # Only check for scaling hacks if the loss is outside reasonable range
+        COMMON_SCALE_FACTORS = [2, 4, 8, 16, 32]  # Common accumulation step values
+        
+        for scale_factor in COMMON_SCALE_FACTORS:
+            scaled_loss = opt_final_loss * scale_factor
+            # If scaling by a common factor gives us a "normal" looking loss (1-5 range)
+            # AND the original loss was suspiciously low (< 0.1), then flag it
+            if opt_final_loss < 0.1 and 1.0 <= scaled_loss <= 5.0:
+                return False, f"Loss appears artificially scaled: {opt_final_loss:.4f} * {scale_factor} = {scaled_loss:.4f} (possible gradient accumulation hack)"
+    
+    # Additional check: Flag exact multiples that suggest division hacks
+    # But only if the loss is suspiciously low to begin with
+    if opt_final_loss < 0.05:  # Only very low losses
+        for scale_factor in [2, 4, 8, 16]:
+            scaled_loss = opt_final_loss * scale_factor
+            # Check if scaled loss is very close to a "normal" value
+            normal_targets = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
+            for target in normal_targets:
+                if abs(scaled_loss - target) < 0.01:  # Very close match
+                    return False, f"Suspiciously exact loss scaling: {opt_final_loss:.4f} * {scale_factor} ≈ {target:.1f}"
     
     return True, "No obvious loss scaling detected"
 
