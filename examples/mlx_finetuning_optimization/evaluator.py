@@ -26,6 +26,42 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Any, Optional
 
 
+def get_openevolve_output_dir():
+    """Get the OpenEvolve output directory, creating it if needed"""
+    # Look for openevolve_output in current directory or parent directories
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Check current directory first
+    output_dir = os.path.join(current_dir, "openevolve_output")
+    if not os.path.exists(output_dir):
+        # Check parent directory (common case)
+        parent_dir = os.path.dirname(current_dir)
+        parent_output_dir = os.path.join(parent_dir, "openevolve_output")
+        if os.path.exists(parent_output_dir):
+            output_dir = parent_output_dir
+        else:
+            # Create in current directory if neither exists
+            output_dir = os.path.join(current_dir, "openevolve_output")
+    
+    # Ensure it exists
+    os.makedirs(output_dir, exist_ok=True)
+    return output_dir
+
+
+def get_baseline_output_dir():
+    """Get the baseline output directory within openevolve_output"""
+    baseline_dir = os.path.join(get_openevolve_output_dir(), "baseline")
+    os.makedirs(baseline_dir, exist_ok=True)
+    return baseline_dir
+
+
+def get_evaluation_output_dir():
+    """Get the evaluation output directory within openevolve_output"""
+    eval_dir = os.path.join(get_openevolve_output_dir(), "evaluation")
+    os.makedirs(eval_dir, exist_ok=True)
+    return eval_dir
+
+
 def load_baseline_results() -> Optional[Dict[str, Any]]:
     """Load baseline results if available"""
     baseline_results_path = os.path.join(
