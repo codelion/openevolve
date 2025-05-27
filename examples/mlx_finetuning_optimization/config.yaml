@@ -8,11 +8,11 @@ log_level: "INFO"
 # LLM configuration optimized for evolution
 llm:
   primary_model: "gemini-2.5-flash-preview-05-20"
-  primary_model_weight: 0.5  # Balanced mix
+  primary_model_weight: 0.8  
   secondary_model: "gemini-2.5-pro-preview-05-06" 
-  secondary_model_weight: 0.5
+  secondary_model_weight: 0.2
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
-  temperature: 0.9  # Higher for more exploration
+  temperature: 0.6  # Higher for more exploration
   top_p: 0.95
   max_tokens: 24000  # Reduced for faster responses
   timeout: 600
