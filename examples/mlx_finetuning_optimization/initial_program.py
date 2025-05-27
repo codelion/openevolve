@@ -14,11 +14,13 @@ from typing import Dict, Any, Tuple
 
 # EVOLVE-BLOCK-START
 def memory_efficient_gradient_accumulation(model, optimizer, batch: mx.array, 
-                                         accumulation_step: int, total_accumulation_steps: int,
+                                         accumulation_step: int, total_steps: int,
                                          config: Dict[str, Any]) -> Tuple[float, bool]:
     """
     Core gradient accumulation pattern - this is where most MLX errors occur.
     Evolution should focus on making this robust and memory-efficient.
+    
+    FIXED: Function signature now matches baseline expectations
     """
     # Safe array indexing with dimension check
     if batch.ndim >= 2:
@@ -97,9 +99,11 @@ def get_optimization_config() -> Dict[str, Any]:
 def apply_optimizations_to_trainer(trainer, config: Dict[str, Any]):
     """Apply the evolved optimization to trainer"""
     def patched_gradient_step(model, optimizer, batch, accumulation_step, total_steps):
+        # FIXED: Ensure function signature matches what's expected
         return memory_efficient_gradient_accumulation(
             model, optimizer, batch, accumulation_step, 
-            trainer.config.gradient_accumulation_steps, config
+            total_steps,  # Use total_steps (not total_accumulation_steps)
+            config
         )
     
     trainer.gradient_accumulation_step = patched_gradient_step
@@ -109,7 +113,7 @@ def apply_optimizations_to_trainer(trainer, config: Dict[str, Any]):
 def benchmark_optimization_patterns(config: Dict[str, Any], 
                                   baseline_results: Dict[str, Any] = None) -> Dict[str, float]:
     """
-    Simplified benchmark focusing on core metrics
+    Simplified benchmark focusing on core metrics with CONSISTENT parameters
     """
     try:
         import sys
@@ -129,17 +133,17 @@ def benchmark_optimization_patterns(config: Dict[str, Any],
         sys.path.insert(0, os.path.dirname(baseline_path))
         spec.loader.exec_module(baseline_module)
         
-        # Create and configure trainer
+        # FIXED: Create trainer with EXACTLY same parameters as baseline
         trainer = baseline_module.BaselineTrainer("mlx-community/Qwen3-0.6B-bf16")
-        trainer.config.batch_size = 2
-        trainer.config.sequence_length = 128  # Very short for fast eval
+        trainer.config.batch_size = 2  # Match baseline
+        trainer.config.sequence_length = 128  # Match baseline - CONSISTENT!
         trainer.config.num_epochs = 1
         
         trainer.load_model()
         apply_optimizations_to_trainer(trainer, config)
         
-        # Small dataset for quick evaluation
-        dataset = trainer.create_sample_dataset(num_samples=10)
+        # FIXED: Same dataset size as baseline for fair comparison
+        dataset = trainer.create_sample_dataset(num_samples=10)  # Match baseline exactly
         
         # Measure performance
         process = psutil.Process(os.getpid())
@@ -151,20 +155,27 @@ def benchmark_optimization_patterns(config: Dict[str, Any],
         end_time = time.time()
         end_memory = process.memory_info().rss / 1024 / 1024
         
-        # Calculate metrics
+        # Calculate metrics CONSISTENTLY
         training_time = end_time - start_time
-        tokens_processed = len(dataset) * trainer.config.sequence_length
+        tokens_processed = len(dataset) * trainer.config.sequence_length  # Using consistent seq_len
         tokens_per_sec = tokens_processed / max(training_time, 0.1)
         memory_efficiency = tokens_per_sec / max(end_memory, 100)
+        
+        print(f"Evaluation metrics:")
+        print(f"  Tokens processed: {tokens_processed}")
+        print(f"  Training time: {training_time:.2f}s")
+        print(f"  Tokens/sec: {tokens_per_sec:.1f}")
+        print(f"  Peak memory: {end_memory:.1f}MB")
+        print(f"  Memory efficiency: {memory_efficiency:.4f}")
         
         # Clean up
         if os.path.exists("./eval_output"):
             import shutil
             shutil.rmtree("./eval_output")
         
-        # Calculate fitness
+        # Calculate fitness based on reasonable performance
         base_fitness = 0.1
-        if tokens_per_sec > 20:
+        if tokens_per_sec > 50:  # Reasonable threshold
             base_fitness += 0.3
         if memory_efficiency > 0.02:
             base_fitness += 0.3
@@ -182,6 +193,8 @@ def benchmark_optimization_patterns(config: Dict[str, Any],
         
     except Exception as e:
         print(f"Benchmark error: {e}")
+        import traceback
+        traceback.print_exc()
         return {
             "tokens_per_second": 0.0,
             "memory_efficiency": 0.0,
