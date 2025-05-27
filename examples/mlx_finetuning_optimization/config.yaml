@@ -32,6 +32,8 @@ prompt:
     ❌ `grads.astype()` when grads is a dict - Only works on mx.array
     ❌ Any JAX/PyTorch tree utilities - MLX doesn't have these
     ❌ `mlx.utils.tree_*` functions - These don't exist
+    ❌ `mx.value_and_grad(fn, has_aux=True)` - has_aux parameter does NOT exist in MLX
+    ❌ `mx.value_and_grad(fn, **kwargs)` - No keyword arguments supported except argnums/argnames
     ❌ Assuming `mx.eval()` always returns arrays - Can return None
     ❌ Modulo operations without checking for zero divisors
     ❌ Assuming trainer attributes exist without checking
@@ -66,6 +68,35 @@ prompt:
             return grads.astype(mx.float32)
         else:
             return grads
+    ```
+
+    ✅ **Value and Grad Operations:**
+    ```python
+    # CORRECT: Simple value_and_grad usage
+    loss_value, grads = mx.value_and_grad(loss_fn)(model)
+    
+    # CORRECT: If you need multiple return values from loss_fn, handle separately
+    def loss_fn(model):
+        logits = model(inputs)
+        loss = nn.losses.cross_entropy(logits, targets)
+        # Return only the loss (not a tuple with aux data)
+        return loss
+    
+    loss_value, grads = mx.value_and_grad(loss_fn)(model)
+    
+    # WRONG: mx.value_and_grad(loss_fn, has_aux=True)(model)  # has_aux not supported
+    # WRONG: (loss, aux), grads = mx.value_and_grad(loss_fn, has_aux=True)(model)
+    
+    # CORRECT: If you need auxiliary data, compute it separately
+    def loss_fn(model):
+        logits = model(inputs)
+        loss = nn.losses.cross_entropy(logits, targets)
+        return loss
+    
+    loss_value, grads = mx.value_and_grad(loss_fn)(model)
+    # Compute auxiliary data separately if needed
+    logits = model(inputs)  # Recompute for aux data
+    accuracy = compute_accuracy(logits, targets)
     ```
 
     ✅ **Memory Management:**
@@ -150,6 +181,8 @@ prompt:
     8. ✓ Check object attributes exist before accessing
     9. ✓ Handle None and empty arrays gracefully
     10. ✓ Use safe fallbacks for all operations
+    11. ✓ mx.value_and_grad() used without has_aux parameter
+    12. ✓ Loss functions return single values, not tuples
 
     **PRIMARY GOAL: Discover memory-efficient patterns that enable faster, lower-memory fine-tuning on Mac hardware**
     
@@ -202,6 +235,24 @@ prompt:
     # RIGHT: Use actual measurements
     actual_time = time.time() - start_time
     actual_memory = process.memory_info().rss / 1024 / 1024
+    ```
+    
+    ❌ **value_and_grad() incompatible function arguments**
+    ```python
+    # WRONG: Using JAX-style has_aux parameter
+    (scaled_loss_val, unscaled_loss_val), grads = mx.value_and_grad(loss_fn, has_aux=True)(model)
+    
+    # RIGHT: MLX only supports simple value_and_grad
+    loss_value, grads = mx.value_and_grad(loss_fn)(model)
+    
+    # If you need scaled loss, handle it in the loss function itself:
+    def loss_fn(model):
+        logits = model(inputs)
+        loss = nn.losses.cross_entropy(logits, targets)
+        # Scale inside the function if needed
+        return loss / max(total_accumulation_steps, 1)
+    
+    loss_value, grads = mx.value_and_grad(loss_fn)(model)
     ```
     
     ❌ **'NoneType' object is not subscriptable**
