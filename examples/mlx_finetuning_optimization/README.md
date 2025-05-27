@@ -134,8 +134,9 @@ python integration_example.py --context    # Context manager usage
 ### Custom Models
 The optimizations work with any MLX-compatible model:
 ```python
-trainer = create_optimized_trainer("microsoft/DialoGPT-medium")
-trainer = create_optimized_trainer("mistralai/Mistral-7B-v0.1")
+trainer = create_optimized_trainer("mlx-community/Llama-3.2-1B-Instruct-bf16")
+trainer = create_optimized_trainer("mlx-community/gemma-3-1b-it-bf16")
+trainer = create_optimized_trainer("mlx-community/Qwen3-0.6B-bf16")
 ```
 
 ## ✅ Production Ready
@@ -144,9 +145,3 @@ trainer = create_optimized_trainer("mistralai/Mistral-7B-v0.1")
 - **Training convergence** preserved with identical final loss
 - **Memory safety** ensured with proper error handling
 - **Multiple model sizes** tested and validated
-
-## 🎯 Summary
-
-OpenEvolve demonstrates how AI-driven optimization can discover performance improvements that human engineers might miss. The **17.3x speedup** opens new possibilities for efficient ML training on consumer hardware.
-
-**Get started**: `from mlx_optimization_patch import apply_optimizations; apply_optimizations(trainer)`
