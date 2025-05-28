@@ -164,16 +164,18 @@ class PromptSampler:
                 # Only compare numeric metrics
                 if not isinstance(value, (int, float)) or isinstance(value, bool):
                     continue
-                    
+
                 improved = True
                 regressed = True
 
                 for attempt in recent_attempts:
                     attempt_value = attempt["metrics"].get(metric, 0)
                     # Skip comparison if attempt value is not numeric
-                    if not isinstance(attempt_value, (int, float)) or isinstance(attempt_value, bool):
+                    if not isinstance(attempt_value, (int, float)) or isinstance(
+                        attempt_value, bool
+                    ):
                         continue
-                        
+
                     if attempt_value <= value:
                         regressed = False
                     if attempt_value >= value:
@@ -240,18 +242,22 @@ class PromptSampler:
 
             # Get only numeric metrics for comparison
             current_numeric_metrics = {
-                m: v for m, v in program.get("metrics", {}).items() 
+                m: v
+                for m, v in program.get("metrics", {}).items()
                 if isinstance(v, (int, float)) and not isinstance(v, bool)
             }
             parent_numeric_metrics = {
-                m: v for m, v in parent_metrics.items()
+                m: v
+                for m, v in parent_metrics.items()
                 if isinstance(v, (int, float)) and not isinstance(v, bool)
             }
 
             if current_numeric_metrics and parent_numeric_metrics:
                 # Only compare metrics that exist in both
-                common_metrics = set(current_numeric_metrics.keys()) & set(parent_numeric_metrics.keys())
-                
+                common_metrics = set(current_numeric_metrics.keys()) & set(
+                    parent_numeric_metrics.keys()
+                )
+
                 if common_metrics:
                     if all(
                         current_numeric_metrics.get(m, 0) >= parent_numeric_metrics.get(m, 0)
@@ -287,7 +293,11 @@ class PromptSampler:
 
             # Calculate a composite score from only numeric metrics
             metrics_dict = program.get("metrics", {})
-            numeric_values = [v for v in metrics_dict.values() if isinstance(v, (int, float)) and not isinstance(v, bool)]
+            numeric_values = [
+                v
+                for v in metrics_dict.values()
+                if isinstance(v, (int, float)) and not isinstance(v, bool)
+            ]
             score = sum(numeric_values) / max(1, len(numeric_values)) if numeric_values else 0.0
 
             # Extract key features (this could be more sophisticated)

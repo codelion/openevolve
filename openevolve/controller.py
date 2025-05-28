@@ -292,9 +292,7 @@ class OpenEvolve:
                     logger.info(
                         f"🌟 New best solution found at iteration {i+1}: {child_program.id}"
                     )
-                    logger.info(
-                        f"Metrics: {_format_metrics(child_program.metrics)}"
-                    )
+                    logger.info(f"Metrics: {_format_metrics(child_program.metrics)}")
 
                 # Save checkpoint
                 if (i + 1) % self.config.checkpoint_interval == 0:
@@ -303,11 +301,17 @@ class OpenEvolve:
                 # Check if target score reached
                 if target_score is not None:
                     # Only consider numeric metrics for target score calculation
-                    numeric_metrics = [v for v in child_metrics.values() if isinstance(v, (int, float)) and not isinstance(v, bool)]
+                    numeric_metrics = [
+                        v
+                        for v in child_metrics.values()
+                        if isinstance(v, (int, float)) and not isinstance(v, bool)
+                    ]
                     if numeric_metrics:
                         avg_score = sum(numeric_metrics) / len(numeric_metrics)
                         if avg_score >= target_score:
-                            logger.info(f"Target score {target_score} reached after {i+1} iterations")
+                            logger.info(
+                                f"Target score {target_score} reached after {i+1} iterations"
+                            )
                             break
 
             except Exception as e:
@@ -382,7 +386,12 @@ class OpenEvolve:
         for metric, value in child.metrics.items():
             if metric in parent.metrics:
                 # Only calculate diff for numeric values
-                if isinstance(value, (int, float)) and isinstance(parent.metrics[metric], (int, float)) and not isinstance(value, bool) and not isinstance(parent.metrics[metric], bool):
+                if (
+                    isinstance(value, (int, float))
+                    and isinstance(parent.metrics[metric], (int, float))
+                    and not isinstance(value, bool)
+                    and not isinstance(parent.metrics[metric], bool)
+                ):
                     try:
                         diff = value - parent.metrics[metric]
                         improvement[metric] = diff

@@ -21,13 +21,17 @@ logger = logging.getLogger(__name__)
 
 def _safe_sum_metrics(metrics: Dict[str, Any]) -> float:
     """Safely sum only numeric metric values, ignoring strings and other types"""
-    numeric_values = [v for v in metrics.values() if isinstance(v, (int, float)) and not isinstance(v, bool)]
+    numeric_values = [
+        v for v in metrics.values() if isinstance(v, (int, float)) and not isinstance(v, bool)
+    ]
     return sum(numeric_values) if numeric_values else 0.0
 
 
 def _safe_avg_metrics(metrics: Dict[str, Any]) -> float:
     """Safely calculate average of only numeric metric values"""
-    numeric_values = [v for v in metrics.values() if isinstance(v, (int, float)) and not isinstance(v, bool)]
+    numeric_values = [
+        v for v in metrics.values() if isinstance(v, (int, float)) and not isinstance(v, bool)
+    ]
     return sum(numeric_values) / max(1, len(numeric_values)) if numeric_values else 0.0
 
 
@@ -483,9 +487,7 @@ class ProgramDatabase:
 
         # Otherwise, find worst program in archive
         archive_programs = [self.programs[pid] for pid in self.archive]
-        worst_program = min(
-            archive_programs, key=lambda p: _safe_avg_metrics(p.metrics)
-        )
+        worst_program = min(archive_programs, key=lambda p: _safe_avg_metrics(p.metrics))
 
         # Replace if new program is better
         if self._is_better(program, worst_program):
