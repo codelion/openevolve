@@ -22,12 +22,54 @@ OpenEvolve follows an evolutionary approach with the following components:
 
 ![OpenEvolve Architecture](openevolve-architecture.png)
 
-1. **Prompt Sampler**: Creates context-rich prompts containing past programs, their scores, and problem descriptions
-2. **LLM Ensemble**: Generates code modifications via an ensemble of language models
-3. **Evaluator Pool**: Tests generated programs and assigns scores
-4. **Program Database**: Stores programs and their evaluation metrics, guiding future evolution
+### Prompt Sampler
+The **Prompt Sampler** is responsible for creating highly informative and context-rich prompts that are fed to the LLM Ensemble. These prompts are carefully constructed to guide the language models effectively. They typically include:
+*   **Past Programs**: Snippets or entire versions of code from previous iterations, especially successful or interesting ones.
+*   **Performance Metrics**: Scores and other evaluation data from past programs, indicating what worked well and what didn't.
+*   **Problem Description**: The original problem statement or requirements the code is intended to solve.
+*   **Evolution History**: Information about the lineage of programs, helping the LLM understand the trajectory of changes.
+*   **Diversity Considerations**: Elements to encourage exploration of different solution approaches, preventing premature convergence.
+By providing such comprehensive context, the Prompt Sampler enables the LLMs to make more informed and targeted code modifications.
 
-The controller orchestrates interactions between these components in an asynchronous pipeline, maximizing throughput to evaluate as many candidate solutions as possible.
+### LLM Ensemble
+Instead of relying on a single language model, OpenEvolve utilizes an **LLM Ensemble**, which is a group of diverse language models. This approach offers several advantages:
+*   **Diversity in Models**: The ensemble can include LLMs with different architectures, sizes, or fine-tuning on specific coding tasks, leading to a broader range of generated code.
+*   **Combined or Selected Outputs**: The outputs from different LLMs can be combined (e.g., through a voting mechanism if applicable) or selectively chosen based on certain criteria or heuristics.
+*   **Specialized Roles**: Different LLMs within the ensemble might be specialized for particular types of code modifications (e.g., one for creative exploration, another for fine-grained optimization).
+The LLM Ensemble generates various code modifications, such as:
+*   **Targeted Mutations**: Small changes to existing code.
+*   **Adding New Code**: Introducing new functions, classes, or modules.
+*   **Refactoring**: Restructuring existing code for clarity, efficiency, or maintainability.
+*   **Algorithmic Exploration**: Attempting entirely new approaches to solve the problem.
+
+### Evaluator Pool
+The **Evaluator Pool** is where the newly generated program variants are rigorously tested and assessed. This component manages:
+*   **Isolated Execution Environments**: Each program is typically run in a sandbox or container to prevent interference and ensure consistent testing conditions.
+*   **Standardized Test Harnesses**: Common frameworks or scripts might be used to automate the execution of tests.
+*   **User-Defined Test Cases and Benchmarks**: The actual tests and performance benchmarks are specific to the problem being solved and are provided by the user.
+*   **Metrics Measurement**: A variety of metrics can be measured, including:
+    *   **Correctness**: Whether the program produces the desired output or behaves as expected.
+    *   **Performance**: Execution speed, efficiency, or throughput.
+    *   **Resource Usage**: Memory consumption, CPU load, etc.
+    *   **Custom Objectives**: Any other problem-specific criteria.
+The scores and metrics assigned by the Evaluator Pool are crucial for the selection process, determining which programs are promising and should be used to seed future generations.
+
+### Program Database
+The **Program Database** serves as the central repository for all information generated and collected during the evolutionary process. It stores:
+*   **Source Code**: The complete source code of every program variant generated.
+*   **Ancestry/Lineage**: Information about which parent programs a new variant was derived from.
+*   **Detailed Evaluation Results**: All metrics and scores from the Evaluator Pool for each program.
+*   **Timestamps**: When programs were generated and evaluated, allowing for chronological tracking.
+*   **Errors and Exceptions**: Any issues encountered during execution or evaluation.
+This rich dataset is vital for guiding the evolution. It informs selection strategies (e.g., Pareto optimization for tasks with multiple conflicting objectives), helps maintain population diversity by identifying unique solutions, tracks overall progress, and enables the resumption of long-running evolutionary processes from checkpoints.
+
+### Controller
+The **Controller** is the brain of the OpenEvolve system, orchestrating the entire evolutionary workflow. Its key responsibilities include:
+*   **Workflow Management**: It manages the sequence of operations, ensuring that prompts are generated, LLMs are invoked, programs are evaluated, and results are stored in the database in the correct order.
+*   **Asynchronous Pipeline**: The Controller often implements an asynchronous pipeline to maximize throughput. This means that different components can work in parallel (e.g., evaluating one set of programs while another set is being generated), significantly speeding up the evolution.
+*   **Inter-Component Communication**: It handles the data flow and communication between the Prompt Sampler, LLM Ensemble, Evaluator Pool, and Program Database.
+*   **Task Queues**: It manages queues of tasks for each component (e.g., programs awaiting evaluation).
+*   **Resource Utilization**: It aims to ensure efficient use of computational resources, such as distributing evaluation tasks across available workers in the Evaluator Pool.
 
 ## Getting Started
 
