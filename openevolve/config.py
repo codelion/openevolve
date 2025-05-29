@@ -40,18 +40,14 @@ class LLMConfig:
         """Set up API key from environment if not provided"""
         if not self.api_key:
             # Try to get API key from environment
-            if self.primary_model.startswith("claude-") or self.primary_model.startswith(
-                "anthropic/"
-            ):
+            if self.primary_model.startswith("claude-"):
                 self.api_key = os.environ.get("ANTHROPIC_API_KEY")
             else:
                 self.api_key = os.environ.get("OPENAI_API_KEY")
 
         # Set default API base based on model type
         if self.api_base == "https://api.openai.com/v1":
-            if self.primary_model.startswith("claude-") or self.primary_model.startswith(
-                "anthropic/"
-            ):
+            if self.primary_model.startswith("claude-"):
                 self.api_base = "https://api.anthropic.com/v1"
 
 
