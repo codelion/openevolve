@@ -1,0 +1,101 @@
+# Advanced Configuration for MLX Attention Optimization
+# Designed to discover algorithmic innovations rather than micro-optimizations
+
+# Extended evolution for more discovery opportunities
+max_iterations: 100
+checkpoint_interval: 10
+log_level: "INFO"
+
+# LLM configuration - Use most powerful models for algorithmic discovery
+llm:
+  primary_model: "gemini-2.5-flash-preview-05-20"
+  primary_model_weight: 0.5  
+  secondary_model: "gemini-2.5-pro-preview-05-06" 
+  secondary_model_weight: 0.5
+  api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
+  temperature: 0.6  # Higher for more exploration
+  top_p: 0.95
+  max_tokens: 24000  # Reduced for faster responses
+  timeout: 600
+
+# Advanced prompt configuration for algorithmic innovation
+prompt:
+  system_message: |
+    You are a world-class algorithms researcher specializing in attention mechanisms and Apple Silicon optimization. 
+    
+    Your mission: Discover FUNDAMENTALLY DIFFERENT attention algorithms that beat mx.fast.scaled_dot_product_attention.
+    
+    THINKING APPROACH:
+    1. The current evolution has discovered only micro-optimizations (~1% gains)
+    2. You need ALGORITHMIC BREAKTHROUGHS, not just code tweaks
+    3. Think like Ashish Vaswani (Attention is All You Need) or other attention pioneers
+    
+    BREAKTHROUGH TARGETS - Discover these types of innovations:
+    
+    🚀 SPARSE ATTENTION PATTERNS:
+    - Local attention windows (256-512 tokens)
+    - Strided/dilated attention patterns  
+    - Block-sparse attention (divide sequence into blocks)
+    - Top-k attention (only attend to k most relevant tokens)
+    
+    🧠 ALGORITHMIC INNOVATIONS:
+    - Linear attention approximations using kernel methods
+    - Hierarchical attention (coarse-to-fine)
+    - Multi-scale attention with different window sizes
+    - Attention with explicit memory management
+    
+    ⚡ APPLE SILICON OPTIMIZATIONS:
+    - Chunked processing optimized for unified memory
+    - Cache-friendly access patterns
+    - Reduced memory bandwidth through approximations
+    - Vectorized operations exploiting NEON/AMX units
+    
+    🎯 EVALUATION FOCUS:
+    - Long sequences (1024+ tokens) where O(n²) becomes expensive
+    - Memory efficiency for large batches
+    - Practical speedups on real workloads
+    
+    FORBIDDEN MICRO-OPTIMIZATIONS:
+    ❌ Don't just rearrange matrix operations (Q*scale vs K*scale)
+    ❌ Don't just change variable names or comments
+    ❌ Don't just reorder existing operations
+    
+    REQUIRED INNOVATION LEVEL:
+    ✅ Change the fundamental attention computation pattern
+    ✅ Reduce computational complexity (O(n²) → O(n log n) or O(n))  
+    ✅ Introduce sparsity or approximation strategies
+    ✅ Exploit Apple Silicon's unique architecture
+    
+    Remember: mx.fast.scaled_dot_product_attention is HIGHLY optimized. Only algorithmic innovations can beat it.
+  
+  num_top_programs: 5  # More inspiration from diverse solutions
+  use_template_stochasticity: true
+
+# Database configuration - Favor exploration over exploitation
+database:
+  db_path: "./openevolve_output/program_db" 
+  population_size: 150  # Larger population for more diversity
+  archive_size: 50      # Keep more diverse solutions
+  num_islands: 8        # More islands for parallel exploration
+  elite_selection_ratio: 0.1  # Less elitism, more exploration
+  exploitation_ratio: 0.4     # Less exploitation, more exploration
+
+# Evaluator configuration - Test scenarios where innovations matter
+evaluator:
+  timeout: 120  # Longer timeout for complex algorithms
+  cascade_evaluation: true
+  cascade_thresholds: [0.7, 0.85]  # Higher thresholds for better filtering
+  parallel_evaluations: 6
+  use_llm_feedback: false  # Enable LLM feedback for algorithmic assessment
+  
+# Evolution settings - Enable more creative exploration
+diff_based_evolution: true
+allow_full_rewrites: false  # Enable complete algorithm rewrites
+max_code_length: 24000  # Allow larger code for complex optimizations
+
+# Advanced evolution parameters
+evolution:
+  mutation_rate: 0.3        # Higher mutation for more exploration
+  crossover_rate: 0.2       # Some crossover between different approaches
+  novelty_pressure: 0.4     # Strong pressure for novel solutions
+
