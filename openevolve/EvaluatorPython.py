@@ -2,19 +2,16 @@
 Evaluation system for OpenEvolve
 """
 
-import asyncio
 import importlib.util
 import json
 import logging
 import os
-import subprocess
 import sys
 import tempfile
 import time
-import uuid
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Dict, Optional
 
+from openevolve.EvaluatorInterface import Evaluator
 from openevolve.config import EvaluatorConfig
 from openevolve.llm.ensemble import LLMEnsemble
 from openevolve.utils.async_utils import TaskPool, run_in_executor
@@ -22,7 +19,7 @@ from openevolve.utils.async_utils import TaskPool, run_in_executor
 logger = logging.getLogger(__name__)
 
 
-class Evaluator:
+class EvaluatorPython(Evaluator):
     """
     Evaluates programs and assigns scores
 
@@ -36,6 +33,7 @@ class Evaluator:
         evaluation_file: str,
         llm_ensemble: Optional[LLMEnsemble] = None,
     ):
+        super().__init__(config)
         self.config = config
         self.evaluation_file = evaluation_file
         self.llm_ensemble = llm_ensemble
@@ -78,16 +76,7 @@ class Evaluator:
         program_code: str,
         program_id: str = "",
     ) -> Dict[str, float]:
-        """
-        Evaluate a program and return scores
 
-        Args:
-            program_code: Code to evaluate
-            program_id: Optional ID for logging
-
-        Returns:
-            Dictionary of metric name to score
-        """
         start_time = time.time()
 
         # Create a temporary file for the program
@@ -363,23 +352,3 @@ class Evaluator:
 
         avg_score = sum(valid_metrics) / len(valid_metrics)
         return avg_score >= threshold
-
-    async def evaluate_multiple(
-        self,
-        programs: List[Tuple[str, str]],
-    ) -> List[Dict[str, float]]:
-        """
-        Evaluate multiple programs in parallel
-
-        Args:
-            programs: List of (program_code, program_id) tuples
-
-        Returns:
-            List of metric dictionaries
-        """
-        tasks = [
-            self.task_pool.create_task(self.evaluate_program, program_code, program_id)
-            for program_code, program_id in programs
-        ]
-
-        return await asyncio.gather(*tasks)

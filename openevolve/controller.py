@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from openevolve.config import Config, load_config
 from openevolve.database import Program, ProgramDatabase
-from openevolve.evaluator import Evaluator
+from openevolve.EvaluatorPython import EvaluatorPython
 from openevolve.llm.ensemble import LLMEnsemble
 from openevolve.prompt.sampler import PromptSampler
 from openevolve.utils.code_utils import (
@@ -86,7 +86,7 @@ class OpenEvolve:
         self.llm_ensemble = LLMEnsemble(self.config.llm)
         self.prompt_sampler = PromptSampler(self.config.prompt)
         self.database = ProgramDatabase(self.config.database)
-        self.evaluator = Evaluator(self.config.evaluator, evaluation_file, self.llm_ensemble)
+        self.evaluator = EvaluatorPython(self.config.evaluator, evaluation_file, self.llm_ensemble)
 
         logger.info(f"Initialized OpenEvolve with {initial_program_path} " f"and {evaluation_file}")
 
