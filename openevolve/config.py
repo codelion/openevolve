@@ -104,6 +104,7 @@ class EvaluatorConfig:
     # LLM-based feedback
     use_llm_feedback: bool = False
     llm_feedback_weight: float = 0.1
+    system_message: Optional[str] = None
 
 
 @dataclass

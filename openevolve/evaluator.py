@@ -293,7 +293,10 @@ class Evaluator:
             """
 
             # Get LLM response
-            response = await self.llm_ensemble.generate(prompt)
+            response = await self.llm_ensemble.generate_with_context(
+                system_message=self.config.system_message,
+                messages=[{"role": "user", "content": prompt}],
+            )
 
             # Extract JSON from response
             try:
