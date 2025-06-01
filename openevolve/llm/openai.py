@@ -34,13 +34,13 @@ class OpenAILLM(LLMInterface):
 
         logger.info(f"Initialized OpenAI LLM with model: {self.model}")
 
-    async def generate(self, prompt: str, **kwargs) -> str:
-        """Generate text from a prompt"""
-        return await self.generate_with_context(
-            system_message=self.config.system_message,
-            messages=[{"role": "user", "content": prompt}],
-            **kwargs,
-        )
+    # async def generate(self, prompt: str, **kwargs) -> str:
+    #     """Generate text from a prompt"""
+    #     return await self.generate_with_context(
+    #         system_message=self.config.system_message,
+    #         messages=[{"role": "user", "content": prompt}],
+    #         **kwargs,
+    #     )
 
     async def generate_with_context(
         self, system_message: str, messages: List[Dict[str, str]], **kwargs
