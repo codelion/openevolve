@@ -986,18 +986,21 @@ class ProgramDatabase:
         return stats
 
     def _calculate_island_diversity(self, programs: List[Program]) -> float:
-        """Calculate diversity within an island (optimized version)"""
+        """Calculate diversity within an island (deterministic version)"""
         if len(programs) < 2:
             return 0.0
 
         total_diversity = 0
         comparisons = 0
 
-        # Sample fewer programs for performance
+        # Use deterministic sampling instead of random.sample() to ensure consistent results
         sample_size = min(5, len(programs))  # Reduced from 10 to 5
-        sample_programs = (
-            random.sample(programs, sample_size) if len(programs) > sample_size else programs
-        )
+        
+        # Sort programs by ID for deterministic ordering
+        sorted_programs = sorted(programs, key=lambda p: p.id)
+        
+        # Take first N programs instead of random sampling
+        sample_programs = sorted_programs[:sample_size]
 
         # Limit total comparisons for performance
         max_comparisons = 6  # Maximum comparisons to prevent long delays
