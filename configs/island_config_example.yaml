@@ -1,0 +1,55 @@
+# OpenEvolve Island-Based Evolution Configuration
+# This configuration demonstrates the proper use of island-based evolution
+
+# General settings
+max_iterations: 1000
+checkpoint_interval: 100
+log_level: "INFO"
+
+# LLM configuration
+llm:
+  primary_model: "gemini-2.0-flash-lite"
+  primary_model_weight: 0.8
+  secondary_model: "gemini-2.0-flash"
+  secondary_model_weight: 0.2
+  temperature: 0.7
+  top_p: 0.95
+  max_tokens: 4096
+
+# Database configuration with proper island settings
+database:
+  population_size: 500
+  archive_size: 100
+  
+  # Island-based evolution settings
+  num_islands: 5                    # Number of separate populations
+  migration_interval: 50            # Migrate every 50 generations
+  migration_rate: 0.1               # Migrate 10% of top programs
+  
+  # Selection parameters
+  elite_selection_ratio: 0.1
+  exploration_ratio: 0.3
+  exploitation_ratio: 0.7
+  # Note: diversity_metric fixed to "edit_distance"
+  
+  # Feature map dimensions for MAP-Elites
+  feature_dimensions: ["score", "complexity"]
+  feature_bins: 10
+
+# Prompt configuration
+prompt:
+  num_top_programs: 3
+  num_diverse_programs: 2
+  use_template_stochasticity: true
+
+# Evaluator configuration
+evaluator:
+  timeout: 300
+  max_retries: 3
+  cascade_evaluation: true
+  parallel_evaluations: 4
+
+# Evolution settings
+diff_based_evolution: true
+allow_full_rewrites: false
+max_code_length: 10000

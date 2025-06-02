@@ -55,9 +55,7 @@ prompt:
       - "I suggest the following improvements:"
       - "We can enhance this code by:"
 
-  # Meta-prompting (experimental)
-  use_meta_prompting: false           # Use LLM to generate parts of the prompt
-  meta_prompt_weight: 0.1             # Weight for meta-prompting influence
+  # Note: meta-prompting features are not yet implemented
 
 # Database configuration
 database:
@@ -68,13 +66,19 @@ database:
   # Evolutionary parameters
   population_size: 1000               # Maximum number of programs to keep in memory
   archive_size: 100                   # Size of elite archive
-  num_islands: 5                      # Number of islands for island model
+  num_islands: 5                      # Number of islands for island model (separate populations)
+
+  # Island-based evolution parameters
+  # Islands provide diversity by maintaining separate populations that evolve independently.
+  # Migration periodically shares the best solutions between adjacent islands.
+  migration_interval: 50              # Migrate between islands every N generations
+  migration_rate: 0.1                 # Fraction of top programs to migrate (0.1 = 10%)
 
   # Selection parameters
   elite_selection_ratio: 0.1          # Ratio of elite programs to select
   exploration_ratio: 0.2              # Ratio of exploration vs exploitation
   exploitation_ratio: 0.7             # Ratio of exploitation vs random selection
-  diversity_metric: "edit_distance"   # Diversity metric (edit_distance, feature_based)
+  # Note: diversity_metric is fixed to "edit_distance" (feature_based not implemented)
 
   # Feature map dimensions for MAP-Elites
   feature_dimensions:                 # Dimensions for MAP-Elites feature map
@@ -88,9 +92,7 @@ evaluator:
   timeout: 300                        # Maximum evaluation time in seconds
   max_retries: 3                      # Maximum number of retries for evaluation
 
-  # Resource limits
-  memory_limit_mb: null               # Memory limit for evaluation (null = no limit)
-  cpu_limit: null                     # CPU limit for evaluation (null = no limit)
+  # Note: resource limits (memory_limit_mb, cpu_limit) are not yet implemented
 
   # Evaluation strategies
   cascade_evaluation: true            # Use cascade evaluation to filter bad solutions early
@@ -101,7 +103,7 @@ evaluator:
 
   # Parallel evaluation
   parallel_evaluations: 4             # Number of parallel evaluations
-  distributed: false                  # Use distributed evaluation
+  # Note: distributed evaluation is not yet implemented
 
   # LLM-based feedback (experimental)
   use_llm_feedback: false             # Use LLM to evaluate code quality
