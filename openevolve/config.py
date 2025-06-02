@@ -36,6 +36,20 @@ class LLMConfig:
     retries: int = 3
     retry_delay: int = 5
 
+    def __post_init__(self):
+        """Set up API key from environment if not provided"""
+        if not self.api_key:
+            # Try to get API key from environment
+            if self.primary_model.startswith("claude-"):
+                self.api_key = os.environ.get("ANTHROPIC_API_KEY")
+            else:
+                self.api_key = os.environ.get("OPENAI_API_KEY")
+
+        # Set default API base based on model type
+        if self.api_base == "https://api.openai.com/v1":
+            if self.primary_model.startswith("claude-"):
+                self.api_base = "https://api.anthropic.com/v1"
+
 
 @dataclass
 class PromptConfig:
