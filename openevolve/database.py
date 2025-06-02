@@ -897,25 +897,64 @@ class ProgramDatabase:
         return stats
 
     def _calculate_island_diversity(self, programs: List[Program]) -> float:
-        """Calculate diversity within an island"""
+        """Calculate diversity within an island (optimized version)"""
         if len(programs) < 2:
             return 0.0
 
-        total_distance = 0
+        total_diversity = 0
         comparisons = 0
 
-        # Sample up to 10 programs for efficiency
-        sample_size = min(10, len(programs))
+        # Sample fewer programs for performance
+        sample_size = min(5, len(programs))  # Reduced from 10 to 5
         sample_programs = (
             random.sample(programs, sample_size) if len(programs) > sample_size else programs
         )
 
+        # Limit total comparisons for performance
+        max_comparisons = 6  # Maximum comparisons to prevent long delays
+        
         for i, prog1 in enumerate(sample_programs):
             for prog2 in sample_programs[i + 1 :]:
-                total_distance += calculate_edit_distance(prog1.code, prog2.code)
+                if comparisons >= max_comparisons:
+                    break
+                    
+                # Use fast approximation instead of expensive edit distance
+                diversity = self._fast_code_diversity(prog1.code, prog2.code)
+                total_diversity += diversity
                 comparisons += 1
+                
+            if comparisons >= max_comparisons:
+                break
 
-        return total_distance / max(1, comparisons)
+        return total_diversity / max(1, comparisons)
+
+    def _fast_code_diversity(self, code1: str, code2: str) -> float:
+        """
+        Fast approximation of code diversity using simple metrics
+        
+        Returns diversity score (higher = more diverse)
+        """
+        if code1 == code2:
+            return 0.0
+        
+        # Length difference (scaled to reasonable range)
+        len1, len2 = len(code1), len(code2)
+        length_diff = abs(len1 - len2)
+        
+        # Line count difference
+        lines1 = code1.count('\n')
+        lines2 = code2.count('\n')
+        line_diff = abs(lines1 - lines2)
+        
+        # Simple character set difference
+        chars1 = set(code1)
+        chars2 = set(code2)
+        char_diff = len(chars1.symmetric_difference(chars2))
+        
+        # Combine metrics (scaled to match original edit distance range)
+        diversity = (length_diff * 0.1 + line_diff * 10 + char_diff * 0.5)
+        
+        return diversity
 
     def log_island_status(self) -> None:
         """Log current status of all islands"""
