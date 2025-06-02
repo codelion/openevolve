@@ -29,7 +29,7 @@ black openevolve tests examples
 
 ## Pull Request Process
 
-1. Create a new branch for your feature or bugfix: `git checkout -b feature/your-feature-name`
+1. Create a new branch for your feature or bugfix: `git checkout -b feat-your-feature-name`
 2. Make your changes
 3. Add tests for your changes
 4. Run the tests to make sure everything passes: `python -m unittest discover tests`
