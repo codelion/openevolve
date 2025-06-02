@@ -16,13 +16,21 @@ max_code_length: 10000                # Maximum allowed code length in character
 
 # LLM configuration
 llm:
-  # Primary model (used most frequently)
-  primary_model: "gemini-2.0-flash-lite"
-  primary_model_weight: 0.8           # Sampling weight for primary model
+  # Models for evolution
+  models:
+    # List of available models with their weights
+    - name: "gemini-2.0-flash-lite"
+      weight: 0.8
+    - name: "gemini-2.0-flash"
+      weight: 0.2
 
-  # Secondary model (used for occasional high-quality generations)
-  secondary_model: "gemini-2.0-flash"
-  secondary_model_weight: 0.2         # Sampling weight for secondary model
+  # Models for LLM feedback
+  evaluator_models:
+    # List of available models with their weights
+    - name: "gemini-2.0-flash-lite"
+      weight: 0.8
+    - name: "gemini-2.0-flash"
+      weight: 0.2
 
   # API configuration
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"  # Base URL for API (change for non-OpenAI models)
@@ -42,6 +50,7 @@ llm:
 prompt:
   template_dir: null                  # Custom directory for prompt templates
   system_message: "You are an expert coder helping to improve programs through evolution."
+  evaluator_system_message: "You are an expert code reviewer."
 
   # Number of examples to include in the prompt
   num_top_programs: 3                 # Number of top-performing programs to include

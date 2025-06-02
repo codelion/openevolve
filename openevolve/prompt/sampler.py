@@ -44,15 +44,16 @@ class PromptSampler:
 
     def build_prompt(
         self,
-        current_program: str,
-        parent_program: str,
-        program_metrics: Dict[str, float],
-        previous_programs: List[Dict[str, Any]],
-        top_programs: List[Dict[str, Any]],
+        current_program: str = "",
+        parent_program: str = "",
+        program_metrics: Dict[str, float] = {},
+        previous_programs: List[Dict[str, Any]] = [],
+        top_programs: List[Dict[str, Any]] = [],
         language: str = "python",
         evolution_round: int = 0,
         allow_full_rewrite: bool = False,
         template_key: Optional[str] = None,
+        **kwargs: Any,
     ) -> Dict[str, str]:
         """
         Build a prompt for the LLM
@@ -67,6 +68,7 @@ class PromptSampler:
             evolution_round: Current evolution round
             allow_full_rewrite: Whether to allow a full rewrite
             template_key: Optional override for template key
+            **kwargs: Additional keys to replace in the user prompt
 
         Returns:
             Dictionary with 'system' and 'user' keys
@@ -118,6 +120,7 @@ class PromptSampler:
             evolution_history=evolution_history,
             current_program=current_program,
             language=language,
+            **kwargs,
         )
 
         return {
