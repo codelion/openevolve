@@ -90,7 +90,7 @@ class Evaluator:
         """
         start_time = time.time()
         program_id_str = f" {program_id}" if program_id else ""
-        
+
         # Retry logic for evaluation
         last_exception = None
         for attempt in range(self.config.max_retries + 1):
@@ -126,19 +126,23 @@ class Evaluator:
 
             except Exception as e:
                 last_exception = e
-                logger.warning(f"Evaluation attempt {attempt + 1}/{self.config.max_retries + 1} failed for program{program_id_str}: {str(e)}")
-                
+                logger.warning(
+                    f"Evaluation attempt {attempt + 1}/{self.config.max_retries + 1} failed for program{program_id_str}: {str(e)}"
+                )
+
                 # If this is not the last attempt, wait a bit before retrying
                 if attempt < self.config.max_retries:
                     await asyncio.sleep(1.0)  # Wait 1 second before retry
-                    
+
             finally:
                 # Clean up temporary file
                 if os.path.exists(temp_file_path):
                     os.unlink(temp_file_path)
-        
+
         # All retries failed
-        logger.error(f"All evaluation attempts failed for program{program_id_str}. Last error: {str(last_exception)}")
+        logger.error(
+            f"All evaluation attempts failed for program{program_id_str}. Last error: {str(last_exception)}"
+        )
         return {"error": 0.0}
 
     @run_in_executor

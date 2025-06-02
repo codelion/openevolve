@@ -275,21 +275,24 @@ class PromptSampler:
                 )
                 + "\n\n"
             )
-        
+
         # Format diverse programs using num_diverse_programs config
         diverse_programs_str = ""
-        if self.config.num_diverse_programs > 0 and len(top_programs) > self.config.num_top_programs:
+        if (
+            self.config.num_diverse_programs > 0
+            and len(top_programs) > self.config.num_top_programs
+        ):
             # Skip the top programs we already included
-            remaining_programs = top_programs[self.config.num_top_programs:]
-            
+            remaining_programs = top_programs[self.config.num_top_programs :]
+
             # Sample diverse programs from the remaining
             num_diverse = min(self.config.num_diverse_programs, len(remaining_programs))
             if num_diverse > 0:
                 # Use random sampling to get diverse programs
                 diverse_programs = random.sample(remaining_programs, num_diverse)
-                
+
                 diverse_programs_str += "\n\n## Diverse Programs\n\n"
-                
+
                 for i, program in enumerate(diverse_programs):
                     # Extract a snippet (first 5 lines for diversity)
                     program_code = program.get("code", "")
@@ -307,7 +310,9 @@ class PromptSampler:
                     if not key_features:
                         key_features = [
                             f"Alternative approach to {name}"
-                            for name in list(program.get("metrics", {}).keys())[:2]  # Just first 2 metrics
+                            for name in list(program.get("metrics", {}).keys())[
+                                :2
+                            ]  # Just first 2 metrics
                         ]
 
                     key_features_str = ", ".join(key_features)
@@ -322,7 +327,7 @@ class PromptSampler:
                         )
                         + "\n\n"
                     )
-        
+
         # Combine top and diverse programs
         combined_programs_str = top_programs_str + diverse_programs_str
 
