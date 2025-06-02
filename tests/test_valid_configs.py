@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from openevolve.config import Config, load_config
 
+
 class TestConfigValidity(unittest.TestCase):
     """Tests that all config files in the configs/ and examples/ directories are valid"""
 
@@ -28,7 +29,10 @@ class TestConfigValidity(unittest.TestCase):
         for config_file in config_files:
             print(f"Testing config file: {config_file}")
             config = load_config(config_file)
-            self.assertIsInstance(config, Config, f"Config file {config_file} did not load correctly")
+            self.assertIsInstance(
+                config, Config, f"Config file {config_file} did not load correctly"
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

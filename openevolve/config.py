@@ -234,7 +234,9 @@ class Config:
             if "models" in llm_dict:
                 llm_dict["models"] = [LLMModelConfig(**m) for m in llm_dict["models"]]
             if "evaluator_models" in llm_dict:
-                llm_dict["evaluator_models"] = [LLMModelConfig(**m) for m in llm_dict["evaluator_models"]]
+                llm_dict["evaluator_models"] = [
+                    LLMModelConfig(**m) for m in llm_dict["evaluator_models"]
+                ]
             config.llm = LLMConfig(**llm_dict)
         if "prompt" in config_dict:
             config.prompt = PromptConfig(**config_dict["prompt"])
