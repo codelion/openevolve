@@ -91,13 +91,13 @@ class ProgramDatabase:
 
         # Island populations
         self.islands: List[Set[str]] = [set() for _ in range(config.num_islands)]
-        
+
         # Island management attributes
         self.current_island: int = 0
         self.island_generations: List[int] = [0] * config.num_islands
         self.last_migration_generation: int = 0
-        self.migration_interval: int = getattr(config, 'migration_interval', 10)  # Default to 10
-        self.migration_rate: float = getattr(config, 'migration_rate', 0.1)  # Default to 0.1
+        self.migration_interval: int = getattr(config, "migration_interval", 10)  # Default to 10
+        self.migration_rate: float = getattr(config, "migration_rate", 0.1)  # Default to 0.1
 
         # Archive of elite programs
         self.archive: Set[str] = set()
@@ -352,24 +352,21 @@ class ProgramDatabase:
             logger.warning(f"Database path {path} does not exist, skipping load")
             return
 
-        # Load metadata
+        # Load metadata first
         metadata_path = os.path.join(path, "metadata.json")
+        saved_islands = []
         if os.path.exists(metadata_path):
             with open(metadata_path, "r") as f:
                 metadata = json.load(f)
 
             self.feature_map = metadata.get("feature_map", {})
-            self.islands = [set(island) for island in metadata.get("islands", [])]
+            saved_islands = metadata.get("islands", [])
             self.archive = set(metadata.get("archive", []))
             self.best_program_id = metadata.get("best_program_id")
             self.last_iteration = metadata.get("last_iteration", 0)
             self.current_island = metadata.get("current_island", 0)
-            self.island_generations = metadata.get("island_generations", [0] * len(self.islands))
+            self.island_generations = metadata.get("island_generations", [0] * len(saved_islands))
             self.last_migration_generation = metadata.get("last_migration_generation", 0)
-
-            # Ensure island_generations list has correct length
-            if len(self.island_generations) != len(self.islands):
-                self.island_generations = [0] * len(self.islands)
 
             logger.info(f"Loaded database metadata with last_iteration={self.last_iteration}")
 
@@ -388,7 +385,99 @@ class ProgramDatabase:
                     except Exception as e:
                         logger.warning(f"Error loading program {program_file}: {str(e)}")
 
+        # Reconstruct island assignments from metadata
+        self._reconstruct_islands(saved_islands)
+        
+        # Ensure island_generations list has correct length
+        if len(self.island_generations) != len(self.islands):
+            self.island_generations = [0] * len(self.islands)
+
         logger.info(f"Loaded database with {len(self.programs)} programs from {path}")
+        
+        # Log the reconstructed island status
+        self.log_island_status()
+        
+    def _reconstruct_islands(self, saved_islands: List[List[str]]) -> None:
+        """
+        Reconstruct island assignments from saved metadata
+        
+        Args:
+            saved_islands: List of island program ID lists from metadata
+        """
+        # Initialize empty islands
+        num_islands = max(len(saved_islands), self.config.num_islands)
+        self.islands = [set() for _ in range(num_islands)]
+        
+        missing_programs = []
+        restored_programs = 0
+        
+        # Restore island assignments
+        for island_idx, program_ids in enumerate(saved_islands):
+            if island_idx >= len(self.islands):
+                continue
+                
+            for program_id in program_ids:
+                if program_id in self.programs:
+                    # Program exists, add to island
+                    self.islands[island_idx].add(program_id)
+                    # Set island metadata on the program
+                    self.programs[program_id].metadata["island"] = island_idx
+                    restored_programs += 1
+                else:
+                    # Program missing, track it
+                    missing_programs.append((island_idx, program_id))
+        
+        # Clean up archive - remove missing programs
+        original_archive_size = len(self.archive)
+        self.archive = {pid for pid in self.archive if pid in self.programs}
+        
+        # Clean up feature_map - remove missing programs
+        feature_keys_to_remove = []
+        for key, program_id in self.feature_map.items():
+            if program_id not in self.programs:
+                feature_keys_to_remove.append(key)
+        for key in feature_keys_to_remove:
+            del self.feature_map[key]
+        
+        # Check best program
+        if self.best_program_id and self.best_program_id not in self.programs:
+            logger.warning(f"Best program {self.best_program_id} not found, will recalculate")
+            self.best_program_id = None
+        
+        # Log reconstruction results
+        if missing_programs:
+            logger.warning(f"Found {len(missing_programs)} missing programs during island reconstruction:")
+            for island_idx, program_id in missing_programs[:5]:  # Show first 5
+                logger.warning(f"  Island {island_idx}: {program_id}")
+            if len(missing_programs) > 5:
+                logger.warning(f"  ... and {len(missing_programs) - 5} more")
+        
+        if original_archive_size > len(self.archive):
+            logger.info(f"Removed {original_archive_size - len(self.archive)} missing programs from archive")
+        
+        if feature_keys_to_remove:
+            logger.info(f"Removed {len(feature_keys_to_remove)} missing programs from feature map")
+        
+        logger.info(f"Reconstructed islands: restored {restored_programs} programs to islands")
+        
+        # If we have programs but no island assignments, distribute them
+        if self.programs and sum(len(island) for island in self.islands) == 0:
+            logger.info("No island assignments found, distributing programs across islands")
+            self._distribute_programs_to_islands()
+    
+    def _distribute_programs_to_islands(self) -> None:
+        """
+        Distribute loaded programs across islands when no island metadata exists
+        """
+        program_ids = list(self.programs.keys())
+        
+        # Distribute programs round-robin across islands
+        for i, program_id in enumerate(program_ids):
+            island_idx = i % len(self.islands)
+            self.islands[island_idx].add(program_id)
+            self.programs[program_id].metadata["island"] = island_idx
+        
+        logger.info(f"Distributed {len(program_ids)} programs across {len(self.islands)} islands")
 
     def _save_program(self, program: Program, base_path: Optional[str] = None) -> None:
         """
@@ -912,17 +1001,17 @@ class ProgramDatabase:
 
         # Limit total comparisons for performance
         max_comparisons = 6  # Maximum comparisons to prevent long delays
-        
+
         for i, prog1 in enumerate(sample_programs):
             for prog2 in sample_programs[i + 1 :]:
                 if comparisons >= max_comparisons:
                     break
-                    
+
                 # Use fast approximation instead of expensive edit distance
                 diversity = self._fast_code_diversity(prog1.code, prog2.code)
                 total_diversity += diversity
                 comparisons += 1
-                
+
             if comparisons >= max_comparisons:
                 break
 
@@ -931,29 +1020,29 @@ class ProgramDatabase:
     def _fast_code_diversity(self, code1: str, code2: str) -> float:
         """
         Fast approximation of code diversity using simple metrics
-        
+
         Returns diversity score (higher = more diverse)
         """
         if code1 == code2:
             return 0.0
-        
+
         # Length difference (scaled to reasonable range)
         len1, len2 = len(code1), len(code2)
         length_diff = abs(len1 - len2)
-        
+
         # Line count difference
-        lines1 = code1.count('\n')
-        lines2 = code2.count('\n')
+        lines1 = code1.count("\n")
+        lines2 = code2.count("\n")
         line_diff = abs(lines1 - lines2)
-        
+
         # Simple character set difference
         chars1 = set(code1)
         chars2 = set(code2)
         char_diff = len(chars1.symmetric_difference(chars2))
-        
+
         # Combine metrics (scaled to match original edit distance range)
-        diversity = (length_diff * 0.1 + line_diff * 10 + char_diff * 0.5)
-        
+        diversity = length_diff * 0.1 + line_diff * 10 + char_diff * 0.5
+
         return diversity
 
     def log_island_status(self) -> None:

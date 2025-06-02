@@ -321,7 +321,7 @@ def evaluate_stage1(program_path: str) -> Dict[str, float]:
         # Load the evolved program with better error handling
         spec = importlib.util.spec_from_file_location("evolved_program", program_path)
         evolved_program = importlib.util.module_from_spec(spec)
-        
+
         try:
             spec.loader.exec_module(evolved_program)
         except SyntaxError as e:
@@ -333,14 +333,14 @@ def evaluate_stage1(program_path: str) -> Dict[str, float]:
             return {
                 "basic_functionality": 0.0,
                 "syntax_error": 1.0,
-                "error": f"Syntax error: {str(e)}"
+                "error": f"Syntax error: {str(e)}",
             }
         except Exception as e:
             print(f"[Stage 1] ❌ IMPORT ERROR: {e}")
             return {
                 "basic_functionality": 0.0,
                 "import_error": 1.0,
-                "error": f"Import error: {str(e)}"
+                "error": f"Import error: {str(e)}",
             }
 
         # Check if the required function exists
@@ -384,7 +384,7 @@ def evaluate_stage1(program_path: str) -> Dict[str, float]:
             return {
                 "basic_functionality": 0.0,
                 "runtime_error": 1.0,
-                "error": f"Runtime error: {str(e)}"
+                "error": f"Runtime error: {str(e)}",
             }
 
         # Enhanced scoring for incremental progress
@@ -408,7 +408,7 @@ def evaluate_stage1(program_path: str) -> Dict[str, float]:
             "basic_functionality": float(basic_score),
             "shape_correct": float(correctness["shape_correct"]),
             "no_nan_inf": float(correctness["no_nan_inf"]),
-            "accuracy_score": float(min(1.0, 1.0 / max(correctness.get('mse', 1e6), 1e-6)))
+            "accuracy_score": float(min(1.0, 1.0 / max(correctness.get("mse", 1e6), 1e-6))),
         }
 
         print(f"[Stage 1] ✓ Completed with score: {basic_score:.3f}")
@@ -420,12 +420,9 @@ def evaluate_stage1(program_path: str) -> Dict[str, float]:
     except Exception as e:
         print(f"[Stage 1] ❌ Unexpected Exception: {str(e)}")
         import traceback
+
         traceback.print_exc()
-        return {
-            "basic_functionality": 0.0,
-            "unexpected_error": 1.0,
-            "error": str(e)
-        }
+        return {"basic_functionality": 0.0, "unexpected_error": 1.0, "error": str(e)}
 
 
 def evaluate(program_path: str) -> Dict[str, float]:
