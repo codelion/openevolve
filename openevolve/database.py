@@ -130,6 +130,9 @@ class ProgramDatabase:
 
         self.programs[program.id] = program
 
+        # Enforce population size limit
+        self._enforce_population_limit()
+
         # Calculate feature coordinates for MAP-Elites
         feature_coords = self._calculate_feature_coords(program)
 
@@ -552,25 +555,23 @@ class ProgramDatabase:
         Returns:
             Parent program from current island
         """
-        # Decide between exploitation and exploration
-        if random.random() < self.config.exploitation_ratio and self.archive:
-            # Even for exploitation, prefer programs from current island
-            archive_programs_in_island = [
-                pid
-                for pid in self.archive
-                if pid in self.programs
-                and self.programs[pid].metadata.get("island") == self.current_island
-            ]
+        # Use exploration_ratio and exploitation_ratio to decide sampling strategy
+        rand_val = random.random()
+        
+        if rand_val < self.config.exploration_ratio:
+            # EXPLORATION: Sample from current island (diverse sampling)
+            return self._sample_exploration_parent()
+        elif rand_val < self.config.exploration_ratio + self.config.exploitation_ratio:
+            # EXPLOITATION: Sample from archive (elite programs)
+            return self._sample_exploitation_parent()
+        else:
+            # RANDOM: Sample from any program (remaining probability)
+            return self._sample_random_parent()
 
-            if archive_programs_in_island:
-                parent_id = random.choice(archive_programs_in_island)
-                return self.programs[parent_id]
-            else:
-                # Fall back to any archive program if current island has none
-                parent_id = random.choice(list(self.archive))
-                return self.programs[parent_id]
-
-        # Exploration: Sample from current island only
+    def _sample_exploration_parent(self) -> Program:
+        """
+        Sample a parent for exploration (from current island)
+        """
         current_island_programs = self.islands[self.current_island]
 
         if not current_island_programs:
@@ -589,6 +590,41 @@ class ProgramDatabase:
         # Sample from current island
         parent_id = random.choice(list(current_island_programs))
         return self.programs[parent_id]
+    
+    def _sample_exploitation_parent(self) -> Program:
+        """
+        Sample a parent for exploitation (from archive/elite programs)
+        """
+        if not self.archive:
+            # Fallback to exploration if no archive
+            return self._sample_exploration_parent()
+            
+        # Prefer programs from current island in archive
+        archive_programs_in_island = [
+            pid
+            for pid in self.archive
+            if pid in self.programs
+            and self.programs[pid].metadata.get("island") == self.current_island
+        ]
+
+        if archive_programs_in_island:
+            parent_id = random.choice(archive_programs_in_island)
+            return self.programs[parent_id]
+        else:
+            # Fall back to any archive program if current island has none
+            parent_id = random.choice(list(self.archive))
+            return self.programs[parent_id]
+    
+    def _sample_random_parent(self) -> Program:
+        """
+        Sample a completely random parent from all programs
+        """
+        if not self.programs:
+            raise ValueError("No programs available for sampling")
+        
+        # Sample randomly from all programs
+        program_id = random.choice(list(self.programs.keys()))
+        return self.programs[program_id]
 
     def _sample_inspirations(self, parent: Program, n: int = 5) -> List[Program]:
         """
@@ -616,14 +652,17 @@ class ProgramDatabase:
             if program.id not in [p.id for p in inspirations] and program.id != parent.id:
                 inspirations.append(program)
 
-        # Add diverse programs
+        # Add diverse programs using config.num_diverse_programs
         if len(self.programs) > n and len(inspirations) < n:
-            # Sample from different feature cells
+            # Calculate how many diverse programs to add (up to remaining slots)
+            remaining_slots = n - len(inspirations)
+            
+            # Sample from different feature cells for diversity
             feature_coords = self._calculate_feature_coords(parent)
 
             # Get programs from nearby feature cells
             nearby_programs = []
-            for _ in range(n - len(inspirations)):
+            for _ in range(remaining_slots):
                 # Perturb coordinates
                 perturbed_coords = [
                     max(0, min(self.feature_bins - 1, c + random.randint(-1, 1)))
@@ -656,6 +695,70 @@ class ProgramDatabase:
             inspirations.extend(nearby_programs)
 
         return inspirations[:n]
+
+    def _enforce_population_limit(self) -> None:
+        """
+        Enforce the population size limit by removing worst programs if needed
+        """
+        if len(self.programs) <= self.config.population_size:
+            return
+
+        # Calculate how many programs to remove
+        num_to_remove = len(self.programs) - self.config.population_size
+        
+        logger.info(f"Population size ({len(self.programs)}) exceeds limit ({self.config.population_size}), removing {num_to_remove} programs")
+
+        # Get programs sorted by fitness (worst first)
+        all_programs = list(self.programs.values())
+        
+        # Sort by average metric (worst first)
+        sorted_programs = sorted(
+            all_programs,
+            key=lambda p: sum(p.metrics.values()) / max(1, len(p.metrics)) if p.metrics else 0.0
+        )
+        
+        # Remove worst programs, but never remove the best program
+        programs_to_remove = []
+        for program in sorted_programs:
+            if len(programs_to_remove) >= num_to_remove:
+                break
+            # Don't remove the best program
+            if program.id != self.best_program_id:
+                programs_to_remove.append(program)
+                
+        # If we still need to remove more and only have the best program protected,
+        # remove from the remaining programs anyway (but keep the absolute best)
+        if len(programs_to_remove) < num_to_remove:
+            remaining_programs = [p for p in sorted_programs if p not in programs_to_remove and p.id != self.best_program_id]
+            additional_removals = remaining_programs[:num_to_remove - len(programs_to_remove)]
+            programs_to_remove.extend(additional_removals)
+        
+        # Remove the selected programs
+        for program in programs_to_remove:
+            program_id = program.id
+            
+            # Remove from main programs dict
+            if program_id in self.programs:
+                del self.programs[program_id]
+            
+            # Remove from feature map
+            keys_to_remove = []
+            for key, pid in self.feature_map.items():
+                if pid == program_id:
+                    keys_to_remove.append(key)
+            for key in keys_to_remove:
+                del self.feature_map[key]
+            
+            # Remove from islands
+            for island in self.islands:
+                island.discard(program_id)
+            
+            # Remove from archive
+            self.archive.discard(program_id)
+            
+            logger.debug(f"Removed program {program_id} due to population limit")
+        
+        logger.info(f"Population size after cleanup: {len(self.programs)}")
 
     # Island management methods
     def set_current_island(self, island_idx: int) -> None:

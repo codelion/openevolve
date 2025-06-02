@@ -30,6 +30,7 @@ database:
   elite_selection_ratio: 0.1
   exploration_ratio: 0.3
   exploitation_ratio: 0.7
+  # Note: diversity_metric fixed to "edit_distance"
   
   # Feature map dimensions for MAP-Elites
   feature_dimensions: ["score", "complexity"]

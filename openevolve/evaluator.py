@@ -89,46 +89,57 @@ class Evaluator:
             Dictionary of metric name to score
         """
         start_time = time.time()
+        program_id_str = f" {program_id}" if program_id else ""
+        
+        # Retry logic for evaluation
+        last_exception = None
+        for attempt in range(self.config.max_retries + 1):
+            # Create a temporary file for the program
+            with tempfile.NamedTemporaryFile(suffix=".py", delete=False) as temp_file:
+                temp_file.write(program_code.encode("utf-8"))
+                temp_file_path = temp_file.name
 
-        # Create a temporary file for the program
-        with tempfile.NamedTemporaryFile(suffix=".py", delete=False) as temp_file:
-            temp_file.write(program_code.encode("utf-8"))
-            temp_file_path = temp_file.name
+            try:
+                # Run evaluation
+                if self.config.cascade_evaluation:
+                    # Run cascade evaluation
+                    metrics = await self._cascade_evaluate(temp_file_path)
+                else:
+                    # Run direct evaluation
+                    metrics = await self._direct_evaluate(temp_file_path)
 
-        try:
-            # Run evaluation
-            if self.config.cascade_evaluation:
-                # Run cascade evaluation
-                metrics = await self._cascade_evaluate(temp_file_path)
-            else:
-                # Run direct evaluation
-                metrics = await self._direct_evaluate(temp_file_path)
+                # Add LLM feedback if configured
+                if self.config.use_llm_feedback and self.llm_ensemble:
+                    feedback_metrics = await self._llm_evaluate(program_code)
 
-            # Add LLM feedback if configured
-            if self.config.use_llm_feedback and self.llm_ensemble:
-                feedback_metrics = await self._llm_evaluate(program_code)
+                    # Combine metrics
+                    for name, value in feedback_metrics.items():
+                        metrics[f"llm_{name}"] = value * self.config.llm_feedback_weight
 
-                # Combine metrics
-                for name, value in feedback_metrics.items():
-                    metrics[f"llm_{name}"] = value * self.config.llm_feedback_weight
+                elapsed = time.time() - start_time
+                logger.info(
+                    f"Evaluated program{program_id_str} in {elapsed:.2f}s: "
+                    f"{', '.join(f'{name}={value:.4f}' for name, value in metrics.items())}"
+                )
 
-            elapsed = time.time() - start_time
-            program_id_str = f" {program_id}" if program_id else ""
-            logger.info(
-                f"Evaluated program{program_id_str} in {elapsed:.2f}s: "
-                f"{', '.join(f'{name}={value:.4f}' for name, value in metrics.items())}"
-            )
+                return metrics
 
-            return metrics
-
-        except Exception as e:
-            logger.error(f"Error evaluating program: {str(e)}")
-            return {"error": 0.0}
-
-        finally:
-            # Clean up temporary file
-            if os.path.exists(temp_file_path):
-                os.unlink(temp_file_path)
+            except Exception as e:
+                last_exception = e
+                logger.warning(f"Evaluation attempt {attempt + 1}/{self.config.max_retries + 1} failed for program{program_id_str}: {str(e)}")
+                
+                # If this is not the last attempt, wait a bit before retrying
+                if attempt < self.config.max_retries:
+                    await asyncio.sleep(1.0)  # Wait 1 second before retry
+                    
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
+        
+        # All retries failed
+        logger.error(f"All evaluation attempts failed for program{program_id_str}. Last error: {str(last_exception)}")
+        return {"error": 0.0}
 
     @run_in_executor
     def _direct_evaluate(self, program_path: str) -> Dict[str, float]:

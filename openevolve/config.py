@@ -195,8 +195,9 @@ class Config:
                 "num_diverse_programs": self.prompt.num_diverse_programs,
                 "use_template_stochasticity": self.prompt.use_template_stochasticity,
                 "template_variations": self.prompt.template_variations,
-                "use_meta_prompting": self.prompt.use_meta_prompting,
-                "meta_prompt_weight": self.prompt.meta_prompt_weight,
+                # Note: meta-prompting features not implemented
+                # "use_meta_prompting": self.prompt.use_meta_prompting,
+                # "meta_prompt_weight": self.prompt.meta_prompt_weight,
             },
             "database": {
                 "db_path": self.database.db_path,
@@ -207,7 +208,8 @@ class Config:
                 "elite_selection_ratio": self.database.elite_selection_ratio,
                 "exploration_ratio": self.database.exploration_ratio,
                 "exploitation_ratio": self.database.exploitation_ratio,
-                "diversity_metric": self.database.diversity_metric,
+                # Note: diversity_metric fixed to "edit_distance"
+                # "diversity_metric": self.database.diversity_metric,
                 "feature_dimensions": self.database.feature_dimensions,
                 "feature_bins": self.database.feature_bins,
                 "migration_interval": self.database.migration_interval,
@@ -217,12 +219,14 @@ class Config:
             "evaluator": {
                 "timeout": self.evaluator.timeout,
                 "max_retries": self.evaluator.max_retries,
-                "memory_limit_mb": self.evaluator.memory_limit_mb,
-                "cpu_limit": self.evaluator.cpu_limit,
+                # Note: resource limits not implemented
+                # "memory_limit_mb": self.evaluator.memory_limit_mb,
+                # "cpu_limit": self.evaluator.cpu_limit,
                 "cascade_evaluation": self.evaluator.cascade_evaluation,
                 "cascade_thresholds": self.evaluator.cascade_thresholds,
                 "parallel_evaluations": self.evaluator.parallel_evaluations,
-                "distributed": self.evaluator.distributed,
+                # Note: distributed evaluation not implemented
+                # "distributed": self.evaluator.distributed,
                 "use_llm_feedback": self.evaluator.use_llm_feedback,
                 "llm_feedback_weight": self.evaluator.llm_feedback_weight,
             },
