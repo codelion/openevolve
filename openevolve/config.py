@@ -79,10 +79,10 @@ class DatabaseConfig:
     # Feature map dimensions for MAP-Elites
     feature_dimensions: List[str] = field(default_factory=lambda: ["score", "complexity"])
     feature_bins: int = 10
-    
+
     # Migration parameters for island-based evolution
     migration_interval: int = 50  # Migrate every N generations
-    migration_rate: float = 0.1   # Fraction of population to migrate
+    migration_rate: float = 0.1  # Fraction of population to migrate
 
 
 @dataclass

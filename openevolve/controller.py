@@ -178,23 +178,25 @@ class OpenEvolve:
         logger.info(
             f"Starting evolution from iteration {start_iteration} for {max_iterations} iterations (total: {total_iterations})"
         )
-        
+
         # Island-based evolution variables
-        programs_per_island = max(1, max_iterations // (self.config.database.num_islands * 10))  # Dynamic allocation
+        programs_per_island = max(
+            1, max_iterations // (self.config.database.num_islands * 10)
+        )  # Dynamic allocation
         current_island_counter = 0
-        
+
         logger.info(f"Using island-based evolution with {self.config.database.num_islands} islands")
         self.database.log_island_status()
 
         for i in range(start_iteration, total_iterations):
             iteration_start = time.time()
-            
+
             # Manage island evolution - switch islands periodically
             if i > start_iteration and current_island_counter >= programs_per_island:
                 self.database.next_island()
                 current_island_counter = 0
                 logger.debug(f"Switched to island {self.database.current_island}")
-            
+
             current_island_counter += 1
 
             # Sample parent and inspirations from current island
@@ -269,10 +271,10 @@ class OpenEvolve:
 
                 # Add to database (will be added to current island)
                 self.database.add(child_program, iteration=i + 1)
-                
+
                 # Increment generation for current island
                 self.database.increment_island_generation()
-                
+
                 # Check if migration should occur
                 if self.database.should_migrate():
                     logger.info(f"Performing migration at iteration {i+1}")
