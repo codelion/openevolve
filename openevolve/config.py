@@ -79,6 +79,10 @@ class DatabaseConfig:
     # Feature map dimensions for MAP-Elites
     feature_dimensions: List[str] = field(default_factory=lambda: ["score", "complexity"])
     feature_bins: int = 10
+    
+    # Migration parameters for island-based evolution
+    migration_interval: int = 50  # Migrate every N generations
+    migration_rate: float = 0.1   # Fraction of population to migrate
 
 
 @dataclass
@@ -203,6 +207,8 @@ class Config:
                 "diversity_metric": self.database.diversity_metric,
                 "feature_dimensions": self.database.feature_dimensions,
                 "feature_bins": self.database.feature_bins,
+                "migration_interval": self.database.migration_interval,
+                "migration_rate": self.database.migration_rate,
             },
             "evaluator": {
                 "timeout": self.evaluator.timeout,

@@ -76,6 +76,15 @@ class ProgramDatabase:
         # Island populations
         self.islands: List[Set[str]] = [set() for _ in range(config.num_islands)]
 
+        # Island-based evolution tracking
+        self.current_island: int = 0  # Track which island we're currently evolving
+        self.island_generations: List[int] = [0] * config.num_islands
+        
+        # Migration parameters
+        self.migration_interval: int = getattr(config, 'migration_interval', 50)
+        self.migration_rate: float = getattr(config, 'migration_rate', 0.1)
+        self.last_migration_generation: int = 0
+
         # Archive of elite programs
         self.archive: Set[str] = set()
 
@@ -91,13 +100,14 @@ class ProgramDatabase:
 
         logger.info(f"Initialized program database with {len(self.programs)} programs")
 
-    def add(self, program: Program, iteration: int = None) -> str:
+    def add(self, program: Program, iteration: int = None, target_island: Optional[int] = None) -> str:
         """
         Add a program to the database
 
         Args:
             program: Program to add
             iteration: Current iteration (defaults to last_iteration)
+            target_island: Specific island to add to (uses current_island if None)
 
         Returns:
             Program ID
@@ -121,9 +131,13 @@ class ProgramDatabase:
         ):
             self.feature_map[feature_key] = program.id
 
-        # Add to an island (randomly)
-        island_idx = random.randint(0, len(self.islands) - 1)
+        # Add to specific island (not random!)
+        island_idx = target_island if target_island is not None else self.current_island
+        island_idx = island_idx % len(self.islands)  # Ensure valid island
         self.islands[island_idx].add(program.id)
+        
+        # Track which island this program belongs to
+        program.metadata['island'] = island_idx
 
         # Update archive
         self._update_archive(program)
@@ -135,7 +149,7 @@ class ProgramDatabase:
         if self.config.db_path:
             self._save_program(program)
 
-        logger.debug(f"Added program {program.id} to database")
+        logger.debug(f"Added program {program.id} to island {island_idx}")
         return program.id
 
     def get(self, program_id: str) -> Optional[Program]:
@@ -291,6 +305,9 @@ class ProgramDatabase:
             "archive": list(self.archive),
             "best_program_id": self.best_program_id,
             "last_iteration": iteration or self.last_iteration,
+            "current_island": self.current_island,
+            "island_generations": self.island_generations,
+            "last_migration_generation": self.last_migration_generation,
         }
 
         with open(os.path.join(save_path, "metadata.json"), "w") as f:
@@ -320,6 +337,13 @@ class ProgramDatabase:
             self.archive = set(metadata.get("archive", []))
             self.best_program_id = metadata.get("best_program_id")
             self.last_iteration = metadata.get("last_iteration", 0)
+            self.current_island = metadata.get("current_island", 0)
+            self.island_generations = metadata.get("island_generations", [0] * len(self.islands))
+            self.last_migration_generation = metadata.get("last_migration_generation", 0)
+            
+            # Ensure island_generations list has correct length
+            if len(self.island_generations) != len(self.islands):
+                self.island_generations = [0] * len(self.islands)
 
             logger.info(f"Loaded database metadata with last_iteration={self.last_iteration}")
 
@@ -514,25 +538,46 @@ class ProgramDatabase:
 
     def _sample_parent(self) -> Program:
         """
-        Sample a parent program for the next evolution step
+        Sample a parent program from the current island for the next evolution step
 
         Returns:
-            Parent program
+            Parent program from current island
         """
         # Decide between exploitation and exploration
         if random.random() < self.config.exploitation_ratio and self.archive:
-            # Exploitation: Use elite program from archive
-            parent_id = random.choice(list(self.archive))
-            return self.programs[parent_id]
+            # Even for exploitation, prefer programs from current island
+            archive_programs_in_island = [
+                pid for pid in self.archive 
+                if pid in self.programs and 
+                self.programs[pid].metadata.get('island') == self.current_island
+            ]
+            
+            if archive_programs_in_island:
+                parent_id = random.choice(archive_programs_in_island)
+                return self.programs[parent_id]
+            else:
+                # Fall back to any archive program if current island has none
+                parent_id = random.choice(list(self.archive))
+                return self.programs[parent_id]
 
-        # Exploration: Sample from an island
-        island_idx = random.randint(0, len(self.islands) - 1)
+        # Exploration: Sample from current island only
+        current_island_programs = self.islands[self.current_island]
 
-        if not self.islands[island_idx]:
-            # If island is empty, use best program
-            return self.get_best_program() or next(iter(self.programs.values()))
+        if not current_island_programs:
+            # If current island is empty, initialize with best program or random program
+            if self.best_program_id and self.best_program_id in self.programs:
+                # Clone best program to current island
+                best_program = self.programs[self.best_program_id]
+                self.islands[self.current_island].add(self.best_program_id)
+                best_program.metadata['island'] = self.current_island
+                logger.debug(f"Initialized empty island {self.current_island} with best program")
+                return best_program
+            else:
+                # Use any available program
+                return next(iter(self.programs.values()))
 
-        parent_id = random.choice(list(self.islands[island_idx]))
+        # Sample from current island
+        parent_id = random.choice(list(current_island_programs))
         return self.programs[parent_id]
 
     def _sample_inspirations(self, parent: Program, n: int = 5) -> List[Program]:
@@ -601,3 +646,142 @@ class ProgramDatabase:
             inspirations.extend(nearby_programs)
 
         return inspirations[:n]
+
+    # Island management methods
+    def set_current_island(self, island_idx: int) -> None:
+        """Set which island is currently being evolved"""
+        self.current_island = island_idx % len(self.islands)
+        logger.debug(f"Switched to evolving island {self.current_island}")
+    
+    def next_island(self) -> int:
+        """Move to the next island in round-robin fashion"""
+        self.current_island = (self.current_island + 1) % len(self.islands)
+        logger.debug(f"Advanced to island {self.current_island}")
+        return self.current_island
+    
+    def increment_island_generation(self, island_idx: Optional[int] = None) -> None:
+        """Increment generation counter for an island"""
+        idx = island_idx if island_idx is not None else self.current_island
+        self.island_generations[idx] += 1
+        logger.debug(f"Island {idx} generation incremented to {self.island_generations[idx]}")
+    
+    def should_migrate(self) -> bool:
+        """Check if migration should occur based on generation counters"""
+        max_generation = max(self.island_generations)
+        return (max_generation - self.last_migration_generation) >= self.migration_interval
+    
+    def migrate_programs(self) -> None:
+        """
+        Perform migration between islands
+        
+        This should be called periodically to share good solutions between islands
+        """
+        if len(self.islands) < 2:
+            return
+            
+        logger.info("Performing migration between islands")
+        
+        for i, island in enumerate(self.islands):
+            if len(island) == 0:
+                continue
+                
+            # Select top programs from this island for migration
+            island_programs = [self.programs[pid] for pid in island if pid in self.programs]
+            if not island_programs:
+                continue
+                
+            # Sort by fitness (using combined_score or average metrics)
+            island_programs.sort(
+                key=lambda p: p.metrics.get('combined_score', 
+                                          sum(p.metrics.values()) / max(1, len(p.metrics))),
+                reverse=True
+            )
+            
+            # Select top programs for migration
+            num_to_migrate = max(1, int(len(island_programs) * self.migration_rate))
+            migrants = island_programs[:num_to_migrate]
+            
+            # Migrate to adjacent islands (ring topology)
+            target_islands = [(i + 1) % len(self.islands), (i - 1) % len(self.islands)]
+            
+            for migrant in migrants:
+                for target_island in target_islands:
+                    # Create a copy for migration (to avoid removing from source)
+                    migrant_copy = Program(
+                        id=f"{migrant.id}_migrant_{target_island}",
+                        code=migrant.code,
+                        language=migrant.language,
+                        parent_id=migrant.id,
+                        generation=migrant.generation,
+                        metrics=migrant.metrics.copy(),
+                        metadata={**migrant.metadata, 'island': target_island, 'migrant': True}
+                    )
+                    
+                    # Add to target island
+                    self.islands[target_island].add(migrant_copy.id)
+                    self.programs[migrant_copy.id] = migrant_copy
+                    
+                    logger.debug(f"Migrated program {migrant.id} from island {i} to island {target_island}")
+        
+        # Update last migration generation
+        self.last_migration_generation = max(self.island_generations)
+        logger.info(f"Migration completed at generation {self.last_migration_generation}")
+    
+    def get_island_stats(self) -> List[dict]:
+        """Get statistics for each island"""
+        stats = []
+        
+        for i, island in enumerate(self.islands):
+            island_programs = [self.programs[pid] for pid in island if pid in self.programs]
+            
+            if island_programs:
+                scores = [p.metrics.get('combined_score', 
+                                       sum(p.metrics.values()) / max(1, len(p.metrics))) 
+                         for p in island_programs]
+                
+                best_score = max(scores) if scores else 0.0
+                avg_score = sum(scores) / len(scores) if scores else 0.0
+                diversity = self._calculate_island_diversity(island_programs)
+            else:
+                best_score = avg_score = diversity = 0.0
+            
+            stats.append({
+                'island': i,
+                'population_size': len(island_programs),
+                'best_score': best_score,
+                'average_score': avg_score,
+                'diversity': diversity,
+                'generation': self.island_generations[i],
+                'is_current': i == self.current_island
+            })
+        
+        return stats
+    
+    def _calculate_island_diversity(self, programs: List[Program]) -> float:
+        """Calculate diversity within an island"""
+        if len(programs) < 2:
+            return 0.0
+        
+        total_distance = 0
+        comparisons = 0
+        
+        # Sample up to 10 programs for efficiency
+        sample_size = min(10, len(programs))
+        sample_programs = random.sample(programs, sample_size) if len(programs) > sample_size else programs
+        
+        for i, prog1 in enumerate(sample_programs):
+            for prog2 in sample_programs[i+1:]:
+                total_distance += calculate_edit_distance(prog1.code, prog2.code)
+                comparisons += 1
+        
+        return total_distance / max(1, comparisons)
+    
+    def log_island_status(self) -> None:
+        """Log current status of all islands"""
+        stats = self.get_island_stats()
+        logger.info("Island Status:")
+        for stat in stats:
+            current_marker = " *" if stat['is_current'] else "  "
+            logger.info(f"{current_marker} Island {stat['island']}: {stat['population_size']} programs, "
+                       f"best={stat['best_score']:.4f}, avg={stat['average_score']:.4f}, "
+                       f"diversity={stat['diversity']:.2f}, gen={stat['generation']}")

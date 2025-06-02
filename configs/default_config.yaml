@@ -68,7 +68,13 @@ database:
   # Evolutionary parameters
   population_size: 1000               # Maximum number of programs to keep in memory
   archive_size: 100                   # Size of elite archive
-  num_islands: 5                      # Number of islands for island model
+  num_islands: 5                      # Number of islands for island model (separate populations)
+
+  # Island-based evolution parameters
+  # Islands provide diversity by maintaining separate populations that evolve independently.
+  # Migration periodically shares the best solutions between adjacent islands.
+  migration_interval: 50              # Migrate between islands every N generations
+  migration_rate: 0.1                 # Fraction of top programs to migrate (0.1 = 10%)
 
   # Selection parameters
   elite_selection_ratio: 0.1          # Ratio of elite programs to select
