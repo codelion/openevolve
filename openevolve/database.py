@@ -91,6 +91,13 @@ class ProgramDatabase:
 
         # Island populations
         self.islands: List[Set[str]] = [set() for _ in range(config.num_islands)]
+        
+        # Island management attributes
+        self.current_island: int = 0
+        self.island_generations: List[int] = [0] * config.num_islands
+        self.last_migration_generation: int = 0
+        self.migration_interval: int = getattr(config, 'migration_interval', 10)  # Default to 10
+        self.migration_rate: float = getattr(config, 'migration_rate', 0.1)  # Default to 0.1
 
         # Archive of elite programs
         self.archive: Set[str] = set()

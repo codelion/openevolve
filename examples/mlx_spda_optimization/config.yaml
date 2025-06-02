@@ -1,5 +1,5 @@
 # Configuration for MLX Custom Metal Kernel Attention Optimization
-max_iterations: 100
+max_iterations: 100  # Increased for incremental approach
 checkpoint_interval: 10
 log_level: "INFO"
 
@@ -10,253 +10,245 @@ llm:
   secondary_model: "gemini-2.5-pro-preview-05-06" 
   secondary_model_weight: 0.4
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
-  temperature: 0.9  # Higher for more exploration in kernel optimization
-  top_p: 0.95
-  max_tokens: 32000  
+  temperature: 0.7  # Lower temperature for more reliable code generation
+  top_p: 0.9
+  max_tokens: 24000  
   timeout: 600
 
 # Prompt configuration
 prompt:
   system_message: |
-    This is a high-performance custom Metal kernel optimization task using MLX's metal_kernel API.
+    MISSION: Incrementally evolve working Metal kernels to beat mx.fast.scaled_dot_product_attention
     
-    MISSION: Create custom Metal GPU kernels that beat mx.fast.scaled_dot_product_attention
-    - ACCURACY: Must maintain numerical equivalence (MSE < 1e-6) for drop-in replacement
-    - PERFORMANCE: Must exceed mx.fast.scaled_dot_product_attention speed
-    - METHOD: Use mx.fast.metal_kernel() to write high-performance Metal C++ code
+    🎯 **CURRENT IMPLEMENTATION STATUS:**
+    - ✅ WORKING: Simple Metal scaling kernel (replace q * scale)
+    - ❌ TODO: All other operations use reference implementation
+    - 🎯 GOAL: Gradually replace reference parts with optimized Metal kernels
     
-    CUSTOM METAL KERNEL STRATEGY for Maximum Performance:
+    📋 **CRITICAL SYNTAX RULES (AVOID ERRORS):**
     
-    🚀 HIGH-PERFORMANCE METAL KERNELS (PRIMARY FOCUS):
-    - mx.fast.metal_kernel() → Direct Metal C++ kernel implementation
-    - Fused attention kernels → Combine QK^T + scale + mask + softmax + output in one kernel
-    - Memory access optimization → Coalesced reads, efficient threadgroup dispatch
-    - Template programming → Type specialization for float16/float32
-    - Vectorized operations → Use Metal vector types (float4, half4, etc.)
-    - Threadgroup memory → Shared memory for cache optimization
-    - Atomic operations → For complex reductions and synchronized updates
-    - Specialized kernels → Different kernels for different scenarios (GQA, masking)
-    
-    💯 METAL C++ OPTIMIZATION PATTERNS (ESSENTIAL):
-    
-    🚨 CRITICAL API USAGE (AVOID ERRORS):
-    
-    **DO NOT** add invalid parameters to kernel calls:
+    🚨 **PYTHON SYNTAX ONLY** (you are writing Python code):
     ```python
-    # ❌ WRONG - these parameters don't exist:
-    kernel(inputs=[...], ensure_row_contiguous=True)  # WRONG!
-    kernel(inputs=[...], constants={...})             # WRONG!
+    # ✅ CORRECT Python comments
+    # This is a Python comment
     
-    # ✅ CORRECT - only these parameters allowed:
-    kernel(
-        inputs=[...],           # Required
-        template=[...],         # Required  
-        output_shapes=[...],    # Required
-        output_dtypes=[...],    # Required
-        grid=(...),            # Required
-        threadgroup=(...),     # Required
-        init_value=0.0,        # Optional
-        verbose=False,         # Optional
-        stream=None            # Optional
-    )
+    # ❌ WRONG - C++ style comments in Python
+    // This breaks Python syntax - NEVER USE
+    
+    # ✅ CORRECT string formatting
+    source = """
+        // C++ comments are OK inside Metal source strings
+        uint elem = thread_position_in_grid.x;
+    """
+    
+    # ❌ WRONG - mixing syntaxes
+    source = """
+        uint elem = thread_position_in_grid.x; // Comment
+    """, // ❌ This comma+comment breaks Python
     ```
     
-    **Metal Kernel Creation** (where ensure_row_contiguous goes):
+    🚨 **NEVER ACCESS NON-EXISTENT ATTRIBUTES:**
     ```python
+    # ❌ WRONG - these don't exist in MLX
+    array.strides     # NO!
+    array.data_ptr()  # NO!
+    array.device      # NO!
+    
+    # ✅ CORRECT - these work in MLX
+    array.shape       # Yes
+    array.dtype       # Yes
+    array.size        # Yes
+    ```
+    
+    🚨 **CONCRETE WORKING METAL KERNEL PATTERNS:**
+    
+    **1. WORKING Element-wise Kernel (PROVEN WORKING):**
+    ```python
+    # This pattern WORKS - use it as template
+    source = """
+        uint elem = thread_position_in_grid.x;
+        if (elem >= input_shape[0] * input_shape[1] * input_shape[2] * input_shape[3]) {
+            return;
+        }
+        output[elem] = input[elem] * scale_value;
+    """
+    
     kernel = mx.fast.metal_kernel(
-        name="...",
-        input_names=[...],
-        output_names=[...], 
-        source=metal_code,
-        ensure_row_contiguous=True  # ✅ HERE is where this parameter belongs
+        name="element_wise_op",
+        input_names=["input", "scale_value"],
+        output_names=["output"],
+        source=source
     )
+    
+    # Pass scalar as array
+    scale_arr = mx.array(2.0, dtype=input.dtype)
+    result = kernel(
+        inputs=[input, scale_arr],
+        template=[("T", input.dtype)],
+        output_shapes=[input.shape],
+        output_dtypes=[input.dtype],
+        grid=(input.size, 1, 1),
+        threadgroup=(256, 1, 1)
+    )[0]
     ```
     
-    **Correct Metal C++ Kernel Structure**:
-    ```cpp
-    template <typename T>
-    [[kernel]] void fused_attention_kernel(
-        const device T* q [[buffer(0)]],
-        const device T* k [[buffer(1)]],
-        const device T* v [[buffer(2)]],
-        device T* out [[buffer(3)]],
-        uint3 thread_position_in_grid [[thread_position_in_grid]],
-        uint3 threads_per_threadgroup [[threads_per_threadgroup]],
-        uint thread_index_in_threadgroup [[thread_index_in_threadgroup]]
-    ) {
-        // Fuse all attention operations for maximum efficiency
-        // Use threadgroup_barrier for synchronization
-        // Optimize memory access patterns
-    }
-    ```
-    
-    **Correct Metal Kernel API Usage**:
+    **2. WORKING Matrix Operation Kernel Pattern:**
     ```python
-    # Create kernel
-    kernel = mx.fast.metal_kernel(
-        name="kernel_name",
-        input_names=["input1", "input2"],
-        output_names=["output1"],
-        source=metal_code_string,
-        ensure_row_contiguous=True  # THIS parameter goes on metal_kernel creation
-    )
-    
-    # Call kernel - THESE are the only valid parameters:
-    outputs = kernel(
-        inputs=[array1, array2],
-        template=[("T", mx.float16)],
-        output_shapes=[(B, H, L, D)],
-        output_dtypes=[mx.float16],
-        grid=(total_threads, 1, 1),
-        threadgroup=(256, 1, 1),
-        # Optional parameters:
-        init_value=0.0,    # Initialize outputs to this value
-        verbose=False,      # Print generated kernel code
-        stream=None         # MLX stream
-    )
+    # Template for matrix operations
+    source = """
+        uint tid = thread_position_in_grid.x;
+        uint batch = tid / (seq_len * head_dim);
+        uint remainder = tid % (seq_len * head_dim);
+        uint seq_idx = remainder / head_dim;
+        uint dim_idx = remainder % head_dim;
+        
+        if (batch >= batch_size || seq_idx >= seq_len || dim_idx >= head_dim) {
+            return;
+        }
+        
+        // Simple operation - can be evolved to more complex
+        uint idx = batch * seq_len * head_dim + seq_idx * head_dim + dim_idx;
+        output[idx] = input[idx] * T(2.0);
+    """
     ```
     
-    2. **Memory Access Optimization**:
-    - Coalesced memory reads (threads access contiguous memory)
-    - Threadgroup memory for shared data
-    - Minimize global memory bandwidth usage
-    - Use vectorized loads/stores (float4, half4)
-    - Avoid memory bank conflicts
+    🎯 **INCREMENTAL EVOLUTION STRATEGY:**
     
-    3. **Threadgroup Strategy**:
-    - Optimal threadgroup size (usually 256 or 512)
-    - Thread distribution across heads and sequence dimensions
-    - Efficient grid dispatch patterns
-    - Use threadgroup barriers for synchronization
+    **Phase 1 - Element-wise Operations (START HERE):**
+    - Optimize scaling: `q * scale` → custom kernel
+    - Optimize masking: `scores + mask` → custom kernel  
+    - Optimize activation: Replace mx.softmax with custom kernel
     
-    4. **Kernel Fusion Opportunities**:
-    - QK^T computation + scaling in one pass
-    - Mask application + softmax computation
-    - Softmax + attention weight application to values
-    - Full end-to-end fused attention kernel
+    **Phase 2 - Simple Matrix Operations:**
+    - Custom transpose operations
+    - Element-wise matrix operations
+    - Simple reductions
     
-    5. **Apple Silicon GPU Optimization**:
-    - Leverage unified memory architecture
-    - Optimize for Metal tile-based deferred rendering
-    - Use appropriate vector types for hardware
-    - Minimize memory latency with cache-friendly patterns
+    **Phase 3 - Complex Operations:**
+    - Custom matrix multiplication kernels
+    - Fused scale+matmul operations
+    - Fused softmax operations
     
-    🎯 CONCRETE OPTIMIZATION TECHNIQUES:
+    **Phase 4 - Full Fusion:**
+    - Fused attention kernels
+    - Memory optimization
+    - Advanced vectorization
     
-    **Tiled Attention Implementation**:
-    ```cpp
-    // Process attention in tiles for cache efficiency
-    const uint tile_size = 64;
-    threadgroup T shared_q[tile_size * head_dim];
-    threadgroup T shared_k[tile_size * head_dim];
+    🛠️ **WORKING KERNEL EXAMPLES TO BUILD FROM:**
     
-    for (uint tile = 0; tile < ceildiv(seq_len, tile_size); tile++) {
-        // Load tile into threadgroup memory
-        // Compute attention for this tile
-        // Write results back efficiently
-    }
+    **Custom Scaling Kernel (WORKS):**
+    ```python
+    def create_scaling_kernel():
+        source = """
+            uint elem = thread_position_in_grid.x;
+            if (elem >= q_shape[0] * q_shape[1] * q_shape[2] * q_shape[3]) {
+                return;
+            }
+            out[elem] = q[elem] * scale_val;
+        """
+        return mx.fast.metal_kernel(
+            name="scale_query",
+            input_names=["q", "scale_val"],
+            output_names=["out"], 
+            source=source
+        )
     ```
     
-    **Vectorized Computation**:
-    ```cpp
-    // Use vector types for better throughput
-    using VecT = typename VectorType<T, 4>::type;
-    const device VecT* q_vec = reinterpret_cast<const device VecT*>(q);
-    device VecT* out_vec = reinterpret_cast<device VecT*>(out);
+    **Custom Element-wise Add Kernel (for masks):**
+    ```python
+    def create_mask_add_kernel():
+        source = """
+            uint elem = thread_position_in_grid.x;
+            if (elem >= scores_shape[0] * scores_shape[1] * scores_shape[2] * scores_shape[3]) {
+                return;
+            }
+            out[elem] = scores[elem] + mask[elem];
+        """
+        return mx.fast.metal_kernel(
+            name="add_mask",
+            input_names=["scores", "mask"],
+            output_names=["out"],
+            source=source
+        )
     ```
     
-    **Specialized Kernels**:
-    - Different kernels for different sequence lengths
-    - GQA-specific kernels with optimized broadcasting
-    - Causal mask kernels with triangular computation patterns
-    - Boolean mask kernels with conditional execution
+    📈 **EVOLUTION PRIORITIES (DO THESE IN ORDER):**
     
-    ⚡ PERFORMANCE OPTIMIZATION PRIORITIES:
+    1. **Replace simple operations first** (scaling, masking)
+    2. **Add more complex element-wise operations** (ReLU, exp)
+    3. **Implement simple matrix operations** (transpose, broadcast)
+    4. **Build up to matrix multiplication** (small tile sizes first)
+    5. **Optimize memory access patterns** (coalescing, vectorization)
+    6. **Fuse operations together** (scale+matmul, softmax+matmul)
     
-    1. **Memory Bandwidth** (CRITICAL):
-       - Minimize global memory accesses
-       - Maximize memory coalescing
-       - Use threadgroup memory effectively
-       - Vectorize memory operations
+    🚫 **CRITICAL ERRORS TO AVOID:**
     
-    2. **Kernel Fusion** (HIGH IMPACT):
-       - Combine multiple operations in single kernel
-       - Reduce intermediate memory allocations
-       - Minimize kernel launch overhead
+    **Syntax Errors:**
+    - Never use `//` comments in Python code (outside source strings)
+    - Never mix C++ and Python syntax
+    - Never use invalid Python variable names or literals
     
-    3. **Thread Utilization** (ESSENTIAL):
-       - Optimal threadgroup sizing
-       - Balanced workload distribution
-       - Minimize thread divergence
-       - Use SIMD operations effectively
+    **API Errors:**
+    - Never access non-existent array attributes (.strides, .data_ptr)
+    - Never pass invalid parameters to kernel calls
+    - Always check kernel parameter validity
     
-    4. **Cache Optimization** (APPLE SILICON SPECIFIC):
-       - Tile-based computation patterns
-       - Locality-aware data access
-       - Minimize cache misses
+    **Logic Errors:**
+    - Always check array bounds in Metal kernels
+    - Never assume specific memory layouts
+    - Always handle edge cases (small sequences, odd dimensions)
     
-    🚫 PERFORMANCE ANTI-PATTERNS (AVOID):
-    - Non-coalesced memory access patterns
-    - Excessive global memory bandwidth usage
-    - Thread divergence in conditional operations
-    - Inefficient threadgroup dispatch
-    - Multiple kernel launches for single logical operation
-    - Unnecessary data type conversions
-    - Poor cache locality patterns
+    **Performance Errors:**
+    - Start simple before optimizing
+    - Don't try to fuse everything at once
+    - Test each optimization incrementally
     
-    EVOLUTION STRATEGY:
-    1. **Start with fused kernels** for simple cases (no masking, standard attention)
-    2. **Optimize memory access patterns** using vectorization and coalescing
-    3. **Add specialized kernels** for GQA, causal masking, boolean masking
-    4. **Implement tiled computation** for large sequence lengths
-    5. **Fine-tune threadgroup dispatch** for optimal GPU utilization
-    6. **Profile and optimize** hot paths and memory bottlenecks
+    🎯 **SUCCESS CRITERIA:**
+    - Code must compile and run without errors
+    - Must maintain numerical accuracy (MSE < 1e-6)
+    - Incremental performance improvements
+    - Gradual replacement of reference operations
     
-    BENCHMARK TARGET: 
-    - Must handle all spda_benchmark.py configurations (seq 32-4096, GQA, masks)
-    - Target: 15-30% speedup over mx.fast.scaled_dot_product_attention (AlphaEvolve achieved 23% for Gemini kernels)
-    - Accuracy: MSE < 1e-6 vs reference (non-negotiable)
-    - Method: Custom Metal C++ kernels, not just basic operations
+    **EXAMPLE EVOLUTION PATH:**
+    ```python
+    # Step 1: Replace q * scale with Metal kernel
+    q_scaled = custom_scale_kernel(q, scale)  # ✅ Working
     
-    COMPETITIVE ADVANTAGE:
-    mx.fast.scaled_dot_product_attention is likely implemented with optimized kernels,
-    but custom Metal kernels can potentially discover:
-    - Novel tiling strategies for Apple Silicon architecture
-    - Better memory access patterns for unified memory
-    - Optimized kernel fusion opportunities
-    - Specialized computation patterns for different input sizes
-    - Hardware-specific optimizations not available in general implementations
+    # Step 2: Replace score masking
+    masked_scores = custom_mask_kernel(scores, mask)  # Next target
     
-    Focus on writing high-performance Metal C++ code that leverages:
-    - Direct GPU execution without CPU overhead
-    - Apple Silicon's unified memory architecture
-    - Metal's threadgroup and SIMD capabilities
-    - Optimal memory bandwidth utilization
-    - Custom optimizations for attention-specific patterns
+    # Step 3: Replace matrix operations
+    scores = custom_matmul_kernel(q_scaled, k_transposed)  # Future target
+    
+    # Step 4: Fused operations
+    attention_out = fused_attention_kernel(q, k, v, scale, mask)  # End goal
+    ```
+    
+    Start with the working scaling kernel and incrementally build complexity!
   
   num_top_programs: 5
   num_diverse_programs: 3
   use_template_stochasticity: true
 
-# Database configuration - Larger population for complex kernel optimization
+# Database configuration - Tuned for incremental evolution
 database:
   db_path: "./openevolve_output/program_db" 
-  population_size: 120  # Larger for kernel optimization complexity
-  archive_size: 40
-  num_islands: 6
-  elite_selection_ratio: 0.12
-  exploitation_ratio: 0.6
-  exploration_ratio: 0.28
+  population_size: 80  # Smaller for more focused search
+  archive_size: 30
+  num_islands: 4
+  elite_selection_ratio: 0.2  # Higher to preserve working solutions
+  exploitation_ratio: 0.7     # Higher to build on working kernels
+  exploration_ratio: 0.1      # Lower to avoid breaking working parts
 
 # Evaluator configuration
 evaluator:
-  timeout: 900  # Longer timeout for kernel compilation and testing
+  timeout: 600  # Reasonable timeout for simple kernels
   cascade_evaluation: true
   cascade_thresholds: [0.8, 0.9]  
-  parallel_evaluations: 2  # Lower to avoid GPU resource contention
+  parallel_evaluations: 2  
   use_llm_feedback: false
 
 # Evolution settings
 diff_based_evolution: true
 allow_full_rewrites: false
-max_code_length: 60000  # Allow larger code for complex Metal kernels
+max_code_length: 30000  # Reasonable for incremental changes

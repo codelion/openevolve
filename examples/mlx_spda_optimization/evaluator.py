@@ -311,30 +311,51 @@ def test_correctness(evolved_attention_fn, test_config: Dict) -> Dict[str, float
 
 def evaluate_stage1(program_path: str) -> Dict[str, float]:
     """
-    Stage 1: Quick correctness check on simple test case.
-    This is used for cascade evaluation to quickly filter out broken implementations.
+    Stage 1: Quick correctness check focused on syntax and basic functionality.
+    Enhanced for incremental Metal kernel evolution.
     """
 
     try:
         print(f"[Stage 1] Loading program from {program_path}")
 
-        # Load the evolved program
+        # Load the evolved program with better error handling
         spec = importlib.util.spec_from_file_location("evolved_program", program_path)
         evolved_program = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(evolved_program)
+        
+        try:
+            spec.loader.exec_module(evolved_program)
+        except SyntaxError as e:
+            print(f"[Stage 1] ❌ SYNTAX ERROR: {e}")
+            print(f"[Stage 1] Common issues:")
+            print(f"  - Using '//' comments in Python code (use '#' instead)")
+            print(f"  - Invalid Python literals or variable names")
+            print(f"  - Mixing C++ and Python syntax")
+            return {
+                "basic_functionality": 0.0,
+                "syntax_error": 1.0,
+                "error": f"Syntax error: {str(e)}"
+            }
+        except Exception as e:
+            print(f"[Stage 1] ❌ IMPORT ERROR: {e}")
+            return {
+                "basic_functionality": 0.0,
+                "import_error": 1.0,
+                "error": f"Import error: {str(e)}"
+            }
 
         # Check if the required function exists
         if not hasattr(evolved_program, "evolved_scaled_dot_product_attention"):
             print(f"[Stage 1] ❌ Missing evolved_scaled_dot_product_attention function")
             return {
                 "basic_functionality": 0.0,
+                "function_missing": 1.0,
                 "error": "Missing evolved_scaled_dot_product_attention function",
             }
 
         evolved_attention_fn = evolved_program.evolved_scaled_dot_product_attention
         print(f"[Stage 1] ✓ Function loaded successfully")
 
-        # Simple test case - small dimensions, no GQA, no complex masks
+        # Simple test case - small dimensions for quick testing
         simple_config = {
             "B": 1,
             "qsl": 32,
@@ -348,40 +369,63 @@ def evaluate_stage1(program_path: str) -> Dict[str, float]:
 
         print(f"[Stage 1] Testing with config: {simple_config}")
 
-        # Test basic correctness
-        correctness = test_correctness(evolved_attention_fn, simple_config)
+        # Test basic correctness with detailed error reporting
+        try:
+            correctness = test_correctness(evolved_attention_fn, simple_config)
+            print(
+                f"[Stage 1] Correctness results: MSE={correctness.get('mse', 'N/A'):.2e}, Allclose={correctness.get('allclose', False)}"
+            )
+        except Exception as e:
+            print(f"[Stage 1] ❌ RUNTIME ERROR: {e}")
+            print(f"[Stage 1] Common Metal kernel issues:")
+            print(f"  - Accessing non-existent array attributes (.strides, .data_ptr)")
+            print(f"  - Invalid kernel call parameters")
+            print(f"  - Array indexing errors in Metal code")
+            return {
+                "basic_functionality": 0.0,
+                "runtime_error": 1.0,
+                "error": f"Runtime error: {str(e)}"
+            }
 
-        print(
-            f"[Stage 1] Correctness results: MSE={correctness.get('mse', 'N/A'):.2e}, Allclose={correctness.get('allclose', False)}"
-        )
-
-        if correctness["structural_correct"]:
-            basic_score = 1.0
+        # Enhanced scoring for incremental progress
+        if correctness["structural_correct"] and correctness["allclose"]:
+            basic_score = 1.0  # Perfect
+            print(f"[Stage 1] 🎉 EXCELLENT: Structurally correct and numerically accurate")
+        elif correctness["structural_correct"] and correctness["mse"] < 1e-4:
+            basic_score = 0.9  # Very good
+            print(f"[Stage 1] ✅ VERY GOOD: Structurally correct with good accuracy")
+        elif correctness["structural_correct"]:
+            basic_score = 0.7  # Good structure, needs accuracy work
+            print(f"[Stage 1] ⚡ GOOD: Structurally correct, accuracy needs improvement")
         elif correctness["shape_correct"]:
-            basic_score = 0.5  # Partially working
+            basic_score = 0.4  # Basic structure working
+            print(f"[Stage 1] ⚠️  BASIC: Shape correct, but has NaN/Inf issues")
         else:
-            basic_score = 0.0
+            basic_score = 0.1  # Minimal progress
+            print(f"[Stage 1] ❌ MINIMAL: Major structural issues")
 
-        # Note: MSE removed from scoring to avoid threshold calculation issues
-        # MSE is an error metric (lower=better) while others are scores (higher=better)
         result = {
             "basic_functionality": float(basic_score),
             "shape_correct": float(correctness["shape_correct"]),
             "no_nan_inf": float(correctness["no_nan_inf"]),
+            "accuracy_score": float(min(1.0, 1.0 / max(correctness.get('mse', 1e6), 1e-6)))
         }
 
-        print(f"[Stage 1] ✓ Completed with score: {basic_score}")
+        print(f"[Stage 1] ✓ Completed with score: {basic_score:.3f}")
         print(
             f"[Stage 1] Threshold calculation: avg of {list(result.values())} = {sum(result.values())/len(result):.3f}"
         )
         return result
 
     except Exception as e:
-        print(f"[Stage 1] ❌ Exception: {str(e)}")
+        print(f"[Stage 1] ❌ Unexpected Exception: {str(e)}")
         import traceback
-
         traceback.print_exc()
-        return {"basic_functionality": 0.0, "error": str(e)}
+        return {
+            "basic_functionality": 0.0,
+            "unexpected_error": 1.0,
+            "error": str(e)
+        }
 
 
 def evaluate(program_path: str) -> Dict[str, float]:
