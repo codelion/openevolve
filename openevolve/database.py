@@ -97,6 +97,12 @@ class ProgramDatabase:
         # Load database from disk if path is provided
         if config.db_path and os.path.exists(config.db_path):
             self.load(config.db_path)
+            
+        # Set random seed for reproducible sampling if specified
+        if config.random_seed is not None:
+            import random
+            random.seed(config.random_seed)
+            logger.debug(f"Database: Set random seed to {config.random_seed}")
 
         logger.info(f"Initialized program database with {len(self.programs)} programs")
 

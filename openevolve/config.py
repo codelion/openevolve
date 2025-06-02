@@ -83,6 +83,9 @@ class DatabaseConfig:
     # Migration parameters for island-based evolution
     migration_interval: int = 50  # Migrate every N generations
     migration_rate: float = 0.1  # Fraction of population to migrate
+    
+    # Random seed for reproducible sampling
+    random_seed: Optional[int] = None
 
 
 @dataclass
@@ -209,6 +212,7 @@ class Config:
                 "feature_bins": self.database.feature_bins,
                 "migration_interval": self.database.migration_interval,
                 "migration_rate": self.database.migration_rate,
+                "random_seed": self.database.random_seed,
             },
             "evaluator": {
                 "timeout": self.evaluator.timeout,

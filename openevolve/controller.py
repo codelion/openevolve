@@ -66,6 +66,14 @@ class OpenEvolve:
 
         # Set up logging
         self._setup_logging()
+        
+        # Set random seed for reproducibility if specified
+        if self.config.random_seed is not None:
+            import random
+            import numpy as np
+            random.seed(self.config.random_seed)
+            np.random.seed(self.config.random_seed)
+            logger.info(f"Set random seed to {self.config.random_seed} for reproducibility")
 
         # Load initial program
         self.initial_program_path = initial_program_path
@@ -85,6 +93,11 @@ class OpenEvolve:
         # Initialize components
         self.llm_ensemble = LLMEnsemble(self.config.llm)
         self.prompt_sampler = PromptSampler(self.config.prompt)
+        
+        # Pass random seed to database if specified
+        if self.config.random_seed is not None:
+            self.config.database.random_seed = self.config.random_seed
+            
         self.database = ProgramDatabase(self.config.database)
         self.evaluator = Evaluator(self.config.evaluator, evaluation_file, self.llm_ensemble)
 
