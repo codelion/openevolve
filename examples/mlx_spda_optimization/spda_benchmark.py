@@ -126,9 +126,7 @@ def do_attention_bench(f, q, k, v, scale, mask=None, transpose=False):
     return q_out
 
 
-def bench_shape(
-    B, qsl, ksl, head_dim, n_q_heads, n_kv_heads, dtype, transpose=True, mask_in=None
-):
+def bench_shape(B, qsl, ksl, head_dim, n_q_heads, n_kv_heads, dtype, transpose=True, mask_in=None):
     q_mx, k_mx, v_mx, scale, mask = prepare_inputs(
         B, qsl, ksl, head_dim, n_q_heads, n_kv_heads, mask_in, transpose, dtype
     )
@@ -141,9 +139,7 @@ def bench_shape(
     )
 
     o_mlx_fused = do_attention(mlx_ref_attn, q_mx, k_mx, v_mx, scale, mask, transpose)
-    o_mlx_unfused = do_attention(
-        mlx_fused_attn, q_mx, k_mx, v_mx, scale, mask, transpose
-    )
+    o_mlx_unfused = do_attention(mlx_fused_attn, q_mx, k_mx, v_mx, scale, mask, transpose)
 
     atol = 1e-5 if dtype == "float32" else 2e-4
 
@@ -197,9 +193,7 @@ if __name__ == "__main__":
 
     masks = [None, "bool", "causal"]
 
-    print(
-        "  B,   qsl,   ksl, hdim, n_qh, n_kvh, t,   dtype,     mask, t_unfs, t_fuse, diff%"
-    )
+    print("  B,   qsl,   ksl, hdim, n_qh, n_kvh, t,   dtype,     mask, t_unfs, t_fuse, diff%")
 
     for dtype in dtypes:
         for transpose in transposes:

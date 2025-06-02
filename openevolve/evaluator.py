@@ -59,7 +59,7 @@ class Evaluator:
             if eval_dir not in sys.path:
                 sys.path.insert(0, eval_dir)
                 logger.debug(f"Added {eval_dir} to Python path for local imports")
-            
+
             spec = importlib.util.spec_from_file_location("evaluation_module", self.evaluation_file)
             if spec is None or spec.loader is None:
                 raise ImportError(f"Failed to load spec from {self.evaluation_file}")
@@ -187,7 +187,7 @@ class Evaluator:
             if eval_dir not in sys.path:
                 sys.path.insert(0, eval_dir)
                 logger.debug(f"Added {eval_dir} to Python path for cascade evaluation")
-            
+
             spec = importlib.util.spec_from_file_location("evaluation_module", self.evaluation_file)
             if spec is None or spec.loader is None:
                 return await self._direct_evaluate(program_path)
