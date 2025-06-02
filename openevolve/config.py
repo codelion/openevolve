@@ -83,7 +83,7 @@ class DatabaseConfig:
     # Migration parameters for island-based evolution
     migration_interval: int = 50  # Migrate every N generations
     migration_rate: float = 0.1  # Fraction of population to migrate
-    
+
     # Random seed for reproducible sampling
     random_seed: Optional[int] = None
 

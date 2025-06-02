@@ -37,7 +37,7 @@ class OpenAILLM(LLMInterface):
     async def generate(self, prompt: str, **kwargs) -> str:
         """Generate text from a prompt"""
         # Use default system message if not provided in kwargs
-        system_message = kwargs.pop('system_message', "You are a helpful assistant.")
+        system_message = kwargs.pop("system_message", "You are a helpful assistant.")
         return await self.generate_with_context(
             system_message=system_message,
             messages=[{"role": "user", "content": prompt}],
