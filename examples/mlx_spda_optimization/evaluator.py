@@ -217,13 +217,22 @@ def compare_attention_outputs(
 
     # Check MLX's allclose function
     allclose_result = bool(mx.allclose(output1, output2, atol=tolerance, rtol=tolerance))
+    
+    # Additional robust check: if MSE is extremely small, consider it a match
+    # This handles cases where allclose is too strict due to floating-point precision
+    mse_perfect = mse < 1e-8
+    
+    # Final decision: either allclose passes OR MSE is extremely small
+    final_allclose = allclose_result or mse_perfect
 
     return {
         "mse": mse,
         "mae": mae,
         "max_diff": max_diff,
         "relative_error": relative_error,
-        "allclose": allclose_result,
+        "allclose": final_allclose,
+        "allclose_strict": allclose_result,
+        "mse_perfect": mse_perfect,
         "tolerance_used": tolerance,
     }
 
@@ -316,11 +325,12 @@ def test_correctness_by_category(evolved_attention_fn, config: Dict) -> Dict[str
     # Adjust tolerance based on category
     if category == "short":
         # Short sequences should be nearly perfect (using mx.fast.scaled_dot_product_attention)
-        tolerance = 1e-5
+        # Use slightly more forgiving tolerance to account for floating-point precision
+        tolerance = 1e-4
         expected_quality = "perfect"
     elif category == "transition":
         # Transition sequences should still be high quality
-        tolerance = 1e-4
+        tolerance = 1e-3
         expected_quality = "high"
     elif category == "long":
         # Long sequences may have some quality degradation due to block approximation

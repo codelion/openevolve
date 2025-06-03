@@ -43,74 +43,96 @@ def evolved_scaled_dot_product_attention(q, k, v, scale=1.0, mask=None):
         Attention output with same shape as queries
     """
     
-    # EVOLVE-BLOCK-START
-    """
-    HYBRID BLOCK DIAGONAL ATTENTION SYSTEM
-    
-    CURRENT IMPLEMENTATION STATUS:
-    ✅ PERFECT: Short sequence handling via mx.fast.scaled_dot_product_attention
-    🎯 EVOLUTION TARGET: Block diagonal attention patterns for long sequences
-    ❌ TODO: Efficient block pattern discovery and optimization
-    
-    EVOLUTION MISSION:
-    Discover efficient block diagonal attention patterns that enable:
-    1. Processing 4K+ token sequences that are currently infeasible
-    2. Linear O(n×block_size) complexity instead of O(n²)
-    3. Maintaining acceptable attention quality within blocks
-    4. Novel algorithmic approaches beyond standard attention
-    
-    BLOCK DIAGONAL ATTENTION OPPORTUNITIES:
-    1. BASIC BLOCKS: Fixed-size rectangular attention blocks
-    2. ADAPTIVE BLOCKS: Variable block sizes based on content
-    3. SPARSE BLOCKS: Skip low-attention regions entirely
-    4. HIERARCHICAL BLOCKS: Multi-level block attention patterns
-    5. STREAMING BLOCKS: Sliding window with memory for very long sequences
-    
-    CUSTOM METAL KERNEL OPPORTUNITIES:
-    - Block-wise attention computation kernels
-    - Efficient block memory access patterns
-    - Fused block attention + scoring
-    - Sparse block pattern optimization
-    - Inter-block communication kernels
-    
-    EVOLUTION STRATEGY:
-    Start with simple fixed-size blocks and evolve to sophisticated patterns.
-    Focus on algorithmic discovery, not micro-optimization.
-    """
-    
-    # Extract dimensions
+    # Extract dimensions - PROTECTED from evolution
     B, n_q_heads, L, head_dim = q.shape
     n_kv_heads = k.shape[1]
     kL = k.shape[2]
     sequence_length = L
     
-    # HYBRID DISPATCHER: Smart routing based on sequence length
+    # HYBRID DISPATCHER: PROTECTED from evolution - this logic must never change
     if sequence_length < 512:
-        # SHORT SEQUENCES: Use optimal reference implementation
-        # This ensures we maintain perfect performance for common cases
-        # and focus evolution on the truly challenging long sequence domain
+        # SHORT SEQUENCES: Use optimal implementation with robust fallback
+        # This entire section is PROTECTED from evolution to ensure evaluation works
         try:
+            # Try the fast implementation first
             return mx.fast.scaled_dot_product_attention(q, k, v, scale=scale, mask=mask)
         except Exception as e:
-            # Fallback to reference if mx.fast fails
-            from spda_benchmark import mlx_ref_attn
-            return mlx_ref_attn(q, k, v, scale=scale, mask=mask)
-    
+            # MANDATORY FALLBACK: Use reference implementation if fast fails
+            try:
+                from spda_benchmark import mlx_ref_attn
+                return mlx_ref_attn(q, k, v, scale=scale, mask=mask)
+            except Exception as fallback_error:
+                # Last resort: basic manual implementation
+                return manual_attention_fallback(q, k, v, scale=scale, mask=mask)
     else:
         # LONG SEQUENCES: Use evolved block diagonal attention
-        # This is where the real innovation happens!
-        return block_diagonal_attention(q, k, v, scale=scale, mask=mask)
+        # This is where evolution happens!
+        return evolved_block_diagonal_attention(q, k, v, scale=scale, mask=mask)
 
 
-def block_diagonal_attention(q, k, v, scale=1.0, mask=None):
+def manual_attention_fallback(q, k, v, scale=1.0, mask=None):
+    """
+    Manual attention implementation as last resort fallback.
+    This ensures the function never fails completely.
+    PROTECTED from evolution - this is a safety mechanism.
+    """
+    # Handle GQA if needed
+    B, n_q_heads, L, head_dim = q.shape
+    n_kv_heads = k.shape[1]
+    
+    if n_q_heads != n_kv_heads:
+        # Expand k,v for GQA
+        n_repeats = n_q_heads // n_kv_heads
+        k = mx.repeat(k, n_repeats, axis=1)
+        v = mx.repeat(v, n_repeats, axis=1)
+    
+    # Basic scaled dot-product attention
+    scores = (q * scale) @ mx.swapaxes(k, -1, -2)
+    
+    # Apply mask if provided
+    if mask is not None:
+        if isinstance(mask, str) and mask == "causal":
+            # Create causal mask
+            seq_len = scores.shape[-1]
+            causal_mask = mx.tril(mx.ones((seq_len, seq_len), dtype=mx.bool_))
+            scores = mx.where(causal_mask, scores, -mx.array(np.float32(np.inf)))
+        elif hasattr(mask, "dtype") and mask.dtype == mx.bool_:
+            scores = mx.where(mask, scores, -mx.array(np.float32(np.inf)))
+        else:
+            scores = scores + mask
+    
+    # Softmax and output
+    attn_weights = mx.softmax(scores, axis=-1, precise=True)
+    return attn_weights @ v
+
+
+def evolved_block_diagonal_attention(q, k, v, scale=1.0, mask=None):
     """
     Block diagonal attention implementation for long sequences.
+    This entire function is the EVOLUTION TARGET.
+    """
     
-    EVOLUTION TARGET: This entire function should be evolved to discover
-    efficient block diagonal patterns and custom Metal kernels.
+    # EVOLVE-BLOCK-START
+    """
+    BLOCK DIAGONAL ATTENTION EVOLUTION TARGET
     
-    Current implementation: Basic fixed-size blocks with reference attention
-    Evolution goal: Sophisticated block patterns with optimized kernels
+    CURRENT STATUS:
+    🎯 EVOLUTION TARGET: Block diagonal attention patterns for long sequences
+    📈 GOAL: Linear O(n×block_size) complexity instead of O(n²)
+    🚀 MISSION: Enable processing of 4K+ token sequences
+    
+    EVOLUTION OPPORTUNITIES:
+    1. BASIC BLOCKS: Fixed-size rectangular attention blocks
+    2. ADAPTIVE BLOCKS: Variable block sizes based on content
+    3. SPARSE BLOCKS: Skip low-attention regions entirely
+    4. HIERARCHICAL BLOCKS: Multi-level block attention patterns
+    5. STREAMING BLOCKS: Sliding window with memory for very long sequences
+    6. CUSTOM KERNELS: Metal GPU kernels for block attention
+    7. MEMORY OPTIMIZATION: Efficient block memory access patterns
+    8. BLOCK FUSION: Fused block attention + scoring operations
+    
+    CURRENT IMPLEMENTATION: Basic fixed-size blocks with full attention within blocks
+    EVOLUTION STRATEGY: Start simple, then discover sophisticated block patterns
     """
     
     # Extract dimensions  
@@ -119,9 +141,8 @@ def block_diagonal_attention(q, k, v, scale=1.0, mask=None):
     kL = k.shape[2]
     n_repeats = n_q_heads // n_kv_heads
     
-    # EVOLUTION PARAMETER: Block size
-    # Start with simple fixed blocks, evolution can optimize this
-    base_block_size = 128  # Can be evolved to adaptive sizing
+    # EVOLUTION PARAMETER: Block size and strategy
+    base_block_size = 128  # Can be evolved to adaptive/dynamic sizing
     
     # Handle GQA (Grouped Query Attention)
     if n_repeats > 1:
@@ -133,15 +154,12 @@ def block_diagonal_attention(q, k, v, scale=1.0, mask=None):
         k_expanded = k
         v_expanded = v
     
-    # BASIC BLOCK DIAGONAL IMPLEMENTATION
-    # Evolution opportunity: Replace with sophisticated block patterns
+    # EVOLUTION TARGET: Block processing strategy
+    # Current: Simple sequential block processing
+    # Future: Parallel blocks, adaptive sizing, sparse patterns, custom kernels
     
     # Calculate number of blocks
     num_blocks = (L + base_block_size - 1) // base_block_size
-    
-    # EVOLUTION TARGET: Block processing strategy
-    # Current: Simple sequential block processing with concatenation
-    # Future: Parallel block kernels, adaptive sizing, sparse patterns
     
     block_outputs = []
     
@@ -151,7 +169,7 @@ def block_diagonal_attention(q, k, v, scale=1.0, mask=None):
         end_idx = min(start_idx + base_block_size, L)
         
         # EVOLUTION OPPORTUNITY: Adaptive block boundaries
-        # Could evolve context-aware block sizing here
+        # Could evolve context-aware block sizing, overlapping blocks, etc.
         
         # Extract block queries
         if n_repeats > 1:
@@ -160,14 +178,10 @@ def block_diagonal_attention(q, k, v, scale=1.0, mask=None):
             q_block = q_reshaped[:, :, start_idx:end_idx, :]
         
         # EVOLUTION OPPORTUNITY: Block attention scope
-        # Current: Attention within block only (pure diagonal)
-        # Future: Overlapping blocks, hierarchical attention, sparse connections
+        # Current: Full attention within each block
+        # Future: Sparse attention, sliding windows, hierarchical patterns
         
-        # For now, use full sequence for keys/values (can be optimized)
-        # Evolution could implement sliding windows, sparse key selection, etc.
-        
-        # Compute block attention using reference implementation
-        # MAJOR EVOLUTION TARGET: Replace with custom block attention kernels
+        # EVOLUTION TARGET: Custom block attention computation
         try:
             # Scale queries
             q_block_scaled = q_block * scale
@@ -176,11 +190,9 @@ def block_diagonal_attention(q, k, v, scale=1.0, mask=None):
             scores_block = q_block_scaled @ mx.swapaxes(k_expanded, -1, -2)
             
             # EVOLUTION OPPORTUNITY: Custom block masking patterns
-            # Apply mask if provided
             if mask is not None:
                 if isinstance(mask, str) and mask == "causal":
                     # Create causal mask for this block
-                    # For simplicity, create a full causal mask and slice it
                     q_offset = max(0, kL - L)
                     q_indices = mx.arange(q_offset + start_idx, q_offset + end_idx)
                     k_indices = mx.arange(kL)
@@ -200,18 +212,14 @@ def block_diagonal_attention(q, k, v, scale=1.0, mask=None):
                     mask_block = mask[:, :, start_idx:end_idx, :]
                     scores_block = scores_block + mask_block
             
-            # EVOLUTION TARGET: Custom block softmax kernel
+            # EVOLUTION TARGET: Custom block softmax and output computation
             attention_weights_block = mx.softmax(scores_block, axis=-1, precise=True)
-            
-            # EVOLUTION TARGET: Custom block output computation kernel
             output_block = attention_weights_block @ v_expanded
             
-            # Store block output for concatenation
             block_outputs.append(output_block)
                 
         except Exception as e:
-            # Robust fallback: use reference attention for this block
-            # This ensures evolution doesn't break completely
+            # Robust fallback for block computation
             try:
                 from spda_benchmark import mlx_ref_attn
                 
@@ -228,12 +236,11 @@ def block_diagonal_attention(q, k, v, scale=1.0, mask=None):
                 mask_temp = None
                 if mask is not None:
                     if isinstance(mask, str):
-                        mask_temp = mask  # Pass string masks as-is
+                        mask_temp = mask
                     else:
-                        # Extract mask slice for this block
                         mask_temp = mask[:, :, start_idx:end_idx, :]
                 
-                # Use reference attention
+                # Use reference attention for this block
                 block_output = mlx_ref_attn(q_temp, k_temp, v_temp, scale=scale, mask=mask_temp)
                 
                 # Reshape if needed for GQA
@@ -243,14 +250,31 @@ def block_diagonal_attention(q, k, v, scale=1.0, mask=None):
                 block_outputs.append(block_output)
                 
             except Exception as fallback_error:
-                # Ultimate fallback: zero output for this block
+                # Ultimate fallback: manual attention for this block
                 if n_repeats > 1:
-                    zero_block = mx.zeros((B, n_kv_heads, n_repeats, end_idx - start_idx, head_dim), dtype=q.dtype)
+                    q_temp = mx.reshape(q_block, [B, n_q_heads, end_idx - start_idx, head_dim])
                 else:
-                    zero_block = mx.zeros((B, n_q_heads, end_idx - start_idx, head_dim), dtype=q.dtype)
-                block_outputs.append(zero_block)
+                    q_temp = q_block
+                    
+                k_temp = k
+                v_temp = v
+                mask_temp = None
+                if mask is not None and not isinstance(mask, str):
+                    mask_temp = mask[:, :, start_idx:end_idx, :]
+                elif isinstance(mask, str):
+                    mask_temp = mask
+                
+                block_output = manual_attention_fallback(q_temp, k_temp, v_temp, scale=scale, mask=mask_temp)
+                
+                if n_repeats > 1:
+                    block_output = mx.reshape(block_output, [B, n_kv_heads, n_repeats, end_idx - start_idx, head_dim])
+                
+                block_outputs.append(block_output)
     
-    # Concatenate all block outputs
+    # EVOLUTION OPPORTUNITY: Advanced block output combination
+    # Current: Simple concatenation
+    # Future: Weighted combination, cross-block attention, hierarchical merging
+    
     if block_outputs:
         if n_repeats > 1:
             # Concatenate along sequence dimension (axis=-2)
@@ -265,19 +289,27 @@ def block_diagonal_attention(q, k, v, scale=1.0, mask=None):
         output = mx.zeros_like(q)
     
     return output
+    # EVOLVE-BLOCK-END
 
 
 def create_custom_block_attention_kernel():
     """
     EVOLUTION TARGET: Create optimized Metal kernels for block attention.
+    This function is also available for evolution.
+    """
     
-    This function should be evolved to implement:
-    1. Efficient block-wise matrix multiplication
-    2. Fused block attention computation
+    # EVOLVE-BLOCK-START
+    """
+    CUSTOM METAL KERNEL EVOLUTION TARGET
+    
+    OPPORTUNITIES:
+    1. Block-wise matrix multiplication kernels
+    2. Fused block attention computation  
     3. Optimized memory access patterns for blocks
     4. Sparse block pattern kernels
-    
-    Current: Placeholder for evolution
+    5. Threadgroup memory optimization
+    6. Vectorized block operations
+    7. Inter-block communication patterns
     """
     
     # EVOLUTION OPPORTUNITY: Custom Metal kernel for block attention
@@ -312,17 +344,24 @@ def create_custom_block_attention_kernel():
     except Exception:
         # Return None if kernel creation fails
         return None
+    # EVOLVE-BLOCK-END
 
 
 def analyze_attention_patterns(q, k, v):
     """
-    EVOLUTION OPPORTUNITY: Analyze attention patterns to guide block discovery.
+    EVOLUTION TARGET: Analyze attention patterns to guide block discovery.
+    """
+    
+    # EVOLVE-BLOCK-START
+    """
+    ATTENTION PATTERN ANALYSIS EVOLUTION TARGET
     
     This function could evolve to:
     1. Detect natural attention block boundaries
     2. Identify sparse attention regions  
     3. Adapt block sizes based on content
     4. Discover hierarchical attention patterns
+    5. Guide dynamic block sizing decisions
     """
     
     # Simple pattern analysis - evolution can make this sophisticated
@@ -349,12 +388,13 @@ def create_benchmark_attention_function():
     """
     Create the attention function that will be benchmarked.
     This matches the interface expected by spda_benchmark.py
+    PROTECTED from evolution.
     """
     return evolved_scaled_dot_product_attention
 
 
 def test_basic_functionality():
-    """Test the hybrid block diagonal attention system"""
+    """Test the hybrid block diagonal attention system - PROTECTED from evolution"""
     print("Testing Hybrid Block Diagonal Attention System...")
     
     # Test short sequences (should use mx.fast.scaled_dot_product_attention)
@@ -426,6 +466,7 @@ def test_basic_functionality():
     print("\n🎯 Block Diagonal Attention System Summary:")
     print("  ✅ Short sequences: Perfect performance via mx.fast.scaled_dot_product_attention")
     print("  🎯 Long sequences: Block diagonal attention (EVOLUTION TARGET)")
+    print("  🛡️ Protected fallback mechanisms ensure reliability")
     print("  🚀 Ready for block pattern discovery and optimization!")
     print("\n💡 Evolution Opportunities:")
     print("  1. Optimize block size selection and adaptive sizing")
