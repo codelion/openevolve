@@ -23,7 +23,7 @@ prompt:
   num_top_programs: 3
   use_template_stochasticity: true
   # System prompt is created dynamically during the benchmark in file system_message.txt!
-  template_dir: "scripts/lm_eval/prompts"
+  template_dir: "examples/lm_eval/prompts"
 
 # Database configuration
 database:

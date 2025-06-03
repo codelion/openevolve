@@ -23,6 +23,7 @@ os.chdir(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 PIPELINE_CMD = ["python3", "openevolve-run.py"]
 
+
 @register_model("openevolve")
 class OpenEvolve(LM):
     def __init__(
@@ -42,9 +43,9 @@ class OpenEvolve(LM):
         self.config_file = config_file
 
         # folder must match prompt:template_dir in config.yml!
-        self.prompt_path = "scripts/lm_eval/prompts/system_message.txt"
-        self.evaluator_prompt_path = "scripts/lm_eval/prompts/evaluator_system_message.txt"
-        self.best_path = "scripts/lm_eval/openevolve_output/best/best_program.txt"
+        self.prompt_path = "examples/lm_eval/prompts/system_message.txt"
+        self.evaluator_prompt_path = "examples/lm_eval/prompts/evaluator_system_message.txt"
+        self.best_path = "examples/lm_eval/openevolve_output/best/best_program.txt"
         self.base_system_message = "You are an expert task solver, with a lot of commonsense, math, language and coding knowledge.\n\nConsider this task:\n```{prompt}´´´"
 
     def generate(self, prompts: List[str], max_gen_toks: int = None, stop=None, **kwargs):
@@ -133,22 +134,28 @@ class OpenEvolve(LM):
             cleaned.append(g)
         return cleaned
 
+
 if __name__ == "__main__":
     # cli arguments for primary model, secondary model, iterations, config and tasks
     p = argparse.ArgumentParser(
         description="OpenEvolve <-> lm-evaluation-harness adapter.",
     )
-    p.add_argument("--config", default="scripts/lm_eval/config.yml", help="config file")
+    p.add_argument("--config", default="examples/lm_eval/config.yml", help="config file")
     p.add_argument(
         "--init_file",
-        default="scripts/lm_eval/initial_content_stub.txt",
+        default="examples/lm_eval/initial_content_stub.txt",
         help="initial content file",
     )
     p.add_argument(
-        "--evaluator_file", default="scripts/lm_eval/evaluator_stub.py", help="evaluator file"
+        "--evaluator_file", default="examples/lm_eval/evaluator_stub.py", help="evaluator file"
     )
     p.add_argument("--iterations", default=5, type=int, help="number of iterations")
-    p.add_argument("--limit", default=None, type=int, help="limit the number of examples per task that are executed")
+    p.add_argument(
+        "--limit",
+        default=None,
+        type=int,
+        help="limit the number of examples per task that are executed",
+    )
     # p.add_argument("--tasks", default="boolq,gsm8k,mmlu", help="comma-list of tasks to evaluate")
     p.add_argument("--tasks", default="gsm8k", help="list of tasks to evaluate")
     p.add_argument("--output_path", default="results", help="output path for results")
@@ -175,10 +182,12 @@ if __name__ == "__main__":
     ).mkdir(exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_path = pathlib.Path(os.path.join(
-        args.output_path,
-        f"{timestamp}_iter{args.iterations}.json",
-    ))
+    results_path = pathlib.Path(
+        os.path.join(
+            args.output_path,
+            f"{timestamp}_iter{args.iterations}.json",
+        )
+    )
 
     with results_path.open("w") as f:
         json.dump(results, f, indent=2)
@@ -189,7 +198,7 @@ if __name__ == "__main__":
         # pick the first value that is a real number
         for key, val in metrics.items():
             if isinstance(val, (int, float)):
-                short[task] = (key, val)          # store *both* name & value
+                short[task] = (key, val)  # store *both* name & value
                 break
 
     print(f"Full results written to {results_path}\n")

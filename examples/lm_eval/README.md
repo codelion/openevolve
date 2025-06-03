@@ -7,7 +7,7 @@
 ## Usage
 
 ```bash
-$ python3 scripts/lm_eval/lm-eval.py -h
+$ python3 examples/lm_eval/lm-eval.py -h
 usage: lm-eval.py [-h] [--config CONFIG] [--init_file INIT_FILE] [--evaluator_file EVALUATOR_FILE] [--iterations ITERATIONS] [--limit LIMIT] [--tasks TASKS]
                   [--output_path OUTPUT_PATH]
 
@@ -30,26 +30,26 @@ options:
 
 Early examples that **were meant to** indicate that more evolution iterations improve task performance -- I suspect the prompting may not be ideal yet:
 ```
-$ python3 scripts/lm_eval/lm-eval.py --tasks gsm8k --limit 10 --iterations 1
+$ python3 examples/lm_eval/lm-eval.py --tasks gsm8k --limit 10 --iterations 1
 [..]
 Headline metrics:
   gsm8k           exact_match,strict-match 80.000%
 [..]
 
 
-$ python3 scripts/lm_eval/lm-eval.py --tasks gsm8k --limit 10 --iterations 3
+$ python3 examples/lm_eval/lm-eval.py --tasks gsm8k --limit 10 --iterations 3
 [..]
 Headline metrics:
   gsm8k           exact_match,strict-match 90.000%
 [..]
 
-$ python3 scripts/lm_eval/lm-eval.py --tasks gsm8k --limit 10 --iterations 10
+$ python3 examples/lm_eval/lm-eval.py --tasks gsm8k --limit 10 --iterations 10
 [..]
 Headline metrics:
   gsm8k           exact_match,strict-match 80.000%
 [..]
 
-$ python3 scripts/lm_eval/lm-eval.py --tasks gsm8k --limit 10 --iterations 15
+$ python3 examples/lm_eval/lm-eval.py --tasks gsm8k --limit 10 --iterations 15
 [..]
 Headline metrics:
   gsm8k           exact_match,strict-match 70.000%
