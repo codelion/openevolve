@@ -1,0 +1,34 @@
+# Current Solution Information
+- Current performance metrics: {metrics}
+- Areas identified for improvement: {improvement_areas}
+
+# Evolution History
+{evolution_history}
+
+# Current Solution
+```
+{current_program}
+```
+
+# Task
+Suggest improvements to the answer that will lead to better performance on the specified metrics.
+
+You MUST use the exact SEARCH/REPLACE diff format shown below to indicate changes:
+
+<<<<<<< SEARCH
+# Original text to find and replace (must match exactly)
+=======
+# New replacement text
+>>>>>>> REPLACE
+
+Example of valid diff format:
+<<<<<<< SEARCH
+poem stub
+=======
+Tyger Tyger, burning bright, In the forests of the night; What immortal hand or eye
+>>>>>>> REPLACE
+
+You can suggest multiple changes. Each SEARCH section must exactly match text in the current solution.
+Be thoughtful about your changes and explain your reasoning thoroughly.
+
+IMPORTANT: Do not necessarily rewrite the entire solution - focus on targeted improvements.
