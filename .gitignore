@@ -49,3 +49,6 @@ htmlcov/
 # For SR
 secrets.yaml
 problems
+
+# Env secrets
+.env
