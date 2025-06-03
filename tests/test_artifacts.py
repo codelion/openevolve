@@ -202,30 +202,26 @@ class TestPromptArtifacts(unittest.TestCase):
         config = PromptConfig()
         self.sampler = PromptSampler(config)
 
-    def test_render_artifacts_prioritized(self):
-        """Test that stderr/stdout/traceback are prioritized"""
+    def test_render_artifacts_all_items(self):
+        """Test that all artifacts are included using .items() without prioritization"""
         artifacts = {
             "stderr": "error message",
-            "stdout": "output message",
+            "stdout": "output message", 
             "traceback": "stack trace",
             "other": "other data",
         }
 
         rendered = self.sampler._render_artifacts(artifacts)
 
-        # Check that prioritized items come first
-        lines = rendered.split("\n")
-        stderr_idx = next(i for i, line in enumerate(lines) if "Stderr" in line)
-        stdout_idx = next(i for i, line in enumerate(lines) if "Stdout" in line)
-        traceback_idx = next(i for i, line in enumerate(lines) if "Traceback" in line)
-        other_idx = next(i for i, line in enumerate(lines) if "other" in line)
+        # All artifacts should be present (no prioritization)
+        for key in artifacts.keys():
+            self.assertIn(key, rendered)
+        
+        # Check that all content is included
+        for value in artifacts.values():
+            self.assertIn(value, rendered)
 
-        # Prioritized items should come before others
-        self.assertLess(stderr_idx, other_idx)
-        self.assertLess(stdout_idx, other_idx)
-        self.assertLess(traceback_idx, other_idx)
-
-    def test_render_artifacts_all_items(self):
+    def test_render_artifacts_generic(self):
         """Test that all artifacts are included using .items()"""
         artifacts = {"log1": "first log", "log2": "second log", "config": "configuration data"}
 
@@ -237,16 +233,14 @@ class TestPromptArtifacts(unittest.TestCase):
 
     def test_render_artifacts_truncation(self):
         """Test artifact truncation for large content"""
-        # Create content that won't trigger security filter but will be truncated
-        large_content = "This is a very long log message. " * 200  # Creates ~6.6KB of text
+        # Create content larger than 20KB to trigger truncation
+        large_content = "This is a very long log message. " * 700  # Creates ~23KB of text
         artifacts = {"large_log": large_content}
 
         rendered = self.sampler._render_artifacts(artifacts)
 
-        # Should be truncated (check that it's shorter than original)
-        self.assertLess(len(rendered), len(large_content))
         # Should contain truncation indicator
-        self.assertTrue("(truncated)" in rendered or len(rendered) < len(large_content))
+        self.assertIn("(truncated)", rendered)
 
     def test_render_artifacts_security_filter(self):
         """Test that security filter redacts potential tokens"""
