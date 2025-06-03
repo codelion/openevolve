@@ -2,6 +2,7 @@
 Program database for OpenEvolve
 """
 
+import base64
 import json
 import logging
 import os
@@ -43,6 +44,10 @@ class Program:
 
     # Metadata
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+    # Artifact storage
+    artifacts_json: Optional[str] = None  # JSON-serialized small artifacts
+    artifact_dir: Optional[str] = None  # Path to large artifact files
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation"""
@@ -916,3 +921,166 @@ class ProgramDatabase:
                 f"best={stat['best_score']:.4f}, avg={stat['average_score']:.4f}, "
                 f"diversity={stat['diversity']:.2f}, gen={stat['generation']}"
             )
+
+    # Artifact storage and retrieval methods
+
+    def store_artifacts(self, program_id: str, artifacts: Dict[str, Union[str, bytes]]) -> None:
+        """
+        Store artifacts for a program
+
+        Args:
+            program_id: ID of the program
+            artifacts: Dictionary of artifact name to content
+        """
+        if not artifacts:
+            return
+
+        program = self.get(program_id)
+        if not program:
+            logger.warning(f"Cannot store artifacts: program {program_id} not found")
+            return
+
+        # Check if artifacts are enabled
+        artifacts_enabled = os.environ.get("ENABLE_ARTIFACTS", "true").lower() == "true"
+        if not artifacts_enabled:
+            logger.debug("Artifacts disabled, skipping storage")
+            return
+
+        # Split artifacts by size
+        small_artifacts = {}
+        large_artifacts = {}
+        size_threshold = getattr(self.config, "artifact_size_threshold", 32 * 1024)  # 32KB default
+
+        for key, value in artifacts.items():
+            size = self._get_artifact_size(value)
+            if size <= size_threshold:
+                small_artifacts[key] = value
+            else:
+                large_artifacts[key] = value
+
+        # Store small artifacts as JSON
+        if small_artifacts:
+            program.artifacts_json = json.dumps(small_artifacts, default=self._artifact_serializer)
+            logger.debug(f"Stored {len(small_artifacts)} small artifacts for program {program_id}")
+
+        # Store large artifacts to disk
+        if large_artifacts:
+            artifact_dir = self._create_artifact_dir(program_id)
+            program.artifact_dir = artifact_dir
+            for key, value in large_artifacts.items():
+                self._write_artifact_file(artifact_dir, key, value)
+            logger.debug(f"Stored {len(large_artifacts)} large artifacts for program {program_id}")
+
+    def get_artifacts(self, program_id: str) -> Dict[str, Union[str, bytes]]:
+        """
+        Retrieve all artifacts for a program
+
+        Args:
+            program_id: ID of the program
+
+        Returns:
+            Dictionary of artifact name to content
+        """
+        program = self.get(program_id)
+        if not program:
+            return {}
+
+        artifacts = {}
+
+        # Load small artifacts from JSON
+        if program.artifacts_json:
+            try:
+                small_artifacts = json.loads(program.artifacts_json)
+                artifacts.update(small_artifacts)
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to decode artifacts JSON for program {program_id}: {e}")
+
+        # Load large artifacts from disk
+        if program.artifact_dir and os.path.exists(program.artifact_dir):
+            disk_artifacts = self._load_artifact_dir(program.artifact_dir)
+            artifacts.update(disk_artifacts)
+
+        return artifacts
+
+    def _get_artifact_size(self, value: Union[str, bytes]) -> int:
+        """Get size of an artifact value in bytes"""
+        if isinstance(value, str):
+            return len(value.encode("utf-8"))
+        elif isinstance(value, bytes):
+            return len(value)
+        else:
+            return len(str(value).encode("utf-8"))
+
+    def _artifact_serializer(self, obj):
+        """JSON serializer for artifacts that handles bytes"""
+        if isinstance(obj, bytes):
+            return {"__bytes__": base64.b64encode(obj).decode("utf-8")}
+        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+    def _artifact_deserializer(self, dct):
+        """JSON deserializer for artifacts that handles bytes"""
+        if "__bytes__" in dct:
+            return base64.b64decode(dct["__bytes__"])
+        return dct
+
+    def _create_artifact_dir(self, program_id: str) -> str:
+        """Create artifact directory for a program"""
+        base_path = getattr(self.config, "artifacts_base_path", None)
+        if not base_path:
+            base_path = (
+                os.path.join(self.config.db_path or ".", "artifacts")
+                if self.config.db_path
+                else "./artifacts"
+            )
+
+        artifact_dir = os.path.join(base_path, program_id)
+        os.makedirs(artifact_dir, exist_ok=True)
+        return artifact_dir
+
+    def _write_artifact_file(self, artifact_dir: str, key: str, value: Union[str, bytes]) -> None:
+        """Write an artifact to a file"""
+        # Sanitize filename
+        safe_key = "".join(c for c in key if c.isalnum() or c in "._-")
+        if not safe_key:
+            safe_key = "artifact"
+
+        file_path = os.path.join(artifact_dir, safe_key)
+
+        try:
+            if isinstance(value, str):
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(value)
+            elif isinstance(value, bytes):
+                with open(file_path, "wb") as f:
+                    f.write(value)
+            else:
+                # Convert to string and write
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(str(value))
+        except Exception as e:
+            logger.warning(f"Failed to write artifact {key} to {file_path}: {e}")
+
+    def _load_artifact_dir(self, artifact_dir: str) -> Dict[str, Union[str, bytes]]:
+        """Load artifacts from a directory"""
+        artifacts = {}
+
+        try:
+            for filename in os.listdir(artifact_dir):
+                file_path = os.path.join(artifact_dir, filename)
+                if os.path.isfile(file_path):
+                    try:
+                        # Try to read as text first
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            content = f.read()
+                        artifacts[filename] = content
+                    except UnicodeDecodeError:
+                        # If text fails, read as binary
+                        with open(file_path, "rb") as f:
+                            content = f.read()
+                        artifacts[filename] = content
+                    except Exception as e:
+                        logger.warning(f"Failed to read artifact file {file_path}: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to list artifact directory {artifact_dir}: {e}")
+
+        return artifacts
