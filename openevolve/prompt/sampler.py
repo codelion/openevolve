@@ -372,25 +372,14 @@ class PromptSampler:
 
         sections = []
 
-        # Prioritize stderr/stdout
-        for key in ["stderr", "stdout", "traceback"]:
-            if key in artifacts:
-                content = self._safe_decode_artifact(artifacts[key])
-                # Truncate if too long
-                if len(content) > self.config.max_artifact_bytes:
-                    content = content[-self.config.max_artifact_bytes :] + "\n... (truncated)"
-
-                sections.append(f"### {key.title()}\n```\n{content}\n```")
-
-        # Add other artifacts using .items() for all remaining
+        # Process all artifacts using .items()
         for key, value in artifacts.items():
-            if key not in ["stderr", "stdout", "traceback"]:
-                content = self._safe_decode_artifact(value)
-                # Truncate if too long for inclusion
-                if len(content) > self.config.max_artifact_bytes:
-                    content = content[: self.config.max_artifact_bytes] + "\n... (truncated)"
+            content = self._safe_decode_artifact(value)
+            # Truncate if too long
+            if len(content) > self.config.max_artifact_bytes:
+                content = content[: self.config.max_artifact_bytes] + "\n... (truncated)"
 
-                sections.append(f"### {key}\n```\n{content}\n```")
+            sections.append(f"### {key}\n```\n{content}\n```")
 
         if sections:
             return "## Last Execution Output\n\n" + "\n\n".join(sections)

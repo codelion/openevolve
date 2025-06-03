@@ -58,7 +58,7 @@ class PromptConfig:
 
     # Artifact rendering
     include_artifacts: bool = True
-    max_artifact_bytes: int = 4 * 1024  # 4KB in prompt
+    max_artifact_bytes: int = 20 * 1024  # 20KB in prompt
     artifact_security_filter: bool = True
 
 
