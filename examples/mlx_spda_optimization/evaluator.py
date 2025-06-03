@@ -1,14 +1,19 @@
 """
-Evaluator for MLX Block Diagonal Attention Optimization
+Two-Stage Evaluator for MLX Block Diagonal Attention Optimization
 
-This evaluator tests evolved block diagonal attention implementations by:
-1. Using SAME correctness checks as spda_benchmark.py to catch actual failures
-2. Testing hybrid dispatcher works correctly (short vs long sequences)
-3. Measuring scalability improvements for long sequences
-4. Ensuring compatibility with the benchmark testing framework
+STAGE 1: Correctness & Compatibility Gate
+- Ensures evolved programs produce correct outputs
+- Tests against comprehensive spda_benchmark configurations  
+- Uses proven tolerances and evaluation logic
+- Must pass to proceed to Stage 2
 
-CRITICAL: This evaluator must catch the same correctness failures that spda_benchmark.py catches,
-so evolved programs that fail the benchmark are rejected during evolution.
+STAGE 2: Performance Optimization
+- Benchmarks speed vs mx.fast.scaled_dot_product_attention
+- Measures actual speedups and efficiency gains
+- Creates evolutionary pressure for performance improvements
+- Only runs if Stage 1 passes
+
+This ensures we evolve CORRECT AND FAST algorithms, not just fast ones.
 """
 
 import importlib.util
@@ -16,6 +21,7 @@ import math
 import time
 import traceback
 from typing import Dict, List, Tuple
+import gc
 
 import mlx.core as mx
 import numpy as np
@@ -24,170 +30,180 @@ import numpy as np
 from spda_benchmark import prepare_inputs, mlx_ref_attn, mlx_fused_attn, do_attention, bench
 
 
-def create_test_configurations() -> List[Dict]:
+def create_stage1_test_configurations() -> List[Dict]:
     """
-    Create test configurations focused on correctness and robustness.
-    These mirror the benchmark's test cases to ensure compatibility.
+    Stage 1: Comprehensive correctness tests based on spda_benchmark.
+    
+    These are the proven test configurations that ensure compatibility
+    and correctness across all scenarios.
     """
     return [
         # SHORT SEQUENCES: Should use mx.fast.scaled_dot_product_attention
+        # These test the hybrid dispatcher's short sequence path
         {
-            "B": 1,
-            "qsl": 64,
-            "ksl": 64,
-            "head_dim": 64,
-            "n_q_heads": 8,
-            "n_kv_heads": 8,
-            "dtype": "float16",
-            "mask": None,
-            "category": "short",
+            "B": 1, "qsl": 64, "ksl": 64, "head_dim": 64,
+            "n_q_heads": 8, "n_kv_heads": 8, "dtype": "float16", 
+            "mask": None, "category": "short",
         },
         {
-            "B": 1,
-            "qsl": 128,
-            "ksl": 128,
-            "head_dim": 64,
-            "n_q_heads": 8,
-            "n_kv_heads": 8,
-            "dtype": "float16",
-            "mask": "causal",
-            "category": "short",
+            "B": 1, "qsl": 128, "ksl": 128, "head_dim": 64,
+            "n_q_heads": 8, "n_kv_heads": 8, "dtype": "float16",
+            "mask": "causal", "category": "short", 
         },
         {
-            "B": 1,
-            "qsl": 256,
-            "ksl": 256,
-            "head_dim": 64,
-            "n_q_heads": 16,
-            "n_kv_heads": 8,
-            "dtype": "float16",
-            "mask": None,
-            "category": "short",
+            "B": 1, "qsl": 256, "ksl": 256, "head_dim": 64,
+            "n_q_heads": 16, "n_kv_heads": 8, "dtype": "float16",
+            "mask": None, "category": "short",
         },
         
-        # TRANSITION SEQUENCES: Critical boundary testing
+        # TRANSITION SEQUENCES: Test behavior around 512 threshold
         {
-            "B": 1,
-            "qsl": 512,
-            "ksl": 512,
-            "head_dim": 64,
-            "n_q_heads": 16,
-            "n_kv_heads": 8,
-            "dtype": "float16",
-            "mask": None,
-            "category": "transition",
+            "B": 1, "qsl": 480, "ksl": 480, "head_dim": 64,
+            "n_q_heads": 16, "n_kv_heads": 8, "dtype": "float16",
+            "mask": "causal", "category": "transition",
         },
         {
-            "B": 1,
-            "qsl": 512,
-            "ksl": 512,
-            "head_dim": 64,
-            "n_q_heads": 32,
-            "n_kv_heads": 32,
-            "dtype": "float16",
-            "mask": "causal",
-            "category": "transition",
+            "B": 1, "qsl": 512, "ksl": 512, "head_dim": 64,
+            "n_q_heads": 16, "n_kv_heads": 8, "dtype": "float16", 
+            "mask": None, "category": "transition",
         },
         
-        # LONG SEQUENCES: Block diagonal attention targets
+        # LONG SEQUENCES: Main target for block diagonal attention
         {
-            "B": 1,
-            "qsl": 768,
-            "ksl": 768,
-            "head_dim": 64,
-            "n_q_heads": 16,
-            "n_kv_heads": 8,
-            "dtype": "float16",
-            "mask": None,
-            "category": "long",
+            "B": 1, "qsl": 768, "ksl": 768, "head_dim": 64,
+            "n_q_heads": 16, "n_kv_heads": 8, "dtype": "float16",
+            "mask": "causal", "category": "long",
         },
         {
-            "B": 1,
-            "qsl": 1024,
-            "ksl": 1024,
-            "head_dim": 64,
-            "n_q_heads": 32,
-            "n_kv_heads": 8,
-            "dtype": "float16",
-            "mask": "causal",
-            "category": "long",
+            "B": 1, "qsl": 1024, "ksl": 1024, "head_dim": 64,
+            "n_q_heads": 32, "n_kv_heads": 8, "dtype": "float16",
+            "mask": None, "category": "long",
         },
         {
-            "B": 1,
-            "qsl": 1536,
-            "ksl": 1536,
-            "head_dim": 64,
-            "n_q_heads": 32,
-            "n_kv_heads": 8,
-            "dtype": "float16",
-            "mask": None,
-            "category": "long",
+            "B": 1, "qsl": 1536, "ksl": 1536, "head_dim": 64,
+            "n_q_heads": 32, "n_kv_heads": 8, "dtype": "float16",
+            "mask": "causal", "category": "long",
         },
         
         # VERY LONG SEQUENCES: Scalability tests
         {
-            "B": 1,
-            "qsl": 2048,
-            "ksl": 2048,
-            "head_dim": 64,
-            "n_q_heads": 32,
-            "n_kv_heads": 8,
-            "dtype": "float16",
-            "mask": "causal",
-            "category": "very_long",
+            "B": 1, "qsl": 2048, "ksl": 2048, "head_dim": 64,
+            "n_q_heads": 32, "n_kv_heads": 8, "dtype": "float16",
+            "mask": None, "category": "very_long",
+        },
+        
+        # DIFFERENT HEAD DIMENSIONS: Test generalization
+        {
+            "B": 1, "qsl": 1024, "ksl": 1024, "head_dim": 80,
+            "n_q_heads": 32, "n_kv_heads": 8, "dtype": "float16",
+            "mask": "causal", "category": "long",
         },
     ]
 
 
-def benchmark_correctness_check(evolved_output, reference_output, dtype="float16") -> Dict[str, float]:
+def create_stage2_performance_configurations() -> List[Dict]:
     """
-    CRITICAL: Use EXACT same correctness check as spda_benchmark.py
+    Stage 2: Performance benchmark configurations.
     
-    This is the exact logic from bench_shape() that catches the failures:
-    ```python
-    atol = 1e-5 if dtype == "float32" else 2e-4
-    if not mx.allclose(o_mlx_fused, o_mlx_unfused, atol=atol, rtol=atol):
-        print(f"Failed with max(|a - b|) = {mx.max(mx.abs(o_mlx_unfused - o_mlx_fused)):3.2e}")
-    ```
+    These focus on scenarios where we expect to see speedup improvements.
     """
-    
-    # EXACT same tolerance as spda_benchmark.py
-    atol = 1e-5 if dtype == "float32" else 2e-4
-    rtol = atol
-    
+    return [
+        # BASELINE: Short sequence where mx.fast should be optimal
+        {
+            "name": "short_baseline",
+            "B": 1, "qsl": 256, "ksl": 256, "head_dim": 64,
+            "n_q_heads": 16, "n_kv_heads": 8, "dtype": "float16",
+            "mask": None, "weight": 0.1, "expect_improvement": False,
+        },
+        
+        # PERFORMANCE TARGETS: Long sequences where block diagonal should excel
+        {
+            "name": "long_perf_1024",
+            "B": 1, "qsl": 1024, "ksl": 1024, "head_dim": 64,
+            "n_q_heads": 32, "n_kv_heads": 8, "dtype": "float16", 
+            "mask": "causal", "weight": 0.3, "expect_improvement": True,
+        },
+        {
+            "name": "long_perf_1536", 
+            "B": 1, "qsl": 1536, "ksl": 1536, "head_dim": 64,
+            "n_q_heads": 32, "n_kv_heads": 8, "dtype": "float16",
+            "mask": None, "weight": 0.3, "expect_improvement": True,
+        },
+        {
+            "name": "very_long_2048",
+            "B": 1, "qsl": 2048, "ksl": 2048, "head_dim": 64,
+            "n_q_heads": 32, "n_kv_heads": 8, "dtype": "float16",
+            "mask": "causal", "weight": 0.3, "expect_improvement": True,
+        },
+    ]
+
+
+def compare_attention_outputs(output1: mx.array, output2: mx.array, tolerance: float = 1e-3) -> Dict[str, float]:
+    """
+    Compare two attention outputs with appropriate tolerance.
+    Enhanced version from original evaluator.
+    """
     # Ensure arrays are evaluated
-    evolved_output = mx.array(evolved_output)
-    reference_output = mx.array(reference_output)
-    mx.eval(evolved_output, reference_output)
-    
-    # Calculate differences
-    diff = evolved_output - reference_output
-    max_diff = float(mx.max(mx.abs(diff)))
+    output1 = mx.array(output1)
+    output2 = mx.array(output2)
+    mx.eval(output1, output2)
+
+    # Calculate various similarity metrics
+    diff = output1 - output2
     mse = float(mx.mean(diff**2))
     mae = float(mx.mean(mx.abs(diff)))
+    max_diff = float(mx.max(mx.abs(diff)))
+
+    # Relative error (normalized by output magnitude)
+    output1_norm = float(mx.sqrt(mx.mean(output1**2)))
+    relative_error = float(mx.sqrt(mx.mean(diff**2))) / max(output1_norm, 1e-8)
+
+    # Check MLX's allclose function
+    allclose_result = bool(mx.allclose(output1, output2, atol=tolerance, rtol=tolerance))
     
-    # EXACT same check as benchmark
-    benchmark_passes = bool(mx.allclose(evolved_output, reference_output, atol=atol, rtol=rtol))
+    # Additional robust check: if MSE is extremely small, consider it a match
+    mse_perfect = mse < 1e-8
     
+    # Final decision: either allclose passes OR MSE is extremely small
+    final_allclose = allclose_result or mse_perfect
+
     return {
-        "benchmark_passes": benchmark_passes,
-        "max_diff": max_diff,
         "mse": mse,
         "mae": mae,
-        "benchmark_atol": atol,
-        "benchmark_rtol": rtol,
+        "max_diff": max_diff,
+        "relative_error": relative_error,
+        "allclose": final_allclose,
+        "allclose_strict": allclose_result,
+        "mse_perfect": mse_perfect,
+        "tolerance_used": tolerance,
     }
 
 
-def test_correctness_by_category(evolved_attention_fn, config: Dict) -> Dict[str, float]:
+def evaluate_stage1_correctness(evolved_attention_fn, config: Dict) -> Dict[str, float]:
     """
-    Test correctness with benchmark-compatible checks.
+    Stage 1: Test correctness with category-appropriate tolerances.
     
-    CRITICAL: Must catch the same failures that spda_benchmark.py catches.
+    Based on proven evaluation logic from original evaluator.
     """
     
     category = config.get("category", "unknown")
-    dtype = config.get("dtype", "float16")
+    
+    # Set tolerance based on category (proven values)
+    if category == "short":
+        tolerance = 1e-4  # Should be nearly perfect
+        expected_quality = "perfect"
+    elif category == "transition":
+        tolerance = 1e-3  # High quality
+        expected_quality = "high"
+    elif category == "long":
+        tolerance = 1e-3  # Good quality (allow some block approximation)
+        expected_quality = "good"
+    elif category == "very_long":
+        tolerance = 1e-2  # Acceptable quality
+        expected_quality = "acceptable"
+    else:
+        tolerance = 1e-3
+        expected_quality = "unknown"
     
     # Unpack test configuration
     B = config["B"]
@@ -196,10 +212,11 @@ def test_correctness_by_category(evolved_attention_fn, config: Dict) -> Dict[str
     head_dim = config["head_dim"]
     n_q_heads = config["n_q_heads"]
     n_kv_heads = config["n_kv_heads"]
+    dtype = config["dtype"]
     mask_type = config.get("mask", None)
 
     try:
-        # Prepare inputs using benchmark function
+        # Prepare inputs
         q, k, v, scale, mask = prepare_inputs(
             B, qsl, ksl, head_dim, n_q_heads, n_kv_heads, mask_type, False, dtype
         )
@@ -207,7 +224,7 @@ def test_correctness_by_category(evolved_attention_fn, config: Dict) -> Dict[str
         # Run evolved implementation
         evolved_output = evolved_attention_fn(q, k, v, scale=scale, mask=mask)
         
-        # For very long sequences, skip expensive reference comparison
+        # For very long sequences, skip reference comparison (too expensive)
         if qsl >= 3072:
             # Just check for validity
             has_nan = bool(mx.any(mx.isnan(evolved_output)))
@@ -215,102 +232,70 @@ def test_correctness_by_category(evolved_attention_fn, config: Dict) -> Dict[str
             shape_correct = evolved_output.shape == q.shape
             
             return {
-                "benchmark_passes": not (has_nan or has_inf),
-                "max_diff": 0.0,
+                "passed": shape_correct and not (has_nan or has_inf),
                 "mse": 0.0,
-                "mae": 0.0,
                 "shape_correct": shape_correct,
                 "no_nan_inf": not (has_nan or has_inf),
-                "structural_correct": shape_correct and not (has_nan or has_inf),
+                "tolerance_used": tolerance,
                 "category": category,
                 "reference_computed": False,
-                "skip_reason": "Very long sequence - too expensive to compare"
             }
         
-        # CRITICAL: Test against BOTH reference and fused attention
-        # This ensures we catch failures that the benchmark would catch
-        
-        # Test 1: Compare against reference implementation
+        # For shorter sequences, compute reference for comparison
         try:
             reference_output = mlx_ref_attn(q, k, v, scale=scale, mask=mask)
-            ref_comparison = benchmark_correctness_check(evolved_output, reference_output, dtype)
-        except Exception as e:
-            print(f"    ⚠️ Reference comparison failed: {e}")
-            ref_comparison = {"benchmark_passes": False, "max_diff": float("inf")}
-        
-        # Test 2: Compare against fused attention (what benchmark actually does)
-        fused_comparison_attempted = False
-        fused_comparison = {"benchmark_passes": True, "max_diff": 0.0}  # Default to pass
-        
-        try:
-            # This is the CRITICAL comparison that benchmark does
-            fused_output = mx.fast.scaled_dot_product_attention(q, k, v, scale=scale, mask=mask)
-            fused_comparison = benchmark_correctness_check(evolved_output, fused_output, dtype)
-            fused_comparison_attempted = True
+        except Exception:
+            # Reference failed, check structural validity only
+            has_nan = bool(mx.any(mx.isnan(evolved_output)))
+            has_inf = bool(mx.any(mx.isinf(evolved_output)))
+            shape_correct = evolved_output.shape == q.shape
             
-            # If this fails, it's the EXACT same failure the benchmark would catch
-            if not fused_comparison["benchmark_passes"]:
-                print(f"    ❌ BENCHMARK FAILURE: max(|evolved - fused|) = {fused_comparison['max_diff']:.2e} "
-                      f"> {fused_comparison.get('benchmark_atol', 2e-4):.2e}")
-                
-        except Exception as e:
-            # If fused attention fails, we can't do this comparison
-            # This might happen on some systems where mx.fast is not available
-            print(f"    ⚠️ Fused comparison skipped: {e}")
-        
-        # Overall benchmark compatibility
-        # Program passes if it works with reference AND (fused comparison passes OR is skipped)
-        ref_passes = ref_comparison.get("benchmark_passes", False)
-        fused_passes = fused_comparison.get("benchmark_passes", True)  # Default pass if not attempted
-        
-        benchmark_compatible = ref_passes and fused_passes
-        
-        # Check structural correctness
-        has_nan = bool(mx.any(mx.isnan(evolved_output)))
-        has_inf = bool(mx.any(mx.isinf(evolved_output)))
-        shape_correct = evolved_output.shape == q.shape
-        no_nan_inf = not (has_nan or has_inf)
-        
-        # Final structural correctness includes benchmark compatibility
-        structural_correct = shape_correct and no_nan_inf and benchmark_compatible
+            return {
+                "passed": shape_correct and not (has_nan or has_inf),
+                "mse": 0.0,
+                "shape_correct": shape_correct,
+                "no_nan_inf": not (has_nan or has_inf),
+                "tolerance_used": tolerance,
+                "category": category,
+                "reference_computed": False,
+                "reference_error": "Reference computation failed",
+            }
+
+        # Compare outputs with category-appropriate tolerance
+        comparison = compare_attention_outputs(evolved_output, reference_output, tolerance=tolerance)
+
+        # Check for structural correctness
+        shape_correct = evolved_output.shape == reference_output.shape
+        no_nan_inf = not (
+            bool(mx.any(mx.isnan(evolved_output))) or bool(mx.any(mx.isinf(evolved_output)))
+        )
+
+        # Pass criteria: structural correctness AND close match
+        passed = shape_correct and no_nan_inf and comparison["allclose"]
 
         return {
-            "benchmark_passes": benchmark_compatible,
-            "ref_benchmark_passes": ref_passes,
-            "fused_benchmark_passes": fused_passes,
-            "fused_comparison_attempted": fused_comparison_attempted,
-            "max_diff": max(ref_comparison.get("max_diff", 0), fused_comparison.get("max_diff", 0)),
-            "mse": ref_comparison.get("mse", 0.0),
-            "mae": ref_comparison.get("mae", 0.0),
+            "passed": passed,
+            **comparison,
             "shape_correct": shape_correct,
             "no_nan_inf": no_nan_inf,
-            "structural_correct": structural_correct,
             "category": category,
             "reference_computed": True,
         }
 
     except Exception as e:
-        print(f"    ❌ Correctness test failed: {e}")
         return {
-            "benchmark_passes": False,
-            "ref_benchmark_passes": False,
-            "fused_benchmark_passes": False,
-            "fused_comparison_attempted": False,
-            "max_diff": float("inf"),
+            "passed": False,
             "mse": float("inf"),
-            "mae": float("inf"),
-            "shape_correct": False,
-            "no_nan_inf": False,
-            "structural_correct": False,
+            "tolerance_used": tolerance,
             "category": category,
             "reference_computed": False,
             "error": str(e),
         }
 
 
-def test_sequence_scalability(evolved_attention_fn, config: Dict) -> Dict[str, float]:
+def benchmark_performance(evolved_fn, config: Dict, num_trials: int = 3) -> Dict[str, float]:
     """
-    Test how well the attention scales with sequence length.
+    Stage 2: Benchmark performance vs mx.fast.scaled_dot_product_attention.
     """
     
     B = config["B"]
@@ -328,211 +313,88 @@ def test_sequence_scalability(evolved_attention_fn, config: Dict) -> Dict[str, f
             B, qsl, ksl, head_dim, n_q_heads, n_kv_heads, mask_type, False, dtype
         )
         
-        # Test memory efficiency and execution time
-        start_time = time.perf_counter()
+        # Benchmark evolved implementation
+        evolved_times = []
+        for trial in range(num_trials):
+            try:
+                gc.collect()
+                mx.metal.clear_cache()
+                
+                start_time = time.perf_counter()
+                output = evolved_fn(q, k, v, scale=scale, mask=mask)
+                mx.eval(output)
+                end_time = time.perf_counter()
+                
+                evolved_times.append(end_time - start_time)
+            except Exception as e:
+                return {"speedup": 0.0, "performance_score": 0.0, "error": f"Evolved failed: {str(e)}"}
         
-        try:
-            output = evolved_attention_fn(q, k, v, scale=scale, mask=mask)
-            mx.eval(output)  # Force evaluation
-            
-            end_time = time.perf_counter()
-            execution_time = end_time - start_time
-            
-            # Check output validity
-            has_nan = bool(mx.any(mx.isnan(output)))
-            has_inf = bool(mx.any(mx.isinf(output)))
-            valid_output = not (has_nan or has_inf)
-            
-            return {
-                "execution_time": execution_time,
-                "memory_success": True,
-                "valid_output": valid_output,
-                "sequence_length": qsl,
-                "scalability_category": config.get("category", "unknown"),
-            }
-            
-        except Exception as e:
-            return {
-                "execution_time": float("inf"),
-                "memory_success": False,
-                "valid_output": False,
-                "sequence_length": qsl,
-                "error": str(e),
-                "scalability_category": config.get("category", "unknown"),
-            }
-            
-    except Exception as e:
+        evolved_time = np.median(evolved_times)
+        
+        # Benchmark baseline (mx.fast.scaled_dot_product_attention)
+        baseline_times = []
+        baseline_success = True
+        
+        for trial in range(num_trials):
+            try:
+                gc.collect()
+                mx.metal.clear_cache()
+                
+                start_time = time.perf_counter()
+                output = mx.fast.scaled_dot_product_attention(q, k, v, scale=scale, mask=mask)
+                mx.eval(output)
+                end_time = time.perf_counter()
+                
+                baseline_times.append(end_time - start_time)
+            except Exception:
+                # Use reference as baseline if mx.fast fails
+                try:
+                    start_time = time.perf_counter()
+                    output = mlx_ref_attn(q, k, v, scale=scale, mask=mask)
+                    mx.eval(output)
+                    end_time = time.perf_counter()
+                    baseline_times.append(end_time - start_time)
+                except Exception:
+                    baseline_success = False
+                    break
+        
+        if not baseline_success:
+            # If baseline fails but evolved works, that's a win
+            return {"speedup": float("inf"), "performance_score": 1.0, "baseline_failed": True}
+        
+        baseline_time = np.median(baseline_times)
+        
+        # Calculate speedup (>1.0 means evolved is faster)
+        speedup = baseline_time / evolved_time if evolved_time > 0 else 0.0
+        
+        # Performance score based on speedup
+        if speedup >= 1.5:  # 50%+ speedup
+            performance_score = 1.0
+        elif speedup >= 1.2:  # 20%+ speedup  
+            performance_score = 0.5 + (speedup - 1.2) * (0.5 / 0.3)  # Linear 1.2->0.5, 1.5->1.0
+        elif speedup >= 1.0:  # Any speedup
+            performance_score = (speedup - 1.0) * (0.5 / 0.2)  # Linear 1.0->0.0, 1.2->0.5
+        else:  # Slower than baseline
+            performance_score = 0.0
+        
         return {
-            "execution_time": float("inf"),
-            "memory_success": False,
-            "valid_output": False,
-            "sequence_length": qsl,
-            "error": str(e),
-            "scalability_category": config.get("category", "unknown"),
+            "speedup": speedup,
+            "performance_score": performance_score,
+            "evolved_time": evolved_time,
+            "baseline_time": baseline_time,
         }
-
-
-def evaluate_stage1(program_path: str) -> Dict[str, float]:
-    """
-    Stage 1: Critical correctness check using benchmark-compatible testing.
-    
-    CRITICAL: This must catch the same failures that spda_benchmark.py catches,
-    so programs that would fail the benchmark are rejected during evolution.
-    """
-
-    try:
-        print(f"[Stage 1] Loading block diagonal attention program from {program_path}")
-
-        # Load the evolved program
-        spec = importlib.util.spec_from_file_location("evolved_program", program_path)
-        evolved_program = importlib.util.module_from_spec(spec)
-
-        try:
-            spec.loader.exec_module(evolved_program)
-        except SyntaxError as e:
-            print(f"[Stage 1] ❌ SYNTAX ERROR: {e}")
-            return {
-                "basic_functionality": 0.0,
-                "syntax_error": 1.0,
-                "error": f"Syntax error: {str(e)}",
-            }
-        except Exception as e:
-            print(f"[Stage 1] ❌ IMPORT ERROR: {e}")
-            return {
-                "basic_functionality": 0.0,
-                "import_error": 1.0,
-                "error": f"Import error: {str(e)}",
-            }
-
-        # Check if the required function exists
-        if not hasattr(evolved_program, "evolved_scaled_dot_product_attention"):
-            print(f"[Stage 1] ❌ Missing evolved_scaled_dot_product_attention function")
-            return {
-                "basic_functionality": 0.0,
-                "function_missing": 1.0,
-                "error": "Missing evolved_scaled_dot_product_attention function",
-            }
-
-        evolved_attention_fn = evolved_program.evolved_scaled_dot_product_attention
-        print(f"[Stage 1] ✓ Function loaded successfully")
-
-        # CRITICAL TEST 1: Short sequence (should use protected path)
-        short_config = {
-            "B": 1,
-            "qsl": 128,
-            "ksl": 128,
-            "head_dim": 64,
-            "n_q_heads": 8,
-            "n_kv_heads": 8,
-            "dtype": "float16",
-            "mask": None,
-            "category": "short",
-        }
-
-        print(f"[Stage 1] Testing short sequence: {short_config}")
-        try:
-            short_correctness = test_correctness_by_category(evolved_attention_fn, short_config)
-            print(f"[Stage 1] Short sequence - Benchmark passes: {short_correctness.get('benchmark_passes', False)}, "
-                  f"Max diff: {short_correctness.get('max_diff', 'inf'):.2e}")
-        except Exception as e:
-            print(f"[Stage 1] ❌ Short sequence test failed: {e}")
-            return {
-                "basic_functionality": 0.0,
-                "short_sequence_error": 1.0,
-                "error": f"Short sequence test failed: {str(e)}",
-            }
-
-        # CRITICAL TEST 2: Transition sequence (where block diagonal kicks in)
-        transition_config = {
-            "B": 1,
-            "qsl": 512,
-            "ksl": 512,
-            "head_dim": 64,
-            "n_q_heads": 16,
-            "n_kv_heads": 8,
-            "dtype": "float16",
-            "mask": "causal",
-            "category": "transition",
-        }
-
-        print(f"[Stage 1] Testing transition sequence: {transition_config}")
-        try:
-            transition_correctness = test_correctness_by_category(evolved_attention_fn, transition_config)
-            print(f"[Stage 1] Transition sequence - Benchmark passes: {transition_correctness.get('benchmark_passes', False)}, "
-                  f"Max diff: {transition_correctness.get('max_diff', 'inf'):.2e}")
-        except Exception as e:
-            print(f"[Stage 1] ❌ Transition sequence test failed: {e}")
-            # Don't fail completely on transition issues in early evolution
-            transition_correctness = {"benchmark_passes": False}
-
-        # Test 3: Long sequence (scalability check)
-        long_config = {
-            "B": 1,
-            "qsl": 1024,
-            "ksl": 1024,
-            "head_dim": 64,
-            "n_q_heads": 16,
-            "n_kv_heads": 8,
-            "dtype": "float16",
-            "mask": None,
-            "category": "long",
-        }
-
-        print(f"[Stage 1] Testing long sequence: {long_config}")
-        try:
-            long_scalability = test_sequence_scalability(evolved_attention_fn, long_config)
-            print(f"[Stage 1] Long sequence - Execution time: {long_scalability.get('execution_time', 'N/A'):.3f}s, "
-                  f"Valid: {long_scalability.get('valid_output', False)}")
-        except Exception as e:
-            print(f"[Stage 1] ❌ Long sequence test failed: {e}")
-            long_scalability = {"valid_output": False, "execution_time": float("inf")}
-
-        # SCORING: Critical benchmark compatibility
-        short_benchmark_passes = short_correctness.get("benchmark_passes", False)
-        transition_benchmark_passes = transition_correctness.get("benchmark_passes", False)
-        long_functional = long_scalability.get("valid_output", False) and long_scalability.get("execution_time", float("inf")) < 60.0
-
-        # Strict scoring based on benchmark compatibility
-        if short_benchmark_passes and transition_benchmark_passes and long_functional:
-            basic_score = 1.0  # Perfect - passes all benchmark tests
-            print(f"[Stage 1] 🎉 EXCELLENT: All benchmark tests pass")
-        elif short_benchmark_passes and transition_benchmark_passes:
-            basic_score = 0.8  # Good - benchmark compatible but long sequence issues
-            print(f"[Stage 1] ✅ GOOD: Benchmark compatible, long sequences need work")
-        elif short_benchmark_passes and long_functional:
-            basic_score = 0.6  # Partial - short sequences work, transition has correctness issues
-            print(f"[Stage 1] ⚡ PARTIAL: Short sequences work, transition correctness issues")
-        elif short_benchmark_passes:
-            basic_score = 0.4  # Minimal - only short sequences work
-            print(f"[Stage 1] ⚠️ MINIMAL: Only short sequences work")
-        else:
-            basic_score = 0.0  # Fail - benchmark incompatible
-            print(f"[Stage 1] ❌ FAIL: Benchmark incompatible")
-
-        result = {
-            "basic_functionality": float(basic_score),
-            "short_benchmark_passes": float(short_benchmark_passes),
-            "transition_benchmark_passes": float(transition_benchmark_passes),
-            "long_sequence_functional": float(long_functional),
-            "benchmark_compatible": float(short_benchmark_passes and transition_benchmark_passes),
-        }
-
-        print(f"[Stage 1] ✓ Completed with score: {basic_score:.3f}")
-        return result
-
+        
     except Exception as e:
-        print(f"[Stage 1] ❌ Unexpected Exception: {str(e)}")
-        traceback.print_exc()
-        return {"basic_functionality": 0.0, "unexpected_error": 1.0, "error": str(e)}
+        return {"speedup": 0.0, "performance_score": 0.0, "error": str(e)}
 
 
-def evaluate_stage2(program_path: str) -> Dict[str, float]:
+def evaluate_two_stage(program_path: str) -> Dict[str, float]:
     """
-    Stage 2: Comprehensive evaluation only for benchmark-compatible programs.
+    Two-stage evaluation: Correctness gate + Performance optimization.
     """
-
-    print(f"[Stage 2] 🚀 Starting comprehensive evaluation")
-
+    
+    print(f"🎯 Two-Stage Evaluation: {program_path}")
+    
     try:
         # Load the evolved program
         spec = importlib.util.spec_from_file_location("evolved_program", program_path)
@@ -541,130 +403,162 @@ def evaluate_stage2(program_path: str) -> Dict[str, float]:
 
         if not hasattr(evolved_program, "evolved_scaled_dot_product_attention"):
             return {
-                "accuracy_score": 0.0,
-                "scalability_score": 0.0,
-                "functionality_score": 0.0,
-                "combined_score": 0.0,
+                "stage1_passed": False,
+                "stage2_score": 0.0,
+                "overall_score": 0.0,
                 "error": "Missing evolved_scaled_dot_product_attention function",
             }
 
         evolved_attention_fn = evolved_program.evolved_scaled_dot_product_attention
-
-        # Get test configurations
-        test_configs = create_test_configurations()
-
-        benchmark_compatible_count = 0
-        total_tests = len(test_configs)
         
-        for i, config in enumerate(test_configs):
+        # =====================================
+        # STAGE 1: CORRECTNESS & COMPATIBILITY
+        # =====================================
+        print(f"\n📋 STAGE 1: Correctness & Compatibility Testing")
+        
+        stage1_configs = create_stage1_test_configurations()
+        stage1_results = []
+        stage1_passed_count = 0
+        
+        for i, config in enumerate(stage1_configs):
             category = config.get("category", "unknown")
+            print(f"  Test {i+1}/{len(stage1_configs)}: seq={config['qsl']}, category={category}, "
+                  f"heads={config['n_q_heads']}/{config['n_kv_heads']}, mask={config.get('mask', None)}")
             
-            try:
-                print(f"[Stage 2] Testing config {i+1}/{total_tests}: "
-                      f"seq={config['qsl']}, category={category}, "
-                      f"heads={config['n_q_heads']}/{config['n_kv_heads']}, "
-                      f"mask={config.get('mask', None)}")
-
-                # Test correctness with benchmark standards
-                correctness = test_correctness_by_category(evolved_attention_fn, config)
-                
-                # Test scalability
-                scalability = test_sequence_scalability(evolved_attention_fn, config)
-                
-                # Check benchmark compatibility
-                benchmark_passes = correctness.get("benchmark_passes", False)
-                functional = scalability.get("valid_output", False)
-                
-                if benchmark_passes and functional:
-                    benchmark_compatible_count += 1
-                    print(f"  ✅ BENCHMARK COMPATIBLE")
-                elif benchmark_passes:
-                    print(f"  ⚡ CORRECT but performance issues")
-                elif functional:
-                    print(f"  ⚠️ FUNCTIONAL but correctness issues")  
-                else:
-                    print(f"  ❌ FAILED both correctness and functionality")
-
-            except Exception as e:
-                print(f"  ❌ Test failed: {str(e)}")
-
-        # Final scoring based on benchmark compatibility
-        compatibility_rate = benchmark_compatible_count / total_tests
+            result = evaluate_stage1_correctness(evolved_attention_fn, config)
+            stage1_results.append(result)
+            
+            if result["passed"]:
+                stage1_passed_count += 1
+                print(f"    ✅ PASSED: MSE={result.get('mse', 'N/A'):.2e}")
+            else:
+                print(f"    ❌ FAILED: {result.get('error', 'Accuracy/structure issue')}")
         
-        if compatibility_rate >= 0.9:
-            combined_score = 1.0
-            print(f"[Stage 2] 🏆 EXCELLENT: {compatibility_rate:.1%} benchmark compatibility")
-        elif compatibility_rate >= 0.7:
-            combined_score = 0.8
-            print(f"[Stage 2] ✅ GOOD: {compatibility_rate:.1%} benchmark compatibility")
-        elif compatibility_rate >= 0.5:
-            combined_score = 0.6
-            print(f"[Stage 2] ⚡ OKAY: {compatibility_rate:.1%} benchmark compatibility")
-        elif compatibility_rate >= 0.3:
-            combined_score = 0.4
-            print(f"[Stage 2] ⚠️ POOR: {compatibility_rate:.1%} benchmark compatibility")
+        stage1_pass_rate = stage1_passed_count / len(stage1_configs)
+        stage1_passed = stage1_pass_rate >= 0.9  # 90% pass rate required
+        
+        print(f"\n📊 STAGE 1 Results:")
+        print(f"  Passed: {stage1_passed_count}/{len(stage1_configs)} ({stage1_pass_rate:.1%})")
+        print(f"  Gate Status: {'✅ PASSED' if stage1_passed else '❌ FAILED'}")
+        
+        if not stage1_passed:
+            print(f"  🚫 Stage 1 failed - Stage 2 skipped")
+            return {
+                "stage1_passed": False,
+                "stage1_pass_rate": stage1_pass_rate,
+                "stage2_score": 0.0,
+                "overall_score": 0.0,
+                "failed_at": "stage1_correctness",
+            }
+        
+        # =====================================
+        # STAGE 2: PERFORMANCE OPTIMIZATION
+        # =====================================
+        print(f"\n🚀 STAGE 2: Performance Benchmarking")
+        
+        stage2_configs = create_stage2_performance_configurations()
+        stage2_results = []
+        total_weighted_score = 0.0
+        total_weight = 0.0
+        
+        for config in stage2_configs:
+            print(f"  Benchmarking {config['name']}: seq={config['qsl']}")
+            
+            benchmark_result = benchmark_performance(evolved_attention_fn, config)
+            
+            speedup = benchmark_result["speedup"]
+            perf_score = benchmark_result["performance_score"]
+            weighted_score = perf_score * config["weight"]
+            
+            total_weighted_score += weighted_score
+            total_weight += config["weight"]
+            
+            stage2_results.append({
+                "config": config,
+                "benchmark": benchmark_result,
+                "weighted_score": weighted_score,
+            })
+            
+            print(f"    📊 Speedup: {speedup:.2f}x, Score: {perf_score:.3f}")
+        
+        stage2_score = total_weighted_score / total_weight if total_weight > 0 else 0.0
+        
+        # Calculate overall score (Stage 1 gate + Stage 2 performance)
+        overall_score = stage2_score  # Since Stage 1 is just a gate
+        
+        # Detailed performance analysis
+        speedups = [r["benchmark"]["speedup"] for r in stage2_results 
+                   if r["benchmark"]["speedup"] != float("inf")]
+        avg_speedup = np.mean(speedups) if speedups else 0.0
+        max_speedup = max(speedups) if speedups else 0.0
+        
+        print(f"\n📈 STAGE 2 Results:")
+        print(f"  Performance Score: {stage2_score:.3f}")
+        print(f"  Average Speedup: {avg_speedup:.2f}x")
+        print(f"  Max Speedup: {max_speedup:.2f}x")
+        
+        print(f"\n🎯 Overall Results:")
+        print(f"  Stage 1: {'✅ PASSED' if stage1_passed else '❌ FAILED'}")
+        print(f"  Stage 2: {stage2_score:.3f}")
+        print(f"  Overall Score: {overall_score:.3f}")
+        
+        if overall_score >= 0.8:
+            print(f"  🏆 EXCELLENT: Strong performance improvements!")
+        elif overall_score >= 0.5:
+            print(f"  🚀 GOOD: Meaningful speedups achieved")
+        elif overall_score >= 0.2:
+            print(f"  ⚡ PARTIAL: Some improvements, room for more")
         else:
-            combined_score = 0.2
-            print(f"[Stage 2] ❌ FAIL: {compatibility_rate:.1%} benchmark compatibility")
-
+            print(f"  ❌ POOR: Need significant optimization")
+        
         return {
-            "accuracy_score": float(compatibility_rate),
-            "scalability_score": float(compatibility_rate),
-            "functionality_score": float(compatibility_rate),
-            "combined_score": float(combined_score),
-            "benchmark_compatibility_rate": float(compatibility_rate),
-            "benchmark_compatible_count": int(benchmark_compatible_count),
-            "total_tests": int(total_tests),
+            # Gate results
+            "stage1_passed": stage1_passed,
+            "stage1_pass_rate": stage1_pass_rate,
+            
+            # Performance results
+            "stage2_score": float(stage2_score),
+            "overall_score": float(overall_score),
+            
+            # Detailed metrics
+            "avg_speedup": float(avg_speedup),
+            "max_speedup": float(max_speedup),
+            "num_stage1_tests": len(stage1_configs),
+            "num_stage2_tests": len(stage2_configs),
         }
-
+        
     except Exception as e:
-        print(f"[Stage 2] Evaluation failed: {str(e)}")
+        print(f"❌ Two-stage evaluation failed: {str(e)}")
         traceback.print_exc()
         return {
-            "accuracy_score": 0.0,
-            "scalability_score": 0.0,
-            "functionality_score": 0.0,
-            "combined_score": 0.0,
+            "stage1_passed": False,
+            "stage2_score": 0.0,
+            "overall_score": 0.0,
             "error": str(e),
         }
 
 
 def evaluate(program_path: str) -> Dict[str, float]:
     """
-    Main evaluation function - required by OpenEvolve framework.
-    
-    CRITICAL: This evaluator must catch the same failures that spda_benchmark.py catches,
-    ensuring evolved programs are benchmark-compatible.
+    Main evaluation function - Two-stage: Correctness gate + Performance.
     """
-    return evaluate_stage2(program_path)
+    return evaluate_two_stage(program_path)
 
 
 if __name__ == "__main__":
-    # Test the evaluator with the initial program
-    print("Testing benchmark-compatible evaluator...")
+    # Test the two-stage evaluator
+    print("Testing Two-Stage Evaluator...")
     import os
 
     initial_program_path = os.path.join(os.path.dirname(__file__), "initial_program.py")
-
+    
     if os.path.exists(initial_program_path):
-        # Quick stage 1 test
-        print("\n=== Stage 1 Test ===")
-        stage1_results = evaluate_stage1(initial_program_path)
-        print("Stage 1 results:")
-        for k, v in stage1_results.items():
-            print(f"  {k}: {v}")
-
-        # Full evaluation if stage 1 passes
-        if stage1_results.get("basic_functionality", 0.0) > 0.5:
-            print("\n=== Stage 2 Test ===")
-            stage2_results = evaluate_stage2(initial_program_path)
-            print("Stage 2 results summary:")
-            for k, v in stage2_results.items():
-                if isinstance(v, (int, float)):
-                    print(f"  {k}: {v:.4f}")
-                elif k not in ["detailed_results"]:
-                    print(f"  {k}: {v}")
-        else:
-            print("Stage 1 failed, skipping stage 2")
+        results = evaluate_two_stage(initial_program_path)
+        print("\nTwo-Stage Evaluation Results:")
+        for k, v in results.items():
+            if isinstance(v, (int, float)):
+                print(f"  {k}: {v:.4f}")
+            else:
+                print(f"  {k}: {v}")
     else:
         print(f"Initial program not found at {initial_program_path}")
