@@ -108,31 +108,56 @@ def manual_attention_fallback(q, k, v, scale=1.0, mask=None):
 
 def evolved_block_diagonal_attention(q, k, v, scale=1.0, mask=None):
     """
-    Block diagonal attention implementation for long sequences.
-    This entire function is the EVOLUTION TARGET.
+    SINGLE COMPREHENSIVE EVOLUTION TARGET
+    
+    This is the ONE main evolution block that contains all block diagonal attention logic,
+    pattern analysis, kernel creation, and optimization strategies.
+    
+    Everything related to block diagonal attention evolution happens here.
     """
     
     # EVOLVE-BLOCK-START
     """
-    BLOCK DIAGONAL ATTENTION EVOLUTION TARGET
+    COMPREHENSIVE BLOCK DIAGONAL ATTENTION EVOLUTION
     
-    CURRENT STATUS:
-    🎯 EVOLUTION TARGET: Block diagonal attention patterns for long sequences
-    📈 GOAL: Linear O(n×block_size) complexity instead of O(n²)
-    🚀 MISSION: Enable processing of 4K+ token sequences
+    🎯 MISSION: Discover efficient block diagonal attention patterns for long sequences
+    📈 GOAL: Linear O(n×block_size) complexity instead of O(n²) 
+    🚀 TARGET: Enable processing of 4K+ token sequences
     
-    EVOLUTION OPPORTUNITIES:
-    1. BASIC BLOCKS: Fixed-size rectangular attention blocks
-    2. ADAPTIVE BLOCKS: Variable block sizes based on content
-    3. SPARSE BLOCKS: Skip low-attention regions entirely
-    4. HIERARCHICAL BLOCKS: Multi-level block attention patterns
-    5. STREAMING BLOCKS: Sliding window with memory for very long sequences
-    6. CUSTOM KERNELS: Metal GPU kernels for block attention
-    7. MEMORY OPTIMIZATION: Efficient block memory access patterns
-    8. BLOCK FUSION: Fused block attention + scoring operations
+    EVOLUTION OPPORTUNITIES (ALL IN THIS SINGLE BLOCK):
     
-    CURRENT IMPLEMENTATION: Basic fixed-size blocks with full attention within blocks
-    EVOLUTION STRATEGY: Start simple, then discover sophisticated block patterns
+    1. BLOCK STRATEGIES:
+       - Fixed vs adaptive block sizes
+       - Overlapping vs non-overlapping blocks
+       - Hierarchical multi-level blocks
+       - Sparse block patterns
+    
+    2. ATTENTION PATTERNS:
+       - Full attention within blocks
+       - Sparse attention within blocks  
+       - Cross-block communication
+       - Sliding window mechanisms
+    
+    3. CUSTOM KERNELS:
+       - Metal GPU kernels for block computation
+       - Fused operations (scale+attention+output)
+       - Optimized memory access patterns
+       - Vectorized block operations
+    
+    4. PATTERN ANALYSIS:
+       - Dynamic block boundary detection
+       - Content-aware block sizing
+       - Attention sparsity analysis
+       - Adaptive threshold selection
+    
+    5. OPTIMIZATION TECHNIQUES:
+       - Block-parallel computation
+       - Memory-efficient concatenation
+       - Gradient checkpointing for blocks
+       - Mixed precision block operations
+    
+    CURRENT IMPLEMENTATION: Basic fixed-size blocks with full attention
+    EVOLUTION STRATEGY: Start simple, discover sophisticated patterns
     """
     
     # Extract dimensions  
@@ -141,10 +166,41 @@ def evolved_block_diagonal_attention(q, k, v, scale=1.0, mask=None):
     kL = k.shape[2]
     n_repeats = n_q_heads // n_kv_heads
     
-    # EVOLUTION PARAMETER: Block size and strategy
-    base_block_size = 128  # Can be evolved to adaptive/dynamic sizing
+    # EVOLUTION TARGET 1: BLOCK STRATEGY AND PATTERN ANALYSIS
+    # Analyze input to determine optimal block strategy
+    def analyze_and_plan_blocks(q, k, v):
+        """Analyze attention patterns and plan block strategy"""
+        B, n_heads, L, head_dim = q.shape
+        
+        # Basic block size heuristic - EVOLUTION TARGET
+        if L <= 1024:
+            base_block_size = 128
+        elif L <= 2048:
+            base_block_size = 256
+        else:
+            base_block_size = 512
+        
+        # EVOLUTION OPPORTUNITY: Sophisticated pattern analysis
+        # - Analyze query/key similarity patterns
+        # - Detect natural attention boundaries
+        # - Adapt block sizes based on content
+        # - Identify sparse regions
+        
+        return {
+            "block_size": base_block_size,
+            "num_blocks": (L + base_block_size - 1) // base_block_size,
+            "strategy": "fixed_size",  # Could evolve to "adaptive", "hierarchical", etc.
+            "overlap": 0,  # Could evolve to overlapping blocks
+            "sparse_threshold": 0.0,  # Could evolve sparse attention
+        }
     
-    # Handle GQA (Grouped Query Attention)
+    # Get block plan
+    block_plan = analyze_and_plan_blocks(q, k, v)
+    base_block_size = block_plan["block_size"]
+    num_blocks = block_plan["num_blocks"]
+    
+    # EVOLUTION TARGET 2: GQA HANDLING STRATEGY
+    # Handle Grouped Query Attention efficiently
     if n_repeats > 1:
         q_reshaped = mx.reshape(q, [B, n_kv_heads, n_repeats, L, head_dim])
         k_expanded = mx.expand_dims(k, 2)
@@ -154,42 +210,82 @@ def evolved_block_diagonal_attention(q, k, v, scale=1.0, mask=None):
         k_expanded = k
         v_expanded = v
     
-    # EVOLUTION TARGET: Block processing strategy
-    # Current: Simple sequential block processing
-    # Future: Parallel blocks, adaptive sizing, sparse patterns, custom kernels
+    # EVOLUTION TARGET 3: CUSTOM KERNEL CREATION
+    # Create optimized kernels for block attention if possible
+    def try_create_custom_kernel():
+        """Attempt to create custom Metal kernel for block attention"""
+        
+        # EVOLUTION OPPORTUNITY: Sophisticated Metal kernel
+        source = """
+            // EVOLUTION TARGET: Efficient block diagonal attention kernel
+            // 
+            // Optimization opportunities:
+            // 1. Tiled computation for cache efficiency
+            // 2. Threadgroup memory for data sharing
+            // 3. Vectorized operations (float4, half4)
+            // 4. Fused scale+attention+output
+            // 5. Sparse block patterns
+            // 6. Inter-block communication
+            
+            uint block_id = thread_position_in_grid.x;
+            uint thread_in_block = thread_position_in_grid.y;
+            
+            // TODO: Implement optimized block attention
+            // Current: Basic placeholder for evolution
+        """
+        
+        try:
+            kernel = mx.fast.metal_kernel(
+                name="block_attention",
+                input_names=["q_blocks", "k_blocks", "v_blocks", "params"],
+                output_names=["attention_output"],
+                source=source
+            )
+            return kernel
+        except Exception:
+            return None
     
-    # Calculate number of blocks
-    num_blocks = (L + base_block_size - 1) // base_block_size
+    # Try to get custom kernel (evolution can improve this)
+    custom_kernel = try_create_custom_kernel()
     
+    # EVOLUTION TARGET 4: MAIN BLOCK PROCESSING LOOP
+    # This is the core algorithm that processes blocks
     block_outputs = []
     
     for block_idx in range(num_blocks):
-        # Calculate block boundaries
+        # EVOLUTION TARGET 4A: Block boundary calculation
         start_idx = block_idx * base_block_size
         end_idx = min(start_idx + base_block_size, L)
         
-        # EVOLUTION OPPORTUNITY: Adaptive block boundaries
-        # Could evolve context-aware block sizing, overlapping blocks, etc.
+        # EVOLUTION OPPORTUNITY: Adaptive boundaries, overlapping blocks
+        # Could evolve context-aware block sizing, sliding windows, etc.
         
-        # Extract block queries
+        # EVOLUTION TARGET 4B: Block query extraction
         if n_repeats > 1:
             q_block = q_reshaped[:, :, :, start_idx:end_idx, :]
         else:
             q_block = q_reshaped[:, :, start_idx:end_idx, :]
         
-        # EVOLUTION OPPORTUNITY: Block attention scope
-        # Current: Full attention within each block
-        # Future: Sparse attention, sliding windows, hierarchical patterns
-        
-        # EVOLUTION TARGET: Custom block attention computation
+        # EVOLUTION TARGET 4C: Block attention computation
         try:
+            # EVOLUTION OPPORTUNITY: Use custom kernel if available
+            if custom_kernel is not None:
+                # Try custom kernel path (evolution can improve this)
+                try:
+                    # Custom kernel implementation would go here
+                    # For now, fall back to manual computation
+                    raise NotImplementedError("Custom kernel not fully implemented")
+                except Exception:
+                    pass  # Fall back to manual computation
+            
+            # EVOLUTION TARGET 4D: Manual block attention computation
             # Scale queries
             q_block_scaled = q_block * scale
             
             # Compute attention scores for this block
             scores_block = q_block_scaled @ mx.swapaxes(k_expanded, -1, -2)
             
-            # EVOLUTION OPPORTUNITY: Custom block masking patterns
+            # EVOLUTION TARGET 4E: Block masking strategy
             if mask is not None:
                 if isinstance(mask, str) and mask == "causal":
                     # Create causal mask for this block
@@ -212,14 +308,16 @@ def evolved_block_diagonal_attention(q, k, v, scale=1.0, mask=None):
                     mask_block = mask[:, :, start_idx:end_idx, :]
                     scores_block = scores_block + mask_block
             
-            # EVOLUTION TARGET: Custom block softmax and output computation
+            # EVOLUTION TARGET 4F: Block softmax and output computation
             attention_weights_block = mx.softmax(scores_block, axis=-1, precise=True)
             output_block = attention_weights_block @ v_expanded
+            
+            # EVOLUTION OPPORTUNITY: Post-processing, normalization, etc.
             
             block_outputs.append(output_block)
                 
         except Exception as e:
-            # Robust fallback for block computation
+            # EVOLUTION TARGET 4G: Robust fallback for failed blocks
             try:
                 from spda_benchmark import mlx_ref_attn
                 
@@ -271,10 +369,8 @@ def evolved_block_diagonal_attention(q, k, v, scale=1.0, mask=None):
                 
                 block_outputs.append(block_output)
     
-    # EVOLUTION OPPORTUNITY: Advanced block output combination
-    # Current: Simple concatenation
-    # Future: Weighted combination, cross-block attention, hierarchical merging
-    
+    # EVOLUTION TARGET 5: BLOCK OUTPUT COMBINATION STRATEGY
+    # Combine all block outputs into final result
     if block_outputs:
         if n_repeats > 1:
             # Concatenate along sequence dimension (axis=-2)
@@ -284,103 +380,18 @@ def evolved_block_diagonal_attention(q, k, v, scale=1.0, mask=None):
         else:
             # Concatenate along sequence dimension (axis=-2)
             output = mx.concatenate(block_outputs, axis=-2)
+        
+        # EVOLUTION OPPORTUNITY: Advanced combination strategies
+        # - Weighted combination based on attention scores
+        # - Cross-block normalization
+        # - Hierarchical merging
+        # - Gradient flow optimization
+        
     else:
         # Fallback: return zeros with correct shape
         output = mx.zeros_like(q)
     
     return output
-    # EVOLVE-BLOCK-END
-
-
-def create_custom_block_attention_kernel():
-    """
-    EVOLUTION TARGET: Create optimized Metal kernels for block attention.
-    This function is also available for evolution.
-    """
-    
-    # EVOLVE-BLOCK-START
-    """
-    CUSTOM METAL KERNEL EVOLUTION TARGET
-    
-    OPPORTUNITIES:
-    1. Block-wise matrix multiplication kernels
-    2. Fused block attention computation  
-    3. Optimized memory access patterns for blocks
-    4. Sparse block pattern kernels
-    5. Threadgroup memory optimization
-    6. Vectorized block operations
-    7. Inter-block communication patterns
-    """
-    
-    # EVOLUTION OPPORTUNITY: Custom Metal kernel for block attention
-    source = """
-        // EVOLUTION TARGET: Implement efficient block diagonal attention
-        // 
-        // Key optimization opportunities:
-        // 1. Tiled block computation for cache efficiency
-        // 2. Threadgroup memory for block data sharing
-        // 3. Vectorized operations within blocks  
-        // 4. Sparse block pattern optimization
-        // 5. Fused scale+attention+output for blocks
-        //
-        // Current: Basic structure for evolution
-        
-        uint block_id = thread_position_in_grid.x;
-        uint thread_in_block = thread_position_in_grid.y;
-        
-        // TODO: Implement efficient block attention computation
-        // This is the main evolution target!
-    """
-    
-    # Placeholder kernel - evolution should replace this
-    try:
-        kernel = mx.fast.metal_kernel(
-            name="block_attention",
-            input_names=["q_blocks", "k_blocks", "v_blocks", "block_params"],
-            output_names=["attention_output"],
-            source=source
-        )
-        return kernel
-    except Exception:
-        # Return None if kernel creation fails
-        return None
-    # EVOLVE-BLOCK-END
-
-
-def analyze_attention_patterns(q, k, v):
-    """
-    EVOLUTION TARGET: Analyze attention patterns to guide block discovery.
-    """
-    
-    # EVOLVE-BLOCK-START
-    """
-    ATTENTION PATTERN ANALYSIS EVOLUTION TARGET
-    
-    This function could evolve to:
-    1. Detect natural attention block boundaries
-    2. Identify sparse attention regions  
-    3. Adapt block sizes based on content
-    4. Discover hierarchical attention patterns
-    5. Guide dynamic block sizing decisions
-    """
-    
-    # Simple pattern analysis - evolution can make this sophisticated
-    B, n_heads, L, head_dim = q.shape
-    
-    # Basic block size heuristic - evolution target
-    if L <= 1024:
-        suggested_block_size = 128
-    elif L <= 2048:
-        suggested_block_size = 256
-    else:
-        suggested_block_size = 512
-    
-    return {
-        "suggested_block_size": suggested_block_size,
-        "num_blocks": (L + suggested_block_size - 1) // suggested_block_size,
-        "sequence_length": L,
-        "complexity_reduction": (L * L) / (L * suggested_block_size)
-    }
     # EVOLVE-BLOCK-END
 
 
@@ -455,25 +466,20 @@ def test_basic_functionality():
             else:
                 print(f"    ❌ Invalid output: NaN={has_nan}, Inf={has_inf}")
             
-            # Analyze attention patterns
-            patterns = analyze_attention_patterns(q, k, v)
-            print(f"    📊 Block analysis: {patterns['num_blocks']} blocks of size {patterns['suggested_block_size']}")
-            print(f"    🚀 Complexity reduction: {patterns['complexity_reduction']:.1f}x")
-            
         except Exception as e:
             print(f"    ❌ FAILED: {str(e)}")
     
     print("\n🎯 Block Diagonal Attention System Summary:")
     print("  ✅ Short sequences: Perfect performance via mx.fast.scaled_dot_product_attention")
-    print("  🎯 Long sequences: Block diagonal attention (EVOLUTION TARGET)")
+    print("  🎯 Long sequences: Block diagonal attention (SINGLE EVOLUTION TARGET)")
     print("  🛡️ Protected fallback mechanisms ensure reliability")
-    print("  🚀 Ready for block pattern discovery and optimization!")
-    print("\n💡 Evolution Opportunities:")
-    print("  1. Optimize block size selection and adaptive sizing")
-    print("  2. Implement custom Metal kernels for block attention")
-    print("  3. Discover sparse block patterns and hierarchical attention")
-    print("  4. Add sliding window and memory mechanisms")
-    print("  5. Fuse block operations for maximum efficiency")
+    print("  🚀 Ready for comprehensive block pattern evolution!")
+    print("\n💡 Single Evolution Block Contains:")
+    print("  1. Block strategy and pattern analysis")
+    print("  2. Custom Metal kernel creation")
+    print("  3. Block processing algorithms")
+    print("  4. Output combination strategies")
+    print("  5. All optimization opportunities in one place")
     
     return True
 
