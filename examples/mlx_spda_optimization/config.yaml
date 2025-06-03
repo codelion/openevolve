@@ -1,6 +1,6 @@
 # Configuration for MLX Custom Metal Kernel Attention Optimization
 max_iterations: 100  # Increased for incremental approach
-checkpoint_interval: 10
+checkpoint_interval: 5
 log_level: "INFO"
 
 # LLM configuration - Use stronger models for complex Metal kernel optimization
