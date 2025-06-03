@@ -1,5 +1,5 @@
 # Configuration for MLX Block Diagonal Attention Kernel Discovery
-max_iterations: 150  # More iterations for novel algorithm discovery
+max_iterations: 100  # More iterations for novel algorithm discovery
 checkpoint_interval: 5
 log_level: "INFO"
 
