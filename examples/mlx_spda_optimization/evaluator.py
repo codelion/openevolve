@@ -430,7 +430,12 @@ def evaluate_two_stage(program_path: str) -> Dict[str, float]:
             
             if result["passed"]:
                 stage1_passed_count += 1
-                print(f"    ✅ PASSED: MSE={result.get('mse', 'N/A'):.2e}")
+                mse_val = result.get('mse', 'N/A')
+                if isinstance(mse_val, (int, float)) and not math.isnan(mse_val) and not math.isinf(mse_val):
+                    mse_str = f"{mse_val:.2e}"
+                else:
+                    mse_str = str(mse_val)
+                print(f"    ✅ PASSED: MSE={mse_str}")
             else:
                 print(f"    ❌ FAILED: {result.get('error', 'Accuracy/structure issue')}")
         
@@ -479,7 +484,20 @@ def evaluate_two_stage(program_path: str) -> Dict[str, float]:
                 "weighted_score": weighted_score,
             })
             
-            print(f"    📊 Speedup: {speedup:.2f}x, Score: {perf_score:.3f}")
+            # Safe formatting for speedup
+            if isinstance(speedup, (int, float)) and not math.isnan(speedup) and not math.isinf(speedup):
+                speedup_str = f"{speedup:.2f}"
+            elif speedup == float("inf"):
+                speedup_str = "∞"
+            else:
+                speedup_str = str(speedup)
+                
+            if isinstance(perf_score, (int, float)) and not math.isnan(perf_score) and not math.isinf(perf_score):
+                perf_str = f"{perf_score:.3f}"
+            else:
+                perf_str = str(perf_score)
+                
+            print(f"    📊 Speedup: {speedup_str}x, Score: {perf_str}")
         
         stage2_score = total_weighted_score / total_weight if total_weight > 0 else 0.0
         
@@ -488,19 +506,28 @@ def evaluate_two_stage(program_path: str) -> Dict[str, float]:
         
         # Detailed performance analysis
         speedups = [r["benchmark"]["speedup"] for r in stage2_results 
-                   if r["benchmark"]["speedup"] != float("inf")]
+                   if isinstance(r["benchmark"]["speedup"], (int, float)) and 
+                   r["benchmark"]["speedup"] != float("inf") and 
+                   not math.isnan(r["benchmark"]["speedup"])]
         avg_speedup = np.mean(speedups) if speedups else 0.0
         max_speedup = max(speedups) if speedups else 0.0
         
         print(f"\n📈 STAGE 2 Results:")
-        print(f"  Performance Score: {stage2_score:.3f}")
-        print(f"  Average Speedup: {avg_speedup:.2f}x")
-        print(f"  Max Speedup: {max_speedup:.2f}x")
+        
+        # Safe formatting
+        stage2_str = f"{stage2_score:.3f}" if isinstance(stage2_score, (int, float)) else str(stage2_score)
+        avg_speedup_str = f"{avg_speedup:.2f}" if isinstance(avg_speedup, (int, float)) else str(avg_speedup)
+        max_speedup_str = f"{max_speedup:.2f}" if isinstance(max_speedup, (int, float)) else str(max_speedup)
+        overall_str = f"{overall_score:.3f}" if isinstance(overall_score, (int, float)) else str(overall_score)
+        
+        print(f"  Performance Score: {stage2_str}")
+        print(f"  Average Speedup: {avg_speedup_str}x")
+        print(f"  Max Speedup: {max_speedup_str}x")
         
         print(f"\n🎯 Overall Results:")
         print(f"  Stage 1: {'✅ PASSED' if stage1_passed else '❌ FAILED'}")
-        print(f"  Stage 2: {stage2_score:.3f}")
-        print(f"  Overall Score: {overall_score:.3f}")
+        print(f"  Stage 2: {stage2_str}")
+        print(f"  Overall Score: {overall_str}")
         
         if overall_score >= 0.8:
             print(f"  🏆 EXCELLENT: Strong performance improvements!")
