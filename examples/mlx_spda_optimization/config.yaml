@@ -1,16 +1,16 @@
-# Configuration for MLX Custom Metal Kernel Attention Optimization
-max_iterations: 100  # Increased for incremental approach
+# Configuration for MLX Block Diagonal Attention Kernel Discovery
+max_iterations: 150  # More iterations for novel algorithm discovery
 checkpoint_interval: 5
 log_level: "INFO"
 
-# LLM configuration - Use stronger models for complex Metal kernel optimization
+# LLM configuration - Use stronger models for algorithmic discovery
 llm:
   primary_model: "gemini-2.5-flash-preview-05-20"
   primary_model_weight: 0.6  
   secondary_model: "gemini-2.5-pro-preview-05-06" 
   secondary_model_weight: 0.4
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
-  temperature: 0.7  # Lower temperature for more reliable code generation
+  temperature: 0.8  # Higher temperature for creative algorithm discovery
   top_p: 0.9
   max_tokens: 24000  
   timeout: 600
@@ -18,237 +18,250 @@ llm:
 # Prompt configuration
 prompt:
   system_message: |
-    MISSION: Incrementally evolve working Metal kernels to beat mx.fast.scaled_dot_product_attention
+    MISSION: Discover efficient block diagonal attention patterns for long sequence processing
+
+    🎯 **BLOCK DIAGONAL ATTENTION DISCOVERY**
     
-    🎯 **CURRENT IMPLEMENTATION STATUS:**
-    - ✅ WORKING: Simple Metal scaling kernel (replace q * scale)
-    - ❌ TODO: All other operations use reference implementation
-    - 🎯 GOAL: Gradually replace reference parts with optimized Metal kernels
+    You are evolving a hybrid attention system that:
+    - Uses mx.fast.scaled_dot_product_attention for sequences < 512 (KEEP THIS OPTIMAL)
+    - Discovers novel block diagonal attention patterns for sequences ≥ 512 (EVOLVE THIS)
     
-    📋 **CRITICAL SYNTAX RULES (AVOID ERRORS):**
+    **STRATEGIC GOAL**: Enable 4K+ token processing with linear scaling instead of quadratic
     
-    🚨 **PYTHON SYNTAX ONLY** (you are writing Python code):
+    📋 **CURRENT SYSTEM ARCHITECTURE**:
+    
     ```python
-    # ✅ CORRECT Python comments
-    # This is a Python comment
-    
-    # ❌ WRONG - C++ style comments in Python
-    // This breaks Python syntax - NEVER USE
-    
-    # ✅ CORRECT string formatting
-    source = """
-        // C++ comments are OK inside Metal source strings
-        uint elem = thread_position_in_grid.x;
-    """
-    
-    # ❌ WRONG - mixing syntaxes
-    source = """
-        uint elem = thread_position_in_grid.x; // Comment
-    """, // ❌ This comma+comment breaks Python
-    ```
-    
-    🚨 **NEVER ACCESS NON-EXISTENT ATTRIBUTES:**
-    ```python
-    # ❌ WRONG - these don't exist in MLX
-    array.strides     # NO!
-    array.data_ptr()  # NO!
-    array.device      # NO!
-    
-    # ✅ CORRECT - these work in MLX
-    array.shape       # Yes
-    array.dtype       # Yes
-    array.size        # Yes
-    ```
-    
-    🚨 **CONCRETE WORKING METAL KERNEL PATTERNS:**
-    
-    **1. WORKING Element-wise Kernel (PROVEN WORKING):**
-    ```python
-    # This pattern WORKS - use it as template
-    source = """
-        uint elem = thread_position_in_grid.x;
-        if (elem >= input_shape[0] * input_shape[1] * input_shape[2] * input_shape[3]) {
-            return;
-        }
-        output[elem] = input[elem] * scale_value;
-    """
-    
-    kernel = mx.fast.metal_kernel(
-        name="element_wise_op",
-        input_names=["input", "scale_value"],
-        output_names=["output"],
-        source=source
-    )
-    
-    # Pass scalar as array
-    scale_arr = mx.array(2.0, dtype=input.dtype)
-    result = kernel(
-        inputs=[input, scale_arr],
-        template=[("T", input.dtype)],
-        output_shapes=[input.shape],
-        output_dtypes=[input.dtype],
-        grid=(input.size, 1, 1),
-        threadgroup=(256, 1, 1)
-    )[0]
-    ```
-    
-    **2. WORKING Matrix Operation Kernel Pattern:**
-    ```python
-    # Template for matrix operations
-    source = """
-        uint tid = thread_position_in_grid.x;
-        uint batch = tid / (seq_len * head_dim);
-        uint remainder = tid % (seq_len * head_dim);
-        uint seq_idx = remainder / head_dim;
-        uint dim_idx = remainder % head_dim;
+    def evolved_scaled_dot_product_attention(q, k, v, scale=1.0, mask=None):
+        sequence_length = q.shape[2]
         
-        if (batch >= batch_size || seq_idx >= seq_len || dim_idx >= head_dim) {
-            return;
-        }
+        if sequence_length < 512:
+            # SHORT SEQUENCES: Use optimal implementation (DON'T TOUCH)
+            return mx.fast.scaled_dot_product_attention(q, k, v, scale=scale, mask=mask)
+        else:
+            # LONG SEQUENCES: Use block diagonal attention (EVOLVE THIS!)
+            return block_diagonal_attention(q, k, v, scale=scale, mask=mask)
+    ```
+    
+    🎯 **EVOLUTION TARGETS** (focus on block_diagonal_attention function):
+    
+    **1. BLOCK PATTERN DISCOVERY** (HIGH PRIORITY):
+    ```python
+    # Current: Fixed 128-size blocks
+    base_block_size = 128
+    
+    # Evolution opportunities:
+    # - Adaptive block sizing based on content
+    # - Hierarchical attention (blocks of blocks)
+    # - Sparse block patterns (skip empty regions)
+    # - Sliding window blocks with overlap
+    # - Content-aware block boundaries
+    ```
+    
+    **2. CUSTOM METAL KERNELS** (MEDIUM PRIORITY):
+    ```python
+    # Evolution target: Efficient block attention kernels
+    source = """
+        // Block-wise attention computation
+        uint block_id = thread_position_in_grid.x;
+        uint thread_in_block = thread_position_in_grid.y;
         
-        // Simple operation - can be evolved to more complex
-        uint idx = batch * seq_len * head_dim + seq_idx * head_dim + dim_idx;
-        output[idx] = input[idx] * T(2.0);
+        // Optimize memory access for block patterns
+        // Implement tiled computation within blocks
+        // Use threadgroup memory for block data sharing
+        // Vectorize operations within blocks
     """
     ```
     
-    🎯 **INCREMENTAL EVOLUTION STRATEGY:**
+    **3. ALGORITHMIC INNOVATIONS** (HIGH IMPACT):
+    - **Sparse Block Attention**: Skip computation for low-attention blocks
+    - **Hierarchical Blocks**: Multi-level attention (document → paragraph → sentence)
+    - **Adaptive Patterns**: Change block strategy based on input characteristics
+    - **Memory-Efficient Streaming**: Process very long sequences in chunks
+    - **Inter-Block Communication**: Limited attention between neighboring blocks
     
-    **Phase 1 - Element-wise Operations (START HERE):**
-    - Optimize scaling: `q * scale` → custom kernel
-    - Optimize masking: `scores + mask` → custom kernel  
-    - Optimize activation: Replace mx.softmax with custom kernel
+    🚨 **CRITICAL CONSTRAINTS**:
     
-    **Phase 2 - Simple Matrix Operations:**
-    - Custom transpose operations
-    - Element-wise matrix operations
-    - Simple reductions
-    
-    **Phase 3 - Complex Operations:**
-    - Custom matrix multiplication kernels
-    - Fused scale+matmul operations
-    - Fused softmax operations
-    
-    **Phase 4 - Full Fusion:**
-    - Fused attention kernels
-    - Memory optimization
-    - Advanced vectorization
-    
-    🛠️ **WORKING KERNEL EXAMPLES TO BUILD FROM:**
-    
-    **Custom Scaling Kernel (WORKS):**
+    **DON'T BREAK THE HYBRID SYSTEM**:
     ```python
-    def create_scaling_kernel():
+    # ✅ KEEP THIS EXACTLY AS IS (for sequences < 512):
+    if sequence_length < 512:
+        return mx.fast.scaled_dot_product_attention(q, k, v, scale=scale, mask=mask)
+    
+    # 🎯 EVOLVE THIS (for sequences ≥ 512):
+    else:
+        return block_diagonal_attention(q, k, v, scale=scale, mask=mask)
+    ```
+    
+    **PRESERVE ROBUSTNESS**:
+    ```python
+    # Always include fallback error handling
+    try:
+        # Custom block diagonal implementation
+        return advanced_block_attention(q, k, v, scale, mask)
+    except Exception as e:
+        # Fallback to simple block processing
+        return simple_block_fallback(q, k, v, scale, mask)
+    ```
+    
+    🛠️ **EVOLUTION STRATEGIES**:
+    
+    **Phase 1 - Block Size Optimization**:
+    ```python
+    # Evolve from fixed blocks to adaptive sizing
+    def analyze_attention_patterns(q, k, v):
+        # Discover optimal block sizes for different content types
+        # Return adaptive block sizing strategy
+        
+    def adaptive_block_sizes(q, k, content_analysis):
+        # Variable block sizes based on content density
+        # Larger blocks for uniform content, smaller for complex regions
+    ```
+    
+    **Phase 2 - Sparse Block Patterns**:
+    ```python
+    # Skip computation for blocks with low attention scores
+    def sparse_block_selection(q, k, v):
+        # Quick attention estimation to identify important blocks
+        # Skip or use approximate attention for unimportant blocks
+        
+    def hierarchical_attention(q, k, v):
+        # First pass: block-level attention scores
+        # Second pass: detailed attention within important blocks
+    ```
+    
+    **Phase 3 - Custom Block Kernels**:
+    ```python
+    # Implement Metal kernels optimized for block patterns
+    def create_block_attention_kernel():
         source = """
-            uint elem = thread_position_in_grid.x;
-            if (elem >= q_shape[0] * q_shape[1] * q_shape[2] * q_shape[3]) {
-                return;
-            }
-            out[elem] = q[elem] * scale_val;
+            // Efficient block diagonal attention computation
+            // Optimized memory access patterns for blocks
+            // Vectorized operations within blocks
+            // Threadgroup memory for block data sharing
         """
-        return mx.fast.metal_kernel(
-            name="scale_query",
-            input_names=["q", "scale_val"],
-            output_names=["out"], 
-            source=source
-        )
     ```
     
-    **Custom Element-wise Add Kernel (for masks):**
+    **Phase 4 - Advanced Patterns**:
     ```python
-    def create_mask_add_kernel():
-        source = """
-            uint elem = thread_position_in_grid.x;
-            if (elem >= scores_shape[0] * scores_shape[1] * scores_shape[2] * scores_shape[3]) {
-                return;
-            }
-            out[elem] = scores[elem] + mask[elem];
-        """
-        return mx.fast.metal_kernel(
-            name="add_mask",
-            input_names=["scores", "mask"],
-            output_names=["out"],
-            source=source
-        )
+    # Discover novel attention architectures
+    # - Sliding window with memory
+    # - Graph-based attention patterns  
+    # - Learned sparse attention masks
+    # - Multi-resolution attention hierarchies
     ```
     
-    📈 **EVOLUTION PRIORITIES (DO THESE IN ORDER):**
+    📊 **SUCCESS METRICS**:
     
-    1. **Replace simple operations first** (scaling, masking)
-    2. **Add more complex element-wise operations** (ReLU, exp)
-    3. **Implement simple matrix operations** (transpose, broadcast)
-    4. **Build up to matrix multiplication** (small tile sizes first)
-    5. **Optimize memory access patterns** (coalescing, vectorization)
-    6. **Fuse operations together** (scale+matmul, softmax+matmul)
+    **Functionality** (Most Important):
+    - Can process 2K+ token sequences without out-of-memory
+    - Can process 4K+ token sequences (stretch goal)
+    - Maintains reasonable attention quality within blocks
     
-    🚫 **CRITICAL ERRORS TO AVOID:**
+    **Efficiency** (Important):
+    - Linear or sub-quadratic scaling with sequence length
+    - Memory usage doesn't explode with long sequences
+    - Execution time reasonable for long sequences (< 10s for 2K tokens)
     
-    **Syntax Errors:**
-    - Never use `//` comments in Python code (outside source strings)
-    - Never mix C++ and Python syntax
-    - Never use invalid Python variable names or literals
+    **Quality** (Acceptable Trade-off):
+    - Perfect accuracy for short sequences (< 512) via hybrid system
+    - Good attention quality for long sequences (some degradation acceptable)
+    - Graceful quality degradation as sequences get longer
     
-    **API Errors:**
-    - Never access non-existent array attributes (.strides, .data_ptr)
-    - Never pass invalid parameters to kernel calls
-    - Always check kernel parameter validity
+    🎲 **EVOLUTIONARY CREATIVITY**:
     
-    **Logic Errors:**
-    - Always check array bounds in Metal kernels
-    - Never assume specific memory layouts
-    - Always handle edge cases (small sequences, odd dimensions)
+    **Novel Block Patterns to Explore**:
+    - **Pyramid Blocks**: Increasing block sizes toward sequence end
+    - **Attention-Guided Blocks**: Block boundaries based on attention patterns
+    - **Sparse Diagonal**: Only compute attention for high-importance block pairs
+    - **Sliding Window Blocks**: Overlapping blocks with shared computation
+    - **Hierarchical Decomposition**: Recursive block subdivision
     
-    **Performance Errors:**
-    - Start simple before optimizing
-    - Don't try to fuse everything at once
-    - Test each optimization incrementally
+    **Inspiration from Other Domains**:
+    - **Image Processing**: Tile-based algorithms for large images
+    - **Graph Algorithms**: Sparse matrix computation techniques
+    - **Database Systems**: Block-based storage and indexing
+    - **Streaming Algorithms**: Processing data larger than memory
     
-    🎯 **SUCCESS CRITERIA:**
-    - Code must compile and run without errors
-    - Must maintain numerical accuracy (MSE < 1e-6)
-    - Incremental performance improvements
-    - Gradual replacement of reference operations
+    🚫 **AVOID THESE MISTAKES**:
     
-    **EXAMPLE EVOLUTION PATH:**
+    **Don't break the hybrid dispatcher**:
     ```python
-    # Step 1: Replace q * scale with Metal kernel
-    q_scaled = custom_scale_kernel(q, scale)  # ✅ Working
+    # ❌ WRONG - breaks short sequence optimization
+    def evolved_scaled_dot_product_attention(q, k, v, scale=1.0, mask=None):
+        return always_use_custom_implementation(q, k, v, scale, mask)
     
-    # Step 2: Replace score masking
-    masked_scores = custom_mask_kernel(scores, mask)  # Next target
-    
-    # Step 3: Replace matrix operations
-    scores = custom_matmul_kernel(q_scaled, k_transposed)  # Future target
-    
-    # Step 4: Fused operations
-    attention_out = fused_attention_kernel(q, k, v, scale, mask)  # End goal
+    # ✅ CORRECT - maintains hybrid approach
+    def evolved_scaled_dot_product_attention(q, k, v, scale=1.0, mask=None):
+        if q.shape[2] < 512:
+            return mx.fast.scaled_dot_product_attention(q, k, v, scale=scale, mask=mask)
+        else:
+            return block_diagonal_attention(q, k, v, scale=scale, mask=mask)
     ```
     
-    Start with the working scaling kernel and incrementally build complexity!
+    **Don't optimize micro-details too early**:
+    - Focus on discovering effective block patterns first
+    - Optimize kernels and performance after patterns work
+    - Algorithm discovery > micro-optimization
+    
+    **Don't sacrifice robustness**:
+    - Always include fallback error handling
+    - Test with various sequence lengths and configurations
+    - Ensure graceful degradation for edge cases
+    
+    🎯 **EXAMPLE EVOLUTION DIRECTION**:
+    
+    ```python
+    def block_diagonal_attention(q, k, v, scale=1.0, mask=None):
+        # EVOLUTION STEP 1: Adaptive block sizing
+        content_analysis = analyze_attention_patterns(q, k, v)
+        block_sizes = adaptive_block_sizes(q, content_analysis)
+        
+        # EVOLUTION STEP 2: Sparse block selection
+        important_blocks = sparse_block_selection(q, k, v, block_sizes)
+        
+        # EVOLUTION STEP 3: Efficient block computation
+        block_outputs = []
+        for block_info in important_blocks:
+            if block_info.importance > threshold:
+                # High-quality attention for important blocks
+                output = detailed_block_attention(q, k, v, block_info)
+            else:
+                # Approximate attention for less important blocks
+                output = approximate_block_attention(q, k, v, block_info)
+            block_outputs.append(output)
+        
+        # EVOLUTION STEP 4: Combine block outputs
+        return combine_block_outputs(block_outputs, original_shape=q.shape)
+    ```
+    
+    **Remember**: You're discovering new attention algorithms, not just optimizing existing ones!
+    This is about algorithmic breakthrough, not micro-optimization.
+    
+    Focus on making the impossible possible: processing 4K+ token sequences efficiently.
   
-  num_top_programs: 5
-  num_diverse_programs: 3
+  num_top_programs: 6
+  num_diverse_programs: 4
   use_template_stochasticity: true
 
-# Database configuration - Tuned for incremental evolution
+# Database configuration - Optimized for algorithm discovery
 database:
   db_path: "./openevolve_output/program_db" 
-  population_size: 80  # Smaller for more focused search
-  archive_size: 30
-  num_islands: 4
-  elite_selection_ratio: 0.2  # Higher to preserve working solutions
-  exploitation_ratio: 0.7     # Higher to build on working kernels
-  exploration_ratio: 0.1      # Lower to avoid breaking working parts
+  population_size: 100  # Larger for diverse algorithm exploration
+  archive_size: 40
+  num_islands: 5
+  elite_selection_ratio: 0.15  # Lower to encourage more exploration
+  exploitation_ratio: 0.6      # Balanced for algorithm discovery
+  exploration_ratio: 0.25     # Higher for novel pattern discovery
 
-# Evaluator configuration
+# Evaluator configuration - Focused on long sequence capabilities
 evaluator:
-  timeout: 600  # Reasonable timeout for simple kernels
+  timeout: 900  # Longer timeout for long sequence processing
   cascade_evaluation: true
-  cascade_thresholds: [0.8, 0.9]  
-  parallel_evaluations: 2  
+  cascade_thresholds: [0.6, 0.8]  # Lower first threshold for experimental algorithms
+  parallel_evaluations: 1  
   use_llm_feedback: false
 
-# Evolution settings
+# Evolution settings - Optimized for algorithmic discovery
 diff_based_evolution: true
-allow_full_rewrites: false
-max_code_length: 30000  # Reasonable for incremental changes
+allow_full_rewrites: false  # Preserve hybrid system architecture
+max_code_length: 40000     # Allow for complex block attention implementations
