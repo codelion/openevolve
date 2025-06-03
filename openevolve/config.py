@@ -43,9 +43,7 @@ class LLMConfig(LLMModelConfig):
     name: str = "gpt-4o"
 
     # Generation parameters
-    system_message: Optional[str] = (
-        "You are an expert coder helping to improve programs through evolution."
-    )
+    system_message: Optional[str] = "system_message"
     temperature: float = 0.7
     top_p: float = 0.95
     max_tokens: int = 4096
@@ -116,8 +114,8 @@ class PromptConfig:
     """Configuration for prompt generation"""
 
     template_dir: Optional[str] = None
-    system_message: str = "You are an expert coder helping to improve programs through evolution."
-    evaluator_system_message: str = """You are an expert code reviewer."""
+    system_message: str = "system_message"
+    evaluator_system_message: str = "evaluator_system_message"
 
     # Number of examples to include in the prompt
     num_top_programs: int = 3
