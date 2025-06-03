@@ -1,5 +1,5 @@
 """
-Two-Stage Evaluator for MLX Block Diagonal Attention Optimization
+Robust Two-Stage Evaluator for MLX Block Diagonal Attention Optimization
 
 STAGE 1: Correctness & Compatibility Gate
 - Ensures evolved programs produce correct outputs
@@ -20,7 +20,7 @@ import importlib.util
 import math
 import time
 import traceback
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 import gc
 
 import mlx.core as mx
@@ -28,6 +28,46 @@ import numpy as np
 
 # Import benchmark utilities
 from spda_benchmark import prepare_inputs, mlx_ref_attn, mlx_fused_attn, do_attention, bench
+
+
+def safe_format_percentage(value, fallback="N/A%"):
+    """
+    Safely format a value as a percentage.
+    
+    Args:
+        value: Value to format as percentage (should be between 0 and 1)
+        fallback: Fallback string if formatting fails
+        
+    Returns:
+        Formatted percentage string
+    """
+    try:
+        if isinstance(value, (int, float)) and not math.isnan(value) and not math.isinf(value):
+            return f"{value:.1%}"
+        else:
+            return fallback
+    except (ValueError, TypeError):
+        return fallback
+
+
+def safe_format_number(value: Union[float, int, str], format_spec: str = ".3f", fallback: str = "N/A") -> str:
+    """
+    Safely format a number with fallback for non-numeric values.
+    This prevents "Unknown format code 'f' for object of type 'str'" errors.
+    """
+    try:
+        if isinstance(value, (int, float)) and not math.isnan(value) and not math.isinf(value):
+            return f"{value:{format_spec}}"
+        elif value == float("inf"):
+            return "∞"
+        elif value == float("-inf"):
+            return "-∞" 
+        elif isinstance(value, float) and math.isnan(value):
+            return "NaN"
+        else:
+            return str(value) if value is not None else fallback
+    except (ValueError, TypeError):
+        return fallback
 
 
 def create_stage1_test_configurations() -> List[Dict]:
@@ -141,45 +181,59 @@ def create_stage2_performance_configurations() -> List[Dict]:
 def compare_attention_outputs(output1: mx.array, output2: mx.array, tolerance: float = 1e-3) -> Dict[str, float]:
     """
     Compare two attention outputs with appropriate tolerance.
-    Enhanced version from original evaluator.
+    Enhanced version with robust error handling.
     """
-    # Ensure arrays are evaluated
-    output1 = mx.array(output1)
-    output2 = mx.array(output2)
-    mx.eval(output1, output2)
+    try:
+        # Ensure arrays are evaluated
+        output1 = mx.array(output1)
+        output2 = mx.array(output2)
+        mx.eval(output1, output2)
 
-    # Calculate various similarity metrics
-    diff = output1 - output2
-    mse = float(mx.mean(diff**2))
-    mae = float(mx.mean(mx.abs(diff)))
-    max_diff = float(mx.max(mx.abs(diff)))
+        # Calculate various similarity metrics
+        diff = output1 - output2
+        mse = float(mx.mean(diff**2))
+        mae = float(mx.mean(mx.abs(diff)))
+        max_diff = float(mx.max(mx.abs(diff)))
 
-    # Relative error (normalized by output magnitude)
-    output1_norm = float(mx.sqrt(mx.mean(output1**2)))
-    relative_error = float(mx.sqrt(mx.mean(diff**2))) / max(output1_norm, 1e-8)
+        # Relative error (normalized by output magnitude)
+        output1_norm = float(mx.sqrt(mx.mean(output1**2)))
+        relative_error = float(mx.sqrt(mx.mean(diff**2))) / max(output1_norm, 1e-8)
 
-    # Check MLX's allclose function
-    allclose_result = bool(mx.allclose(output1, output2, atol=tolerance, rtol=tolerance))
-    
-    # Additional robust check: if MSE is extremely small, consider it a match
-    mse_perfect = mse < 1e-8
-    
-    # Final decision: either allclose passes OR MSE is extremely small
-    final_allclose = allclose_result or mse_perfect
+        # Check MLX's allclose function
+        allclose_result = bool(mx.allclose(output1, output2, atol=tolerance, rtol=tolerance))
+        
+        # Additional robust check: if MSE is extremely small, consider it a match
+        mse_perfect = mse < 1e-8
+        
+        # Final decision: either allclose passes OR MSE is extremely small
+        final_allclose = allclose_result or mse_perfect
 
-    return {
-        "mse": mse,
-        "mae": mae,
-        "max_diff": max_diff,
-        "relative_error": relative_error,
-        "allclose": final_allclose,
-        "allclose_strict": allclose_result,
-        "mse_perfect": mse_perfect,
-        "tolerance_used": tolerance,
-    }
+        return {
+            "mse": mse,
+            "mae": mae,
+            "max_diff": max_diff,
+            "relative_error": relative_error,
+            "allclose": final_allclose,
+            "allclose_strict": allclose_result,
+            "mse_perfect": mse_perfect,
+            "tolerance_used": tolerance,
+        }
+    except Exception as e:
+        # Fallback values if comparison fails
+        return {
+            "mse": float("inf"),
+            "mae": float("inf"),
+            "max_diff": float("inf"),
+            "relative_error": float("inf"),
+            "allclose": False,
+            "allclose_strict": False,
+            "mse_perfect": False,
+            "tolerance_used": tolerance,
+            "comparison_error": str(e),
+        }
 
 
-def evaluate_stage1_correctness(evolved_attention_fn, config: Dict) -> Dict[str, float]:
+def evaluate_stage1_correctness(evolved_attention_fn, config: Dict) -> Dict[str, Union[bool, float, str]]:
     """
     Stage 1: Test correctness with category-appropriate tolerances.
     
@@ -244,7 +298,7 @@ def evaluate_stage1_correctness(evolved_attention_fn, config: Dict) -> Dict[str,
         # For shorter sequences, compute reference for comparison
         try:
             reference_output = mlx_ref_attn(q, k, v, scale=scale, mask=mask)
-        except Exception:
+        except Exception as ref_error:
             # Reference failed, check structural validity only
             has_nan = bool(mx.any(mx.isnan(evolved_output)))
             has_inf = bool(mx.any(mx.isinf(evolved_output)))
@@ -258,7 +312,7 @@ def evaluate_stage1_correctness(evolved_attention_fn, config: Dict) -> Dict[str,
                 "tolerance_used": tolerance,
                 "category": category,
                 "reference_computed": False,
-                "reference_error": "Reference computation failed",
+                "reference_error": str(ref_error),
             }
 
         # Compare outputs with category-appropriate tolerance
@@ -293,7 +347,7 @@ def evaluate_stage1_correctness(evolved_attention_fn, config: Dict) -> Dict[str,
         }
 
 
-def benchmark_performance(evolved_fn, config: Dict, num_trials: int = 3) -> Dict[str, float]:
+def benchmark_performance(evolved_fn, config: Dict, num_trials: int = 3) -> Dict[str, Union[float, str]]:
     """
     Stage 2: Benchmark performance vs mx.fast.scaled_dot_product_attention.
     """
@@ -388,7 +442,7 @@ def benchmark_performance(evolved_fn, config: Dict, num_trials: int = 3) -> Dict
         return {"speedup": 0.0, "performance_score": 0.0, "error": str(e)}
 
 
-def evaluate_two_stage(program_path: str) -> Dict[str, float]:
+def evaluate_two_stage(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
     """
     Two-stage evaluation: Correctness gate + Performance optimization.
     """
@@ -431,19 +485,25 @@ def evaluate_two_stage(program_path: str) -> Dict[str, float]:
             if result["passed"]:
                 stage1_passed_count += 1
                 mse_val = result.get('mse', 'N/A')
-                if isinstance(mse_val, (int, float)) and not math.isnan(mse_val) and not math.isinf(mse_val):
-                    mse_str = f"{mse_val:.2e}"
-                else:
-                    mse_str = str(mse_val)
+                mse_str = safe_format_number(mse_val, ".2e")
                 print(f"    ✅ PASSED: MSE={mse_str}")
             else:
-                print(f"    ❌ FAILED: {result.get('error', 'Accuracy/structure issue')}")
+                error_msg = result.get('error', 'Accuracy/structure issue')
+                print(f"    ❌ FAILED: {error_msg}")
         
-        stage1_pass_rate = stage1_passed_count / len(stage1_configs)
+        # Safe calculation of stage1_pass_rate to prevent division errors
+        try:
+            stage1_pass_rate = stage1_passed_count / len(stage1_configs) if len(stage1_configs) > 0 else 0.0
+        except (TypeError, ZeroDivisionError):
+            stage1_pass_rate = 0.0
+            
         stage1_passed = stage1_pass_rate >= 0.9  # 90% pass rate required
         
+        # Safe formatting for stage1_pass_rate
+        stage1_pass_rate_str = safe_format_percentage(stage1_pass_rate)
+        
         print(f"\n📊 STAGE 1 Results:")
-        print(f"  Passed: {stage1_passed_count}/{len(stage1_configs)} ({stage1_pass_rate:.1%})")
+        print(f"  Passed: {stage1_passed_count}/{len(stage1_configs)} ({stage1_pass_rate_str})")
         print(f"  Gate Status: {'✅ PASSED' if stage1_passed else '❌ FAILED'}")
         
         if not stage1_passed:
@@ -484,41 +544,44 @@ def evaluate_two_stage(program_path: str) -> Dict[str, float]:
                 "weighted_score": weighted_score,
             })
             
-            # Safe formatting for speedup
-            if isinstance(speedup, (int, float)) and not math.isnan(speedup) and not math.isinf(speedup):
-                speedup_str = f"{speedup:.2f}"
-            elif speedup == float("inf"):
-                speedup_str = "∞"
-            else:
-                speedup_str = str(speedup)
-                
-            if isinstance(perf_score, (int, float)) and not math.isnan(perf_score) and not math.isinf(perf_score):
-                perf_str = f"{perf_score:.3f}"
-            else:
-                perf_str = str(perf_score)
+            # Safe formatting for speedup and performance score
+            speedup_str = safe_format_number(speedup, ".2f")
+            perf_str = safe_format_number(perf_score, ".3f")
                 
             print(f"    📊 Speedup: {speedup_str}x, Score: {perf_str}")
         
-        stage2_score = total_weighted_score / total_weight if total_weight > 0 else 0.0
-        
+        # Safe calculation of stage2_score to prevent division errors
+        try:
+            stage2_score = total_weighted_score / total_weight if total_weight > 0 else 0.0
+        except (TypeError, ZeroDivisionError):
+            stage2_score = 0.0
+            
         # Calculate overall score (Stage 1 gate + Stage 2 performance)
         overall_score = stage2_score  # Since Stage 1 is just a gate
         
-        # Detailed performance analysis
-        speedups = [r["benchmark"]["speedup"] for r in stage2_results 
-                   if isinstance(r["benchmark"]["speedup"], (int, float)) and 
-                   r["benchmark"]["speedup"] != float("inf") and 
-                   not math.isnan(r["benchmark"]["speedup"])]
-        avg_speedup = np.mean(speedups) if speedups else 0.0
-        max_speedup = max(speedups) if speedups else 0.0
+        # Detailed performance analysis with safe operations
+        speedups = []
+        for r in stage2_results:
+            speedup_val = r["benchmark"]["speedup"]
+            if (isinstance(speedup_val, (int, float)) and 
+                speedup_val != float("inf") and 
+                not math.isnan(speedup_val)):
+                speedups.append(speedup_val)
+                
+        try:
+            avg_speedup = np.mean(speedups) if speedups else 0.0
+            max_speedup = max(speedups) if speedups else 0.0
+        except (TypeError, ValueError):
+            avg_speedup = 0.0
+            max_speedup = 0.0
         
         print(f"\n📈 STAGE 2 Results:")
         
-        # Safe formatting
-        stage2_str = f"{stage2_score:.3f}" if isinstance(stage2_score, (int, float)) else str(stage2_score)
-        avg_speedup_str = f"{avg_speedup:.2f}" if isinstance(avg_speedup, (int, float)) else str(avg_speedup)
-        max_speedup_str = f"{max_speedup:.2f}" if isinstance(max_speedup, (int, float)) else str(max_speedup)
-        overall_str = f"{overall_score:.3f}" if isinstance(overall_score, (int, float)) else str(overall_score)
+        # Safe formatting for final results
+        stage2_str = safe_format_number(stage2_score, ".3f")
+        avg_speedup_str = safe_format_number(avg_speedup, ".2f")
+        max_speedup_str = safe_format_number(max_speedup, ".2f")
+        overall_str = safe_format_number(overall_score, ".3f")
         
         print(f"  Performance Score: {stage2_str}")
         print(f"  Average Speedup: {avg_speedup_str}x")
@@ -538,18 +601,32 @@ def evaluate_two_stage(program_path: str) -> Dict[str, float]:
         else:
             print(f"  ❌ POOR: Need significant optimization")
         
+        # Ensure all return values are safe numeric types
+        try:
+            safe_stage1_pass_rate = float(stage1_pass_rate) if isinstance(stage1_pass_rate, (int, float)) else 0.0
+            safe_stage2_score = float(stage2_score) if isinstance(stage2_score, (int, float)) else 0.0
+            safe_overall_score = float(overall_score) if isinstance(overall_score, (int, float)) else 0.0
+            safe_avg_speedup = float(avg_speedup) if isinstance(avg_speedup, (int, float)) else 0.0
+            safe_max_speedup = float(max_speedup) if isinstance(max_speedup, (int, float)) else 0.0
+        except (TypeError, ValueError):
+            safe_stage1_pass_rate = 0.0
+            safe_stage2_score = 0.0
+            safe_overall_score = 0.0
+            safe_avg_speedup = 0.0
+            safe_max_speedup = 0.0
+            
         return {
             # Gate results
             "stage1_passed": stage1_passed,
-            "stage1_pass_rate": stage1_pass_rate,
+            "stage1_pass_rate": safe_stage1_pass_rate,
             
             # Performance results
-            "stage2_score": float(stage2_score),
-            "overall_score": float(overall_score),
+            "stage2_score": safe_stage2_score,
+            "overall_score": safe_overall_score,
             
             # Detailed metrics
-            "avg_speedup": float(avg_speedup),
-            "max_speedup": float(max_speedup),
+            "avg_speedup": safe_avg_speedup,
+            "max_speedup": safe_max_speedup,
             "num_stage1_tests": len(stage1_configs),
             "num_stage2_tests": len(stage2_configs),
         }
@@ -565,16 +642,31 @@ def evaluate_two_stage(program_path: str) -> Dict[str, float]:
         }
 
 
-def evaluate(program_path: str) -> Dict[str, float]:
+def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
     """
     Main evaluation function - Two-stage: Correctness gate + Performance.
+    Includes comprehensive error handling to prevent formatting errors.
     """
-    return evaluate_two_stage(program_path)
+    try:
+        return evaluate_two_stage(program_path)
+    except Exception as e:
+        # Catch ANY error (including formatting errors) and return safe fallback
+        error_msg = str(e)
+        print(f"❌ Evaluation failed with error: {error_msg}")
+        
+        # Return safe fallback metrics
+        return {
+            "stage1_passed": False,
+            "stage2_score": 0.0,
+            "overall_score": 0.0,
+            "error": error_msg,
+            "failed_at": "evaluation_error",
+        }
 
 
 if __name__ == "__main__":
     # Test the two-stage evaluator
-    print("Testing Two-Stage Evaluator...")
+    print("Testing Robust Two-Stage Evaluator...")
     import os
 
     initial_program_path = os.path.join(os.path.dirname(__file__), "initial_program.py")
@@ -584,7 +676,8 @@ if __name__ == "__main__":
         print("\nTwo-Stage Evaluation Results:")
         for k, v in results.items():
             if isinstance(v, (int, float)):
-                print(f"  {k}: {v:.4f}")
+                formatted_v = safe_format_number(v, ".4f")
+                print(f"  {k}: {formatted_v}")
             else:
                 print(f"  {k}: {v}")
     else:
