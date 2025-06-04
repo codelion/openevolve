@@ -344,7 +344,6 @@ class Evaluator:
 
             except Exception as e:
                 logger.warning(f"Error parsing LLM response: {str(e)}")
-                traceback.print_exc()
                 return {}
 
         except Exception as e:
