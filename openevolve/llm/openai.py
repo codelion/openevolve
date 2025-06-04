@@ -20,26 +20,31 @@ class OpenAILLM(LLMInterface):
 
     def __init__(
         self,
-        config: LLMConfig,
-        model: Optional[str] = None,
+        model_cfg: Optional[dict] = None,
     ):
-        self.config = config
-        self.model = model or config.primary_model
+        self.model = model_cfg.name
+        self.system_message = model_cfg.system_message
+        self.temperature = model_cfg.temperature
+        self.top_p = model_cfg.top_p
+        self.max_tokens = model_cfg.max_tokens
+        self.timeout = model_cfg.timeout
+        self.retries = model_cfg.retries
+        self.retry_delay = model_cfg.retry_delay
+        self.api_base = model_cfg.api_base
+        self.api_key = model_cfg.api_key
 
         # Set up API client
         self.client = openai.OpenAI(
-            api_key=config.api_key,
-            base_url=config.api_base,
+            api_key=self.api_key,
+            base_url=self.api_base,
         )
 
         logger.info(f"Initialized OpenAI LLM with model: {self.model}")
 
     async def generate(self, prompt: str, **kwargs) -> str:
         """Generate text from a prompt"""
-        # Use default system message if not provided in kwargs
-        system_message = kwargs.pop("system_message", "You are a helpful assistant.")
         return await self.generate_with_context(
-            system_message=system_message,
+            system_message=self.system_message,
             messages=[{"role": "user", "content": prompt}],
             **kwargs,
         )
@@ -53,28 +58,26 @@ class OpenAILLM(LLMInterface):
         formatted_messages.extend(messages)
 
         # Set up generation parameters
-        if self.config.api_base == "https://api.openai.com/v1" and str(
-            self.model
-        ).lower().startswith("o"):
+        if self.api_base == "https://api.openai.com/v1" and str(self.model).lower().startswith("o"):
             # For o-series models
             params = {
                 "model": self.model,
                 "messages": formatted_messages,
-                "max_completion_tokens": kwargs.get("max_tokens", self.config.max_tokens),
+                "max_completion_tokens": kwargs.get("max_tokens", self.max_tokens),
             }
         else:
             params = {
                 "model": self.model,
                 "messages": formatted_messages,
-                "temperature": kwargs.get("temperature", self.config.temperature),
-                "top_p": kwargs.get("top_p", self.config.top_p),
-                "max_tokens": kwargs.get("max_tokens", self.config.max_tokens),
+                "temperature": kwargs.get("temperature", self.temperature),
+                "top_p": kwargs.get("top_p", self.top_p),
+                "max_tokens": kwargs.get("max_tokens", self.max_tokens),
             }
 
         # Attempt the API call with retries
-        retries = kwargs.get("retries", self.config.retries)
-        retry_delay = kwargs.get("retry_delay", self.config.retry_delay)
-        timeout = kwargs.get("timeout", self.config.timeout)
+        retries = kwargs.get("retries", self.retries)
+        retry_delay = kwargs.get("retry_delay", self.retry_delay)
+        timeout = kwargs.get("timeout", self.timeout)
 
         for attempt in range(retries + 1):
             try:
@@ -104,6 +107,4 @@ class OpenAILLM(LLMInterface):
         response = await loop.run_in_executor(
             None, lambda: self.client.chat.completions.create(**params)
         )
-
-        # Extract the response content
         return response.choices[0].message.content

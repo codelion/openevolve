@@ -1,0 +1,48 @@
+max_iterations: 1
+checkpoint_interval: 10
+log_level: "INFO"
+
+# LLM configuration
+llm:
+  primary_model: "gemma3:12b-it-qat"
+  #primary_model: "gpt-4o"
+  primary_model_weight: 0.8
+  secondary_model: "gemma3:12b-it-qat"
+  #secondary_model: "gpt-4.1"
+  secondary_model_weight: 0.2
+  # api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
+  # api_base: "https://api.openai.com/v1/"
+  api_base: "http://localhost:11434/v1/"
+  api_key: "ollama"
+  temperature: 0.7
+  top_p: 0.95
+  max_tokens: 4096
+
+# Prompt configuration
+prompt:
+  num_top_programs: 3
+  use_template_stochasticity: true
+  # System prompt is created dynamically during the benchmark in file system_message.txt!
+  template_dir: "examples/lm_eval/prompts"
+
+# Database configuration
+database:
+  population_size: 50
+  archive_size: 20
+  num_islands: 3
+  elite_selection_ratio: 0.2
+  exploitation_ratio: 0.7
+
+# Evaluator configuration
+evaluator:
+  timeout: 60
+  cascade_evaluation: false
+  cascade_thresholds: [0.5, 0.75]
+  parallel_evaluations: 4
+  use_llm_feedback: true
+  llm_feedback_weight: 1.0
+
+
+# Evolution settings
+diff_based_evolution: false
+allow_full_rewrites: true

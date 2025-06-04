@@ -11,22 +11,39 @@ import yaml
 
 
 @dataclass
-class LLMConfig:
+class LLMModelConfig:
+    """Configuration for a single LLM model"""
+
+    # API configuration
+    api_base: str = None
+    api_key: Optional[str] = None
+    name: str = None
+
+    # Weight for model in ensemble
+    weight: float = 1.0
+
+    # Generation parameters
+    system_message: Optional[str] = None
+    temperature: float = None
+    top_p: float = None
+    max_tokens: int = None
+
+    # Request parameters
+    timeout: int = None
+    retries: int = None
+    retry_delay: int = None
+
+
+@dataclass
+class LLMConfig(LLMModelConfig):
     """Configuration for LLM models"""
-
-    # Primary model
-    primary_model: str = "gemini-2.0-flash-lite"
-    primary_model_weight: float = 0.8
-
-    # Secondary model
-    secondary_model: str = "gemini-2.0-flash"
-    secondary_model_weight: float = 0.2
 
     # API configuration
     api_base: str = "https://api.openai.com/v1"
-    api_key: Optional[str] = None
+    name: str = "gpt-4o"
 
     # Generation parameters
+    system_message: Optional[str] = "system_message"
     temperature: float = 0.7
     top_p: float = 0.95
     max_tokens: int = 4096
@@ -36,13 +53,69 @@ class LLMConfig:
     retries: int = 3
     retry_delay: int = 5
 
+    # n-model configuration for evolution LLM ensemble
+    models: List[LLMModelConfig] = field(default_factory=lambda: [LLMModelConfig()])
+
+    # n-model configuration for evaluator LLM ensemble
+    evaluator_models: List[LLMModelConfig] = field(default_factory=lambda: [])
+
+    # Backwardes compatibility with primary_model(_weight) options
+    primary_model: str = "gemini-2.0-flash-lite"
+    primary_model_weight: float = 0.8
+    secondary_model: str = "gemini-2.0-flash"
+    secondary_model_weight: float = 0.2
+
+    def __post_init__(self):
+        """Post-initialization to set up model configurations"""
+        # Handle backward compatibility for primary_model(_weight) and secondary_model(_weight).
+        if (self.primary_model or self.primary_model_weight) and len(self.models) < 1:
+            # Ensure we have a primary model
+            self.models.append(LLMModelConfig())
+        if self.primary_model:
+            self.models[0].name = self.primary_model
+        if self.primary_model_weight:
+            self.models[0].weight = self.primary_model_weight
+
+        if (self.secondary_model or self.secondary_model_weight) and len(self.models) < 2:
+            # Ensure we have a second model
+            self.models.append(LLMModelConfig())
+        if self.secondary_model:
+            self.models[1].name = self.secondary_model
+        if self.secondary_model_weight:
+            self.models[1].weight = self.secondary_model_weight
+
+        # If no evaluator models are defined, use the same models as for evolution
+        if not self.evaluator_models or len(self.evaluator_models) < 1:
+            self.evaluator_models = self.models.copy()
+
+        # Update models with shared configuration values
+        shared_config = {
+            "api_base": self.api_base,
+            "api_key": self.api_key,
+            "temperature": self.temperature,
+            "top_p": self.top_p,
+            "max_tokens": self.max_tokens,
+            "timeout": self.timeout,
+            "retries": self.retries,
+            "retry_delay": self.retry_delay,
+        }
+        self.update_model_params(shared_config)
+
+    def update_model_params(self, args: Dict[str, Any], overwrite: bool = False) -> None:
+        """Update model parameters for all models"""
+        for model in self.models + self.evaluator_models:
+            for key, value in args.items():
+                if overwrite or getattr(model, key, None) is None:
+                    setattr(model, key, value)
+
 
 @dataclass
 class PromptConfig:
     """Configuration for prompt generation"""
 
     template_dir: Optional[str] = None
-    system_message: str = "You are an expert coder helping to improve programs through evolution."
+    system_message: str = "system_message"
+    evaluator_system_message: str = "evaluator_system_message"
 
     # Number of examples to include in the prompt
     num_top_programs: int = 3
@@ -170,7 +243,14 @@ class Config:
 
         # Update nested configs
         if "llm" in config_dict:
-            config.llm = LLMConfig(**config_dict["llm"])
+            llm_dict = config_dict["llm"]
+            if "models" in llm_dict:
+                llm_dict["models"] = [LLMModelConfig(**m) for m in llm_dict["models"]]
+            if "evaluator_models" in llm_dict:
+                llm_dict["evaluator_models"] = [
+                    LLMModelConfig(**m) for m in llm_dict["evaluator_models"]
+                ]
+            config.llm = LLMConfig(**llm_dict)
         if "prompt" in config_dict:
             config.prompt = PromptConfig(**config_dict["prompt"])
         if "database" in config_dict:
@@ -191,10 +271,8 @@ class Config:
             "random_seed": self.random_seed,
             # Component configurations
             "llm": {
-                "primary_model": self.llm.primary_model,
-                "primary_model_weight": self.llm.primary_model_weight,
-                "secondary_model": self.llm.secondary_model,
-                "secondary_model_weight": self.llm.secondary_model_weight,
+                "models": self.llm.models,
+                "evaluator_models": self.llm.evaluator_models,
                 "api_base": self.llm.api_base,
                 "temperature": self.llm.temperature,
                 "top_p": self.llm.top_p,
@@ -206,6 +284,7 @@ class Config:
             "prompt": {
                 "template_dir": self.prompt.template_dir,
                 "system_message": self.prompt.system_message,
+                "evaluator_system_message": self.prompt.evaluator_system_message,
                 "num_top_programs": self.prompt.num_top_programs,
                 "num_diverse_programs": self.prompt.num_diverse_programs,
                 "use_template_stochasticity": self.prompt.use_template_stochasticity,
@@ -260,16 +339,17 @@ class Config:
 def load_config(config_path: Optional[Union[str, Path]] = None) -> Config:
     """Load configuration from a YAML file or use defaults"""
     if config_path and os.path.exists(config_path):
-        return Config.from_yaml(config_path)
+        config = Config.from_yaml(config_path)
+    else:
+        config = Config()
 
-    # Use environment variables if available
-    api_key = os.environ.get("OPENAI_API_KEY")
-    api_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
+        # Use environment variables if available
+        api_key = os.environ.get("OPENAI_API_KEY")
+        api_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
 
-    config = Config()
-    if api_key:
-        config.llm.api_key = api_key
-    if api_base:
-        config.llm.api_base = api_base
+        config.llm.update_model_params({"api_key": api_key, "api_base": api_base})
+
+    # Make the system message available to the individual models, in case it is not provided from the prompt sampler
+    config.llm.update_model_params({"system_message": config.prompt.system_message})
 
     return config

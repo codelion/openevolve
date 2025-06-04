@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from openevolve.config import PromptConfig
 from openevolve.prompt.templates import TemplateManager
+from openevolve.utils.format_utils import format_metrics_safe
+from openevolve.utils.metrics_utils import safe_numeric_average
 
 logger = logging.getLogger(__name__)
 
@@ -44,16 +46,17 @@ class PromptSampler:
 
     def build_prompt(
         self,
-        current_program: str,
-        parent_program: str,
-        program_metrics: Dict[str, float],
-        previous_programs: List[Dict[str, Any]],
-        top_programs: List[Dict[str, Any]],
+        current_program: str = "",
+        parent_program: str = "",
+        program_metrics: Dict[str, float] = {},
+        previous_programs: List[Dict[str, Any]] = [],
+        top_programs: List[Dict[str, Any]] = [],
         language: str = "python",
         evolution_round: int = 0,
         allow_full_rewrite: bool = False,
         template_key: Optional[str] = None,
         program_artifacts: Optional[Dict[str, Union[str, bytes]]] = None,
+        **kwargs: Any,
     ) -> Dict[str, str]:
         """
         Build a prompt for the LLM
@@ -69,6 +72,7 @@ class PromptSampler:
             allow_full_rewrite: Whether to allow a full rewrite
             template_key: Optional override for template key
             program_artifacts: Optional artifacts from program evaluation
+            **kwargs: Additional keys to replace in the user prompt
 
         Returns:
             Dictionary with 'system' and 'user' keys
@@ -126,6 +130,7 @@ class PromptSampler:
             current_program=current_program,
             language=language,
             artifacts=artifacts_section,
+            **kwargs,
         )
 
         return {
@@ -134,8 +139,18 @@ class PromptSampler:
         }
 
     def _format_metrics(self, metrics: Dict[str, float]) -> str:
-        """Format metrics for the prompt"""
-        return "\n".join([f"- {name}: {value:.4f}" for name, value in metrics.items()])
+        """Format metrics for the prompt using safe formatting"""
+        # Use safe formatting to handle mixed numeric and string values
+        formatted_parts = []
+        for name, value in metrics.items():
+            if isinstance(value, (int, float)):
+                try:
+                    formatted_parts.append(f"- {name}: {value:.4f}")
+                except (ValueError, TypeError):
+                    formatted_parts.append(f"- {name}: {value}")
+            else:
+                formatted_parts.append(f"- {name}: {value}")
+        return "\n".join(formatted_parts)
 
     def _identify_improvement_areas(
         self,
@@ -167,10 +182,17 @@ class PromptSampler:
                 regressed = True
 
                 for attempt in recent_attempts:
-                    if attempt["metrics"].get(metric, 0) <= value:
-                        regressed = False
-                    if attempt["metrics"].get(metric, 0) >= value:
+                    attempt_value = attempt["metrics"].get(metric, 0)
+                    # Only compare if both values are numeric
+                    if isinstance(value, (int, float)) and isinstance(attempt_value, (int, float)):
+                        if attempt_value <= value:
+                            regressed = False
+                        if attempt_value >= value:
+                            improved = False
+                    else:
+                        # If either value is non-numeric, skip comparison
                         improved = False
+                        regressed = False
 
                 if improved and metric not in metrics_improved:
                     metrics_improved.append(metric)
@@ -217,24 +239,49 @@ class PromptSampler:
             attempt_number = len(previous_programs) - i
             changes = program.get("changes", "Unknown changes")
 
-            # Format performance metrics
-            performance_str = ", ".join(
-                [f"{name}: {value:.4f}" for name, value in program.get("metrics", {}).items()]
-            )
+            # Format performance metrics using safe formatting
+            performance_parts = []
+            for name, value in program.get("metrics", {}).items():
+                if isinstance(value, (int, float)):
+                    try:
+                        performance_parts.append(f"{name}: {value:.4f}")
+                    except (ValueError, TypeError):
+                        performance_parts.append(f"{name}: {value}")
+                else:
+                    performance_parts.append(f"{name}: {value}")
+            performance_str = ", ".join(performance_parts)
 
             # Determine outcome based on comparison with parent
             parent_metrics = program.get("parent_metrics", {})
             outcome = "Mixed results"
 
-            if all(
-                program.get("metrics", {}).get(m, 0) >= parent_metrics.get(m, 0)
-                for m in program.get("metrics", {})
-            ):
+            # Safely compare only numeric metrics
+            program_metrics = program.get("metrics", {})
+
+            # Check if all numeric metrics improved
+            numeric_comparisons_improved = []
+            numeric_comparisons_regressed = []
+
+            for m in program_metrics:
+                prog_value = program_metrics.get(m, 0)
+                parent_value = parent_metrics.get(m, 0)
+
+                # Only compare if both values are numeric
+                if isinstance(prog_value, (int, float)) and isinstance(parent_value, (int, float)):
+                    if prog_value >= parent_value:
+                        numeric_comparisons_improved.append(True)
+                    else:
+                        numeric_comparisons_improved.append(False)
+
+                    if prog_value <= parent_value:
+                        numeric_comparisons_regressed.append(True)
+                    else:
+                        numeric_comparisons_regressed.append(False)
+
+            # Determine outcome based on numeric comparisons
+            if numeric_comparisons_improved and all(numeric_comparisons_improved):
                 outcome = "Improvement in all metrics"
-            elif all(
-                program.get("metrics", {}).get(m, 0) <= parent_metrics.get(m, 0)
-                for m in program.get("metrics", {})
-            ):
+            elif numeric_comparisons_regressed and all(numeric_comparisons_regressed):
                 outcome = "Regression in all metrics"
 
             previous_attempts_str += (
@@ -258,18 +305,21 @@ class PromptSampler:
             if len(program_code.split("\n")) > 10:
                 program_snippet += "\n# ... (truncated for brevity)"
 
-            # Calculate a composite score
-            score = sum(program.get("metrics", {}).values()) / max(
-                1, len(program.get("metrics", {}))
-            )
+            # Calculate a composite score using safe numeric average
+            score = safe_numeric_average(program.get("metrics", {}))
 
             # Extract key features (this could be more sophisticated)
             key_features = program.get("key_features", [])
             if not key_features:
-                key_features = [
-                    f"Performs well on {name} ({value:.4f})"
-                    for name, value in program.get("metrics", {}).items()
-                ]
+                key_features = []
+                for name, value in program.get("metrics", {}).items():
+                    if isinstance(value, (int, float)):
+                        try:
+                            key_features.append(f"Performs well on {name} ({value:.4f})")
+                        except (ValueError, TypeError):
+                            key_features.append(f"Performs well on {name} ({value})")
+                    else:
+                        key_features.append(f"Performs well on {name} ({value})")
 
             key_features_str = ", ".join(key_features)
 
@@ -308,10 +358,8 @@ class PromptSampler:
                     if len(program_code.split("\n")) > 5:
                         program_snippet += "\n# ... (truncated)"
 
-                    # Calculate a composite score
-                    score = sum(program.get("metrics", {}).values()) / max(
-                        1, len(program.get("metrics", {}))
-                    )
+                    # Calculate a composite score using safe numeric average
+                    score = safe_numeric_average(program.get("metrics", {}))
 
                     # Extract key features
                     key_features = program.get("key_features", [])

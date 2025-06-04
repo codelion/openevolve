@@ -1,0 +1,24 @@
+Evaluate the following answer on a scale of 0.0 to 1.0 for the following metrics:
+1. Correctness: Is the answer factually correct?
+2. Task understanding: Did it capture the intent of the task well?
+3. Syntax: Is its syntax flawless?
+
+For each metric, provide a score between 0.0 and 1.0, where 1.0 is best.
+
+Task:
+```
+
+```
+
+Answer to evaluate:
+```
+{current_program}
+```
+
+Return your evaluation as a JSON object with the following format:
+{{
+    "correctness": [score],
+    "understanding": [score],
+    "syntax": [score],
+}}
+Even for invalid input, return nothing but the JSON object.

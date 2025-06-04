@@ -1,0 +1,17 @@
+# Current Solution Information
+- Current metrics: {metrics}
+- Areas identified for improvement: {improvement_areas}
+
+# Evolution History
+{evolution_history}
+
+# Current Solution
+```
+{current_program}
+```
+
+# Task
+Rewrite the answer to improve its performance on the specified metrics.
+Provide the complete new answer.
+
+# Your rewritten answer here

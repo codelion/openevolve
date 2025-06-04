@@ -15,11 +15,14 @@ import traceback
 import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+import traceback
 
 from openevolve.config import EvaluatorConfig
 from openevolve.evaluation_result import EvaluationResult
 from openevolve.llm.ensemble import LLMEnsemble
 from openevolve.utils.async_utils import TaskPool, run_in_executor
+from openevolve.prompt.sampler import PromptSampler
+from openevolve.utils.format_utils import format_metrics_safe
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +40,12 @@ class Evaluator:
         config: EvaluatorConfig,
         evaluation_file: str,
         llm_ensemble: Optional[LLMEnsemble] = None,
+        prompt_sampler: Optional[PromptSampler] = None,
     ):
         self.config = config
         self.evaluation_file = evaluation_file
         self.llm_ensemble = llm_ensemble
+        self.prompt_sampler = prompt_sampler
 
         # Create a task pool for parallel evaluation
         self.task_pool = TaskPool(max_concurrency=config.parallel_evaluations)
@@ -134,7 +139,7 @@ class Evaluator:
                 elapsed = time.time() - start_time
                 logger.info(
                     f"Evaluated program{program_id_str} in {elapsed:.2f}s: "
-                    f"{', '.join(f'{name}={value:.4f}' for name, value in eval_result.metrics.items())}"
+                    f"{format_metrics_safe(eval_result.metrics)}"
                 )
 
                 # Return just metrics for backward compatibility
@@ -376,30 +381,14 @@ class Evaluator:
 
         try:
             # Create prompt for LLM
-            prompt = f"""
-            Evaluate the following code on a scale of 0.0 to 1.0 for the following metrics:
-            1. Readability: How easy is the code to read and understand?
-            2. Maintainability: How easy would the code be to maintain and modify?
-            3. Efficiency: How efficient is the code in terms of time and space complexity?
-            
-            For each metric, provide a score between 0.0 and 1.0, where 1.0 is best.
-            
-            Code to evaluate:
-            ```python
-            {program_code}
-            ```
-            
-            Return your evaluation as a JSON object with the following format:
-            {{
-                "readability": [score],
-                "maintainability": [score],
-                "efficiency": [score],
-                "reasoning": "[brief explanation of scores]"
-            }}
-            """
+            prompt = self.prompt_sampler.build_prompt(
+                current_program=program_code, template_key="evaluation"
+            )
 
             # Get LLM response
-            response = await self.llm_ensemble.generate(prompt)
+            responses = await self.llm_ensemble.generate_all_with_context(
+                prompt["system"], [{"role": "user", "content": prompt["user"]}]
+            )
 
             # Extract JSON from response
             try:
@@ -407,29 +396,42 @@ class Evaluator:
                 json_pattern = r"```json\n(.*?)\n```"
                 import re
 
-                json_match = re.search(json_pattern, response, re.DOTALL)
+                avg_metrics = {}
+                for i, response in enumerate(responses):
+                    json_match = re.search(json_pattern, response, re.DOTALL)
 
-                if json_match:
-                    json_str = json_match.group(1)
-                else:
-                    # Try to extract JSON directly
-                    json_str = response
-                    # Remove non-JSON parts
-                    start_idx = json_str.find("{")
-                    end_idx = json_str.rfind("}") + 1
-                    if start_idx >= 0 and end_idx > start_idx:
-                        json_str = json_str[start_idx:end_idx]
+                    if json_match:
+                        json_str = json_match.group(1)
+                    else:
+                        # Try to extract JSON directly
+                        json_str = response
+                        # Remove non-JSON parts
+                        start_idx = json_str.find("{")
+                        end_idx = json_str.rfind("}") + 1
+                        if start_idx >= 0 and end_idx > start_idx:
+                            json_str = json_str[start_idx:end_idx]
 
-                # Parse JSON
-                result = json.loads(json_str)
+                    # Parse JSON
+                    result = json.loads(json_str)
 
-                # Extract metrics
-                metrics = {}
-                for key in ["readability", "maintainability", "efficiency"]:
-                    if key in result:
-                        metrics[key] = float(result[key])
+                    # Filter all non-numeric values
+                    metrics = {
+                        name: float(value)
+                        for name, value in result.items()
+                        if isinstance(value, (int, float))
+                    }
 
-                return metrics
+                    # Weight of the model in the ensemble
+                    weight = self.llm_ensemble.weights[i] if self.llm_ensemble.weights else 1.0
+
+                    # Average the metrics
+                    for name, value in metrics.items():
+                        if name in avg_metrics:
+                            avg_metrics[name] += value * weight
+                        else:
+                            avg_metrics[name] = value * weight
+
+                return avg_metrics
 
             except Exception as e:
                 logger.warning(f"Error parsing LLM response: {str(e)}")
@@ -437,6 +439,7 @@ class Evaluator:
 
         except Exception as e:
             logger.error(f"Error in LLM evaluation: {str(e)}")
+            traceback.print_exc()
             return {}
 
     def _passes_threshold(self, metrics: Dict[str, float], threshold: float) -> bool:
