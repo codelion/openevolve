@@ -109,7 +109,8 @@ def parse_full_rewrite(llm_response: str, language: str = "python") -> Optional[
     if matches:
         return matches[0].strip()
 
-    return None
+    # Fallback to plain text
+    return llm_response
 
 
 def format_diff_summary(diff_blocks: List[Tuple[str, str]]) -> str:

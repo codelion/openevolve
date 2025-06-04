@@ -1,3 +1,7 @@
+results/
+examples/lm_eval/prompts/system_message.txt
+examples/lm_eval/prompts/evaluator_system_message.txt
+
 # Python
 __pycache__/
 *.py[cod]
