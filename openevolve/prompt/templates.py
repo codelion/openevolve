@@ -20,6 +20,8 @@ DIFF_USER_TEMPLATE = """# Current Program Information
 - Current performance metrics: {metrics}
 - Areas identified for improvement: {improvement_areas}
 
+{artifacts}
+
 # Program Evolution History
 {evolution_history}
 
@@ -63,6 +65,8 @@ IMPORTANT: Do not rewrite the entire program - focus on targeted improvements.
 FULL_REWRITE_USER_TEMPLATE = """# Current Program Information
 - Current performance metrics: {metrics}
 - Areas identified for improvement: {improvement_areas}
+
+{artifacts}
 
 # Program Evolution History
 {evolution_history}
