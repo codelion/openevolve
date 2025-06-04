@@ -508,9 +508,7 @@ class ProgramDatabase:
 
         # Otherwise, find worst program in archive
         archive_programs = [self.programs[pid] for pid in self.archive]
-        worst_program = min(
-            archive_programs, key=lambda p: safe_numeric_average(p.metrics)
-        )
+        worst_program = min(archive_programs, key=lambda p: safe_numeric_average(p.metrics))
 
         # Replace if new program is better
         if self._is_better(program, worst_program):
@@ -812,9 +810,7 @@ class ProgramDatabase:
 
             # Sort by fitness (using combined_score or average metrics)
             island_programs.sort(
-                key=lambda p: p.metrics.get(
-                    "combined_score", safe_numeric_average(p.metrics)
-                ),
+                key=lambda p: p.metrics.get("combined_score", safe_numeric_average(p.metrics)),
                 reverse=True,
             )
 
@@ -859,9 +855,7 @@ class ProgramDatabase:
 
             if island_programs:
                 scores = [
-                    p.metrics.get(
-                        "combined_score", safe_numeric_average(p.metrics)
-                    )
+                    p.metrics.get("combined_score", safe_numeric_average(p.metrics))
                     for p in island_programs
                 ]
 

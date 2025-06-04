@@ -275,9 +275,7 @@ def evaluate_stage1(program_path):
                     )
                     return {"runs_successfully": 0.0, "error": "Invalid result format"}
             else:
-                print(
-                    f"Stage 1: Invalid result format, expected tuple but got {type(result)}"
-                )
+                print(f"Stage 1: Invalid result format, expected tuple but got {type(result)}")
                 return {"runs_successfully": 0.0, "error": "Invalid result format"}
 
             # Ensure all values are float

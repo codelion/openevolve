@@ -8,16 +8,16 @@ from typing import Any, Dict
 def format_metrics_safe(metrics: Dict[str, Any]) -> str:
     """
     Safely format metrics dictionary for logging, handling both numeric and string values.
-    
+
     Args:
         metrics: Dictionary of metric names to values
-        
+
     Returns:
         Formatted string representation of metrics
     """
     if not metrics:
         return ""
-    
+
     formatted_parts = []
     for name, value in metrics.items():
         # Check if value is numeric (int, float)
@@ -31,24 +31,24 @@ def format_metrics_safe(metrics: Dict[str, Any]) -> str:
         else:
             # For non-numeric values (strings, etc.), just convert to string
             formatted_parts.append(f"{name}={value}")
-    
+
     return ", ".join(formatted_parts)
 
 
 def format_improvement_safe(parent_metrics: Dict[str, Any], child_metrics: Dict[str, Any]) -> str:
     """
     Safely format improvement metrics for logging.
-    
+
     Args:
         parent_metrics: Parent program metrics
         child_metrics: Child program metrics
-        
+
     Returns:
         Formatted string representation of improvements
     """
     if not parent_metrics or not child_metrics:
         return ""
-    
+
     improvement_parts = []
     for metric, child_value in child_metrics.items():
         if metric in parent_metrics:
@@ -61,5 +61,5 @@ def format_improvement_safe(parent_metrics: Dict[str, Any], child_metrics: Dict[
                 except (ValueError, TypeError):
                     # Skip non-numeric comparisons
                     continue
-    
+
     return ", ".join(improvement_parts)

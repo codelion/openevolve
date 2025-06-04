@@ -308,9 +308,7 @@ class OpenEvolve:
                     logger.info(
                         f"🌟 New best solution found at iteration {i+1}: {child_program.id}"
                     )
-                    logger.info(
-                        f"Metrics: {format_metrics_safe(child_program.metrics)}"
-                    )
+                    logger.info(f"Metrics: {format_metrics_safe(child_program.metrics)}")
 
                 # Save checkpoint
                 if (i + 1) % self.config.checkpoint_interval == 0:

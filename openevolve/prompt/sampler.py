@@ -246,27 +246,27 @@ class PromptSampler:
 
             # Safely compare only numeric metrics
             program_metrics = program.get("metrics", {})
-            
+
             # Check if all numeric metrics improved
             numeric_comparisons_improved = []
             numeric_comparisons_regressed = []
-            
+
             for m in program_metrics:
                 prog_value = program_metrics.get(m, 0)
                 parent_value = parent_metrics.get(m, 0)
-                
+
                 # Only compare if both values are numeric
                 if isinstance(prog_value, (int, float)) and isinstance(parent_value, (int, float)):
                     if prog_value >= parent_value:
                         numeric_comparisons_improved.append(True)
                     else:
                         numeric_comparisons_improved.append(False)
-                        
+
                     if prog_value <= parent_value:
                         numeric_comparisons_regressed.append(True)
                     else:
                         numeric_comparisons_regressed.append(False)
-            
+
             # Determine outcome based on numeric comparisons
             if numeric_comparisons_improved and all(numeric_comparisons_improved):
                 outcome = "Improvement in all metrics"
