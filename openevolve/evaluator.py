@@ -133,8 +133,6 @@ class Evaluator:
                     f"{format_metrics_safe(metrics)}"
                 )
 
-                logger.info(f"Evaluated program{program_id_str} in {elapsed:.2f}s: {metrics_str}")
-
                 return metrics
 
             except Exception as e:
