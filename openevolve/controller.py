@@ -96,15 +96,25 @@ class OpenEvolve:
                 self.file_extension = f".{self.file_extension}"
 
         # Initialize components
-        self.llm_ensemble = LLMEnsemble(self.config.llm)
+        self.llm_ensemble = LLMEnsemble(self.config.llm.models)
+        self.llm_evaluator_ensemble = LLMEnsemble(self.config.llm.evaluator_models)
+
         self.prompt_sampler = PromptSampler(self.config.prompt)
+        self.evaluator_prompt_sampler = PromptSampler(self.config.prompt)
+        self.evaluator_prompt_sampler.set_templates("evaluator_system_message")
 
         # Pass random seed to database if specified
         if self.config.random_seed is not None:
             self.config.database.random_seed = self.config.random_seed
 
         self.database = ProgramDatabase(self.config.database)
-        self.evaluator = Evaluator(self.config.evaluator, evaluation_file, self.llm_ensemble)
+
+        self.evaluator = Evaluator(
+            self.config.evaluator,
+            evaluation_file,
+            self.llm_evaluator_ensemble,
+            self.evaluator_prompt_sampler,
+        )
 
         logger.info(f"Initialized OpenEvolve with {initial_program_path} " f"and {evaluation_file}")
 

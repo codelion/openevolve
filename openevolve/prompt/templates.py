@@ -12,6 +12,9 @@ Your job is to analyze the current program and suggest improvements based on fee
 Focus on making targeted changes that will increase the program's performance metrics.
 """
 
+BASE_EVALUATOR_SYSTEM_TEMPLATE = """You are an expert code reviewer.
+Your job is to analyze the provided code and evaluate it systematically."""
+
 # User message template for diff-based evolution
 DIFF_USER_TEMPLATE = """# Current Program Information
 - Current performance metrics: {metrics}
@@ -106,14 +109,38 @@ TOP_PROGRAM_TEMPLATE = """### Program {program_number} (Score: {score})
 Key features: {key_features}
 """
 
+# Template for evaluating a program via an LLM
+EVALUATION_TEMPLATE = """Evaluate the following code on a scale of 0.0 to 1.0 for the following metrics:
+1. Readability: How easy is the code to read and understand?
+2. Maintainability: How easy would the code be to maintain and modify?
+3. Efficiency: How efficient is the code in terms of time and space complexity?
+
+For each metric, provide a score between 0.0 and 1.0, where 1.0 is best.
+
+Code to evaluate:
+```python
+{current_program}
+```
+
+Return your evaluation as a JSON object with the following format:
+{{
+    "readability": [score],
+    "maintainability": [score],
+    "efficiency": [score],
+    "reasoning": "[brief explanation of scores]"
+}}
+"""
+
 # Default templates dictionary
 DEFAULT_TEMPLATES = {
     "system_message": BASE_SYSTEM_TEMPLATE,
+    "evaluator_system_message": BASE_EVALUATOR_SYSTEM_TEMPLATE,
     "diff_user": DIFF_USER_TEMPLATE,
     "full_rewrite_user": FULL_REWRITE_USER_TEMPLATE,
     "evolution_history": EVOLUTION_HISTORY_TEMPLATE,
     "previous_attempt": PREVIOUS_ATTEMPT_TEMPLATE,
     "top_program": TOP_PROGRAM_TEMPLATE,
+    "evaluation": EVALUATION_TEMPLATE,
 }
 
 
