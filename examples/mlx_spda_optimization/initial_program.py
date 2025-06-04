@@ -254,32 +254,13 @@ def try_custom_metal_kernel(q, k, v, scale, block_info):
         if block_info["type"] != "uniform_blocks":
             return None  # Only handle uniform blocks for now
         
-        # Create custom Metal kernel source code
-        kernel_source = create_block_diagonal_kernel_source(block_info)
+        # For now, disable custom Metal kernel due to API complexity
+        # Evolution should focus on CPU optimizations first
+        return None
         
-        # Compile and execute Metal kernel
-        kernel = mx.fast.metal_kernel(
-            name="block_diagonal_attention",
-            input_names=["queries", "keys", "values", "scale_factor"],
-            output_names=["attention_output"],
-            source=kernel_source,
-        )
-        
-        # Prepare inputs for kernel
-        scale_tensor = mx.array([scale], dtype=q.dtype)
-        
-        # Execute kernel
-        outputs = kernel(
-            inputs=[q, k, v, scale_tensor],
-            template=[
-                {"name": "T", "value": "float16" if q.dtype == mx.float16 else "float32"},
-                {"name": "HEAD_DIM", "value": q.shape[-1]},
-                {"name": "BLOCK_SIZE", "value": block_info["block_size"]},
-                {"name": "NUM_BLOCKS", "value": block_info["num_blocks"]},
-            ]
-        )
-        
-        return outputs["attention_output"]
+        # TODO: Implement proper Metal kernel when API is stabilized
+        # The Metal kernel API requires specific grid/threadgroup configurations
+        # and proper template parameter handling that needs careful tuning
         
     except Exception as e:
         # Kernel creation or execution failed

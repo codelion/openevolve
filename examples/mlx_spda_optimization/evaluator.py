@@ -307,6 +307,7 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
         return {
             "stage1_passed": False,
             "overall_score": 0.0,
+            "combined_score": 0.0,  # Primary metric for OpenEvolve optimization
             "error": "MLX not available"
         }
     
@@ -320,6 +321,7 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
             return {
                 "stage1_passed": False,
                 "overall_score": 0.0,
+                "combined_score": 0.0,  # Primary metric for OpenEvolve optimization
                 "error": "Missing evolved_scaled_dot_product_attention function"
             }
         
@@ -358,6 +360,7 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
                 "stage1_passed": False,
                 "pass_rate": pass_rate,
                 "overall_score": 0.0,
+                "combined_score": 0.0,  # Primary metric for OpenEvolve optimization
                 "failed_at": "correctness"
             }
         
@@ -431,6 +434,7 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
             "pass_rate": float(pass_rate),
             "stage2_score": float(stage2_score),
             "overall_score": float(overall_score),
+            "combined_score": float(overall_score),  # Primary metric for OpenEvolve optimization
             "avg_speedup": float(avg_speedup),
             "max_speedup": float(max_speedup),
             "num_tests": len(test_configs),
@@ -443,6 +447,7 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
         return {
             "stage1_passed": False,
             "overall_score": 0.0,
+            "combined_score": 0.0,  # Primary metric for OpenEvolve optimization
             "error": str(e)
         }
 

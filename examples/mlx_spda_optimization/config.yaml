@@ -17,25 +17,26 @@ llm:
   max_tokens: 24000
   timeout: 600
 
-# Focused prompt for Metal kernel evolution
+# Focused prompt for CPU-based block-diagonal attention optimization
 prompt:
   system_message: |
-    🎯 **MISSION: Evolve High-Performance Metal Kernel for Block-Diagonal Attention**
+    🎯 **MISSION: Evolve High-Performance Block-Diagonal Attention for Packed Sequences**
     
-    You are evolving a custom Metal GPU kernel for block-diagonal attention with packed sequences.
-    This is a focused, well-defined optimization problem with clear success metrics.
+    You are optimizing attention computation for packed sequences (multiple sequences concatenated 
+    to avoid padding waste) where attention should only occur within sequence boundaries.
     
     ## **THE PROBLEM**
     
-    **Current Issue**: Training BERTs/GPTs with packed sequences (multiple sequences concatenated to avoid padding waste) requires block-diagonal attention where:
+    **Current Issue**: Training models with packed sequences requires block-diagonal attention:
     - Keys/queries from the same sequence can attend to each other
-    - Keys/queries from different sequences should NOT attend to each other
-    - Naive masking wastes computation on large -inf regions
+    - Keys/queries from different sequences should NOT attend to each other  
+    - Naive masking wastes computation on large masked regions
     
-    **Goal**: Evolve a Metal kernel that efficiently computes block-diagonal attention by:
-    - Skipping computation for cross-sequence attention entirely
-    - Optimizing memory access patterns for Apple Silicon
-    - Achieving 1.5-2x+ speedup over naive masked attention
+    **Goal**: Evolve efficient attention that beats naive masking by:
+    - Smart block detection and processing
+    - Optimized CPU operations with MLX
+    - Memory-efficient computation patterns
+    - Achieving 1.2-2x+ speedup over naive masked attention
     
     ## **EVOLUTION TARGET**
     
@@ -43,144 +44,169 @@ prompt:
     
     **Focus Areas** (in order of priority):
     
-    ### 1. **Metal Kernel Source Code** (HIGHEST PRIORITY)
-    ```cpp
-    // Current kernel in create_block_diagonal_kernel_source()
-    // EVOLUTION OPPORTUNITIES:
-    // - Optimize thread allocation per block
-    // - Use threadgroup/shared memory efficiently  
-    // - Implement vectorized operations (float4, half4)
-    // - Add tiled computation for large blocks
-    // - Optimize memory access patterns
-    // - Skip unnecessary computations entirely
-    ```
-    
-    ### 2. **Block Detection Logic**
+    ### 1. **Block Detection & Processing** (HIGHEST PRIORITY)
     ```python
     # In detect_packed_sequences() and analyze_mask_structure()
     # EVOLUTION OPPORTUNITIES:
-    // - Better detection of block-diagonal patterns
-    // - Handle variable-length sequences efficiently
-    // - Optimize for common packing strategies
-    // - Auto-detect sequence boundaries from attention patterns
+    # - Better detection of block-diagonal patterns from masks
+    # - Handle variable-length sequences efficiently
+    # - Optimize for common packing strategies (uniform/variable)
+    # - Cache block structure analysis for repeated use
     ```
     
-    ### 3. **Kernel Launch Parameters**
-    ```python
-    # In try_custom_metal_kernel()
-    # EVOLUTION OPPORTUNITIES:
-    // - Optimize thread group sizes
-    // - Better template parameter handling
-    // - Efficient memory allocation strategies
-    // - Multiple kernel variants for different scenarios
-    ```
-    
-    ### 4. **CPU Fallback Optimization**
-    ```python
+    ### 2. **Optimized Block-Diagonal CPU Computation**
+    ```python 
     # In optimized_block_diagonal_cpu()
     # EVOLUTION OPPORTUNITIES:
-    // - More efficient block processing
-    // - Vectorized CPU operations
-    // - Memory-efficient block iteration
+    # - More efficient block iteration and memory access
+    # - Vectorized MLX operations within blocks
+    # - Minimize memory allocations and copies
+    # - Fused attention computation within blocks
+    # - Parallel processing of independent blocks
     ```
     
-    ## **SPECIFIC METAL KERNEL OPTIMIZATIONS**
+    ### 3. **Smart Fallback Logic**
+    ```python
+    # In main function logic
+    # EVOLUTION OPPORTUNITIES:
+    # - Better heuristics for when to use block-diagonal vs regular attention
+    # - Adaptive algorithm selection based on sequence patterns
+    # - Efficient mask analysis and caching
+    ```
     
-    **Memory Optimization**:
-    - Use threadgroup memory for frequently accessed data
-    - Coalesce memory reads/writes across threads
-    - Minimize global memory access
-    - Optimize for Apple Silicon unified memory
+    ### 4. **MLX Operation Optimization**
+    ```python
+    # Throughout the function
+    # EVOLUTION OPPORTUNITIES:
+    # - Use more efficient MLX operations (avoid numpy conversions)
+    # - Better memory layout and access patterns  
+    # - Minimize intermediate tensor allocations
+    # - Leverage MLX's optimized attention primitives where possible
+    ```
     
-    **Computation Optimization**:
-    - Vectorize operations using SIMD instructions
-    - Implement efficient softmax computation
-    - Use fused operations where possible
-    - Skip zero/masked computations entirely
+    ## **CRITICAL SYNTAX AND CODING RULES**
     
-    **Thread Organization**:
-    - Optimal threadgroup sizes for different block sizes
-    - Efficient work distribution across GPU cores
-    - Minimize thread divergence
-    - Balance workload across threadgroups
+    ⚠️ **AVOID THESE COMMON ERRORS**:
+    
+    1. **String Syntax**: Never use unescaped quotes or f-strings in multi-line strings
+    2. **Variable Scope**: Only use variables that are clearly defined in the current scope
+    3. **MLX API**: Use `mx.concatenate()`, not `.at[]` syntax (that's JAX, not MLX)
+    4. **Comments**: Use `#` for Python comments, `//` only inside actual C/C++ code strings
+    5. **F-strings**: Be very careful with f-strings containing complex expressions
+    
+    ✅ **ALWAYS DO THIS**:
+    
+    ```python
+    # Good: Simple, clear variable usage
+    B, H, L, D = q.shape
+    
+    # Good: MLX-compatible operations
+    output = mx.concatenate(block_outputs, axis=2)
+    
+    # Good: Clear variable definitions within scope
+    block_size = block_info["block_size"]
+    num_blocks = block_info["num_blocks"]
+    
+    # Good: Safe string formatting
+    kernel_source = "// Simple kernel without complex formatting\n"
+    kernel_source += f"const uint block_size = {block_size};\n"
+    ```
+    
+    ❌ **NEVER DO THIS**:
+    
+    ```python
+    # Bad: Undefined variables
+    print(f"Using {n_q_heads} heads")  # n_q_heads not defined in this scope!
+    
+    # Bad: JAX syntax in MLX 
+    output = output.at[:, :, start:end, :].set(block_output)  # Wrong framework!
+    
+    # Bad: Complex f-strings with quotes
+    code = f"if (pos < {var}) { print(\"hello\"); }"  # Syntax nightmare!
+    
+    # Bad: C++ comments in Python
+    // This is a Python comment  # Wrong comment style!
+    ```
     
     ## **SUCCESS METRICS**
     
     **Correctness** (Must achieve):
     - ✅ 80%+ test pass rate across all scenarios
-    - ✅ MSE < 1e-3 vs reference implementation
+    - ✅ MSE < 1e-3 vs reference implementation  
     - ✅ Handle variable sequence lengths correctly
     - ✅ No NaN/Inf in outputs
     
     **Performance** (Optimization targets):
-    - 🎯 **1.5x+ speedup** over naive masked attention (good)
-    - 🎯 **2.0x+ speedup** over naive masked attention (excellent)
+    - 🎯 **1.2x+ speedup** over naive masked attention (good)
+    - 🎯 **1.5x+ speedup** over naive masked attention (excellent)  
+    - 🎯 **2.0x+ speedup** over naive masked attention (outstanding)
     - 🎯 Linear scaling with number of sequences
-    - 🎯 Efficient memory usage (no explosions)
-    
-    **Robustness** (Nice to have):
-    - Handle various block sizes (128, 256, 512, 1024)
-    - Support different head dimensions (64, 80, 128)
-    - Work with different batch sizes
-    - Graceful fallback when Metal kernel fails
+    - 🎯 Efficient memory usage
     
     ## **EVALUATION SCENARIOS**
     
     You'll be tested on:
     - **packed_2x256**: Two 256-token sequences packed together
-    - **packed_4x128**: Four 128-token sequences packed together  
+    - **packed_4x128**: Four 128-token sequences packed together
     - **packed_variable**: Variable-length sequences (256 + 512)
     - **packed_large**: Large sequences (4x256 = 1024 total)
     - **packed_bert_style**: BERT-style training packing
+    
+    ## **IMPLEMENTATION STRATEGY**
+    
+    **Phase 1: Block Detection**
+    - Analyze mask patterns to identify block boundaries
+    - Handle both uniform and variable-length blocks
+    - Cache analysis results for efficiency
+    
+    **Phase 2: Optimized Computation**  
+    - Process each block independently with optimized attention
+    - Use efficient MLX operations within blocks
+    - Minimize memory allocations and data movement
+    
+    **Phase 3: Assembly & Output**
+    - Efficiently combine block outputs
+    - Ensure correct output shape and dtype
+    - Handle edge cases gracefully
     
     ## **KEY CONSTRAINTS**
     
     **DO NOT CHANGE**:
     - Function signature of `evolved_scaled_dot_product_attention`
-    - Overall structure (detect -> kernel -> fallback)
+    - Overall structure (detect -> process -> fallback)
     - Error handling and fallback mechanisms
     
     **FOCUS ON**:
-    - Metal kernel source code optimization
-    - Block detection efficiency
-    - Memory access patterns
-    - Thread organization and vectorization
+    - Block detection efficiency and accuracy
+    - CPU computation optimization with MLX
+    - Memory access patterns and data layout
+    - Algorithmic improvements for block processing
     
     ## **EXAMPLE IMPROVEMENTS**
     
-    **Better Thread Organization**:
-    ```cpp
-    // Instead of: one thread per query position
-    // Try: threadgroup processes entire block cooperatively
+    **Better Block Detection**:
+    ```python
+    # Analyze mask structure more efficiently
+    # Cache block boundaries for reuse
+    # Handle edge cases in variable-length sequences
     ```
     
-    **Vectorized Operations**:
-    ```cpp
-    // Instead of: scalar operations
-    // Try: float4/half4 vector operations
+    **Optimized Block Processing**:
+    ```python
+    # Use MLX's optimized operations
+    # Minimize intermediate allocations
+    # Process blocks in optimal order
     ```
     
-    **Shared Memory Usage**:
-    ```cpp
-    // Add: threadgroup shared memory for keys/values
-    threadgroup float shared_keys[BLOCK_SIZE * HEAD_DIM];
+    **Memory Efficiency**:
+    ```python
+    # Avoid unnecessary numpy conversions
+    # Reuse intermediate tensors where possible
+    # Optimize data layout for cache efficiency
     ```
     
-    **Optimized Softmax**:
-    ```cpp
-    // Instead of: naive exp/sum
-    // Try: numerically stable, vectorized softmax
-    ```
-    
-    ## **DEBUGGING HINTS**
-    
-    - Start with correctness, then optimize performance
-    - Test with simple uniform blocks before variable lengths
-    - Use CPU fallback to verify Metal kernel correctness
-    - Monitor memory usage and avoid explosions
-    - Check that block detection is working correctly
-    
-    Focus on creating a Metal kernel that significantly outperforms naive masking through smart computation skipping and memory optimization!
+    Remember: Focus on correctness first, then optimize for performance. 
+    Use only MLX operations and avoid complex string formatting that can cause syntax errors!
   
   num_top_programs: 5
   num_diverse_programs: 3
