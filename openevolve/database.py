@@ -387,35 +387,35 @@ class ProgramDatabase:
 
         # Reconstruct island assignments from metadata
         self._reconstruct_islands(saved_islands)
-        
+
         # Ensure island_generations list has correct length
         if len(self.island_generations) != len(self.islands):
             self.island_generations = [0] * len(self.islands)
 
         logger.info(f"Loaded database with {len(self.programs)} programs from {path}")
-        
+
         # Log the reconstructed island status
         self.log_island_status()
-        
+
     def _reconstruct_islands(self, saved_islands: List[List[str]]) -> None:
         """
         Reconstruct island assignments from saved metadata
-        
+
         Args:
             saved_islands: List of island program ID lists from metadata
         """
         # Initialize empty islands
         num_islands = max(len(saved_islands), self.config.num_islands)
         self.islands = [set() for _ in range(num_islands)]
-        
+
         missing_programs = []
         restored_programs = 0
-        
+
         # Restore island assignments
         for island_idx, program_ids in enumerate(saved_islands):
             if island_idx >= len(self.islands):
                 continue
-                
+
             for program_id in program_ids:
                 if program_id in self.programs:
                     # Program exists, add to island
@@ -426,11 +426,11 @@ class ProgramDatabase:
                 else:
                     # Program missing, track it
                     missing_programs.append((island_idx, program_id))
-        
+
         # Clean up archive - remove missing programs
         original_archive_size = len(self.archive)
         self.archive = {pid for pid in self.archive if pid in self.programs}
-        
+
         # Clean up feature_map - remove missing programs
         feature_keys_to_remove = []
         for key, program_id in self.feature_map.items():
@@ -438,45 +438,49 @@ class ProgramDatabase:
                 feature_keys_to_remove.append(key)
         for key in feature_keys_to_remove:
             del self.feature_map[key]
-        
+
         # Check best program
         if self.best_program_id and self.best_program_id not in self.programs:
             logger.warning(f"Best program {self.best_program_id} not found, will recalculate")
             self.best_program_id = None
-        
+
         # Log reconstruction results
         if missing_programs:
-            logger.warning(f"Found {len(missing_programs)} missing programs during island reconstruction:")
+            logger.warning(
+                f"Found {len(missing_programs)} missing programs during island reconstruction:"
+            )
             for island_idx, program_id in missing_programs[:5]:  # Show first 5
                 logger.warning(f"  Island {island_idx}: {program_id}")
             if len(missing_programs) > 5:
                 logger.warning(f"  ... and {len(missing_programs) - 5} more")
-        
+
         if original_archive_size > len(self.archive):
-            logger.info(f"Removed {original_archive_size - len(self.archive)} missing programs from archive")
-        
+            logger.info(
+                f"Removed {original_archive_size - len(self.archive)} missing programs from archive"
+            )
+
         if feature_keys_to_remove:
             logger.info(f"Removed {len(feature_keys_to_remove)} missing programs from feature map")
-        
+
         logger.info(f"Reconstructed islands: restored {restored_programs} programs to islands")
-        
+
         # If we have programs but no island assignments, distribute them
         if self.programs and sum(len(island) for island in self.islands) == 0:
             logger.info("No island assignments found, distributing programs across islands")
             self._distribute_programs_to_islands()
-    
+
     def _distribute_programs_to_islands(self) -> None:
         """
         Distribute loaded programs across islands when no island metadata exists
         """
         program_ids = list(self.programs.keys())
-        
+
         # Distribute programs round-robin across islands
         for i, program_id in enumerate(program_ids):
             island_idx = i % len(self.islands)
             self.islands[island_idx].add(program_id)
             self.programs[program_id].metadata["island"] = island_idx
-        
+
         logger.info(f"Distributed {len(program_ids)} programs across {len(self.islands)} islands")
 
     def _save_program(self, program: Program, base_path: Optional[str] = None) -> None:
@@ -995,10 +999,10 @@ class ProgramDatabase:
 
         # Use deterministic sampling instead of random.sample() to ensure consistent results
         sample_size = min(5, len(programs))  # Reduced from 10 to 5
-        
+
         # Sort programs by ID for deterministic ordering
         sorted_programs = sorted(programs, key=lambda p: p.id)
-        
+
         # Take first N programs instead of random sampling
         sample_programs = sorted_programs[:sample_size]
 
