@@ -15,6 +15,7 @@ import numpy as np
 
 from openevolve.config import DatabaseConfig
 from openevolve.utils.code_utils import calculate_edit_distance
+from openevolve.utils.metrics_utils import safe_numeric_average
 
 logger = logging.getLogger(__name__)
 
@@ -227,10 +228,10 @@ class ProgramDatabase:
             if sorted_programs:
                 logger.debug(f"Found best program by combined_score: {sorted_programs[0].id}")
         else:
-            # Sort by average of all metrics as fallback
+            # Sort by average of all numeric metrics as fallback
             sorted_programs = sorted(
                 self.programs.values(),
-                key=lambda p: sum(p.metrics.values()) / max(1, len(p.metrics)),
+                key=lambda p: safe_numeric_average(p.metrics),
                 reverse=True,
             )
             if sorted_programs:
@@ -281,10 +282,10 @@ class ProgramDatabase:
                 reverse=True,
             )
         else:
-            # Sort by average of all metrics
+            # Sort by average of all numeric metrics
             sorted_programs = sorted(
                 self.programs.values(),
-                key=lambda p: sum(p.metrics.values()) / max(1, len(p.metrics)),
+                key=lambda p: safe_numeric_average(p.metrics),
                 reverse=True,
             )
 
@@ -436,7 +437,7 @@ class ProgramDatabase:
                 if not program.metrics:
                     bin_idx = 0
                 else:
-                    avg_score = sum(program.metrics.values()) / len(program.metrics)
+                    avg_score = safe_numeric_average(program.metrics)
                     bin_idx = min(int(avg_score * self.feature_bins), self.feature_bins - 1)
                 coords.append(bin_idx)
             elif dim in program.metrics:
@@ -487,9 +488,9 @@ class ProgramDatabase:
         if "combined_score" in program1.metrics and "combined_score" in program2.metrics:
             return program1.metrics["combined_score"] > program2.metrics["combined_score"]
 
-        # Fallback to average of all metrics
-        avg1 = sum(program1.metrics.values()) / len(program1.metrics)
-        avg2 = sum(program2.metrics.values()) / len(program2.metrics)
+        # Fallback to average of all numeric metrics
+        avg1 = safe_numeric_average(program1.metrics)
+        avg2 = safe_numeric_average(program2.metrics)
 
         return avg1 > avg2
 
@@ -508,7 +509,7 @@ class ProgramDatabase:
         # Otherwise, find worst program in archive
         archive_programs = [self.programs[pid] for pid in self.archive]
         worst_program = min(
-            archive_programs, key=lambda p: sum(p.metrics.values()) / max(1, len(p.metrics))
+            archive_programs, key=lambda p: safe_numeric_average(p.metrics)
         )
 
         # Replace if new program is better
@@ -716,7 +717,7 @@ class ProgramDatabase:
         # Sort by average metric (worst first)
         sorted_programs = sorted(
             all_programs,
-            key=lambda p: sum(p.metrics.values()) / max(1, len(p.metrics)) if p.metrics else 0.0,
+            key=lambda p: safe_numeric_average(p.metrics),
         )
 
         # Remove worst programs, but never remove the best program
@@ -812,7 +813,7 @@ class ProgramDatabase:
             # Sort by fitness (using combined_score or average metrics)
             island_programs.sort(
                 key=lambda p: p.metrics.get(
-                    "combined_score", sum(p.metrics.values()) / max(1, len(p.metrics))
+                    "combined_score", safe_numeric_average(p.metrics)
                 ),
                 reverse=True,
             )
@@ -859,7 +860,7 @@ class ProgramDatabase:
             if island_programs:
                 scores = [
                     p.metrics.get(
-                        "combined_score", sum(p.metrics.values()) / max(1, len(p.metrics))
+                        "combined_score", safe_numeric_average(p.metrics)
                     )
                     for p in island_programs
                 ]

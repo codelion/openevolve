@@ -5,8 +5,9 @@ Evaluator for the function minimization example
 import importlib.util
 import numpy as np
 import time
-import multiprocessing
+import concurrent.futures
 import traceback
+import signal
 
 
 def run_with_timeout(func, args=(), kwargs={}, timeout_seconds=5):
@@ -22,31 +23,13 @@ def run_with_timeout(func, args=(), kwargs={}, timeout_seconds=5):
     Returns:
         Result of the function or raises TimeoutError
     """
-
-    def wrapper(queue, func, args, kwargs):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(func, *args, **kwargs)
         try:
-            result = func(*args, **kwargs)
-            queue.put(("success", result))
-        except Exception as e:
-            queue.put(("error", e))
-
-    queue = multiprocessing.Queue()
-    process = multiprocessing.Process(target=wrapper, args=(queue, func, args, kwargs))
-    process.start()
-    process.join(timeout=timeout_seconds)
-
-    if process.is_alive():
-        process.terminate()
-        process.join()
-        raise TimeoutError(f"Function timed out after {timeout_seconds} seconds")
-
-    if queue.empty():
-        raise TimeoutError("Function ended without returning a result")
-
-    status, result = queue.get()
-    if status == "error":
-        raise result
-    return result
+            result = future.result(timeout=timeout_seconds)
+            return result
+        except concurrent.futures.TimeoutError:
+            raise TimeoutError(f"Function timed out after {timeout_seconds} seconds")
 
 
 def safe_float(value):
@@ -107,14 +90,26 @@ def evaluate(program_path):
                 # Run with timeout
                 result = run_with_timeout(program.run_search, timeout_seconds=5)
 
-                # Check if we got a tuple of 3 values
-                if not isinstance(result, tuple) or len(result) != 3:
+                # Handle different result formats
+                if isinstance(result, tuple):
+                    if len(result) == 3:
+                        x, y, value = result
+                    elif len(result) == 2:
+                        # Assume it's (x, y) and calculate value
+                        x, y = result
+                        # Calculate the function value since it wasn't returned
+                        value = np.sin(x) * np.cos(y) + np.sin(x * y) + (x**2 + y**2) / 20
+                        print(f"Trial {trial}: Got 2 values, calculated function value: {value}")
+                    else:
+                        print(
+                            f"Trial {trial}: Invalid result format, expected tuple of 2 or 3 values but got {len(result)}"
+                        )
+                        continue
+                else:
                     print(
-                        f"Trial {trial}: Invalid result format, expected tuple of 3 values but got {type(result)}"
+                        f"Trial {trial}: Invalid result format, expected tuple but got {type(result)}"
                     )
                     continue
-
-                x, y, value = result
 
                 end_time = time.time()
 
@@ -264,14 +259,26 @@ def evaluate_stage1(program_path):
             # Run a single trial with timeout
             result = run_with_timeout(program.run_search, timeout_seconds=5)
 
-            # Check if we got a tuple of 3 values
-            if not isinstance(result, tuple) or len(result) != 3:
+            # Handle different result formats
+            if isinstance(result, tuple):
+                if len(result) == 3:
+                    x, y, value = result
+                elif len(result) == 2:
+                    # Assume it's (x, y) and calculate value
+                    x, y = result
+                    # Calculate the function value since it wasn't returned
+                    value = np.sin(x) * np.cos(y) + np.sin(x * y) + (x**2 + y**2) / 20
+                    print(f"Stage 1: Got 2 values, calculated function value: {value}")
+                else:
+                    print(
+                        f"Stage 1: Invalid result format, expected tuple of 2 or 3 values but got {len(result)}"
+                    )
+                    return {"runs_successfully": 0.0, "error": "Invalid result format"}
+            else:
                 print(
-                    f"Stage 1: Invalid result format, expected tuple of 3 values but got {type(result)}"
+                    f"Stage 1: Invalid result format, expected tuple but got {type(result)}"
                 )
                 return {"runs_successfully": 0.0, "error": "Invalid result format"}
-
-            x, y, value = result
 
             # Ensure all values are float
             x = safe_float(x)
