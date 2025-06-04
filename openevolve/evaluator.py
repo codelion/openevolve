@@ -20,6 +20,7 @@ from openevolve.config import EvaluatorConfig
 from openevolve.llm.ensemble import LLMEnsemble
 from openevolve.utils.async_utils import TaskPool, run_in_executor
 from openevolve.prompt.sampler import PromptSampler
+from openevolve.utils.format_utils import format_metrics_safe
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +124,7 @@ class Evaluator:
                 elapsed = time.time() - start_time
                 logger.info(
                     f"Evaluated program{program_id_str} in {elapsed:.2f}s: "
-                    f"{', '.join(f'{name}={value:.4f}' for name, value in metrics.items())}"
+                    f"{format_metrics_safe(metrics)}"
                 )
 
                 return metrics
