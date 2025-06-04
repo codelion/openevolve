@@ -19,6 +19,13 @@ class TestArtifactsIntegration(unittest.TestCase):
     """Test full integration of artifacts feature"""
 
     def setUp(self):
+        # Set up event loop for async operations in tests
+        try:
+            self.loop = asyncio.get_event_loop()
+        except RuntimeError:
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+
         # Create temporary directory for database
         self.temp_dir = tempfile.mkdtemp()
 
@@ -86,6 +93,15 @@ def evaluate_stage1(program_path):
 
     def tearDown(self):
         os.unlink(self.eval_file.name)
+        # Clean up event loop if we created one
+        if hasattr(self, "loop") and self.loop and not self.loop.is_closed():
+            # Cancel any pending tasks
+            pending = asyncio.all_tasks(self.loop)
+            for task in pending:
+                task.cancel()
+            # Run the loop briefly to let cancellations process
+            if pending:
+                self.loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
 
     def test_compile_failure_artifact_capture(self):
         """Test that compilation failures are captured as artifacts"""
@@ -244,9 +260,27 @@ class TestArtifactsPersistence(unittest.TestCase):
     """Test that artifacts persist correctly across save/load cycles"""
 
     def setUp(self):
+        # Set up event loop for async operations in tests
+        try:
+            self.loop = asyncio.get_event_loop()
+        except RuntimeError:
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+
         self.temp_dir = tempfile.mkdtemp()
         config = DatabaseConfig(db_path=self.temp_dir)
         self.database = ProgramDatabase(config)
+
+    def tearDown(self):
+        # Clean up event loop if we created one
+        if hasattr(self, "loop") and self.loop and not self.loop.is_closed():
+            # Cancel any pending tasks
+            pending = asyncio.all_tasks(self.loop)
+            for task in pending:
+                task.cancel()
+            # Run the loop briefly to let cancellations process
+            if pending:
+                self.loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
 
     def test_save_load_artifacts(self):
         """Test that artifacts survive database save/load cycle"""

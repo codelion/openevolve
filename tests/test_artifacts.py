@@ -2,6 +2,7 @@
 Test suite for artifacts functionality
 """
 
+import asyncio
 import os
 import tempfile
 import unittest
@@ -135,6 +136,13 @@ class TestEvaluatorArtifacts(unittest.TestCase):
     """Test artifact handling in the evaluator"""
 
     def setUp(self):
+        # Set up event loop for async operations in tests
+        try:
+            self.loop = asyncio.get_event_loop()
+        except RuntimeError:
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+
         # Create a mock evaluation file
         self.temp_eval_file = tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False)
         self.temp_eval_file.write(
@@ -150,10 +158,18 @@ def evaluate(program_path):
 
     def tearDown(self):
         os.unlink(self.temp_eval_file.name)
+        # Clean up event loop if we created one
+        if hasattr(self, "loop") and self.loop and not self.loop.is_closed():
+            # Cancel any pending tasks
+            pending = asyncio.all_tasks(self.loop)
+            for task in pending:
+                task.cancel()
+            # Run the loop briefly to let cancellations process
+            if pending:
+                self.loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
 
     def test_evaluate_program_backward_compatibility(self):
         """Test that old evaluators still work unchanged"""
-        import asyncio
 
         async def run_test():
             result = await self.evaluator.evaluate_program("print('test')", "test_id")
@@ -206,7 +222,7 @@ class TestPromptArtifacts(unittest.TestCase):
         """Test that all artifacts are included using .items() without prioritization"""
         artifacts = {
             "stderr": "error message",
-            "stdout": "output message", 
+            "stdout": "output message",
             "traceback": "stack trace",
             "other": "other data",
         }
@@ -216,7 +232,7 @@ class TestPromptArtifacts(unittest.TestCase):
         # All artifacts should be present (no prioritization)
         for key in artifacts.keys():
             self.assertIn(key, rendered)
-        
+
         # Check that all content is included
         for value in artifacts.values():
             self.assertIn(value, rendered)
