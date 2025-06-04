@@ -17,6 +17,14 @@ from openevolve.utils.code_utils import (
     parse_evolve_blocks,
     parse_full_rewrite,
 )
+from openevolve.utils.format_utils import (
+    format_metrics_safe,
+    format_improvement_safe,
+)
+from openevolve.utils.metrics_utils import (
+    safe_numeric_average,
+    safe_numeric_sum,
+)
 
 __all__ = [
     "TaskPool",
@@ -30,4 +38,8 @@ __all__ = [
     "format_diff_summary",
     "parse_evolve_blocks",
     "parse_full_rewrite",
+    "format_metrics_safe",
+    "format_improvement_safe",
+    "safe_numeric_average",
+    "safe_numeric_sum",
 ]

@@ -18,6 +18,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from openevolve.config import EvaluatorConfig
 from openevolve.llm.ensemble import LLMEnsemble
 from openevolve.utils.async_utils import TaskPool, run_in_executor
+from openevolve.utils.format_utils import format_metrics_safe
 
 logger = logging.getLogger(__name__)
 
@@ -123,24 +124,9 @@ class Evaluator:
                         metrics[f"llm_{name}"] = value * self.config.llm_feedback_weight
 
                 elapsed = time.time() - start_time
-
-                # Safe formatting of metrics to prevent formatting errors
-                def safe_format_metric_value(value):
-                    """Safely format a metric value for logging."""
-                    try:
-                        if isinstance(value, (int, float)) and not isinstance(value, bool):
-                            import math
-
-                            if math.isnan(value) or math.isinf(value):
-                                return str(value)
-                            return f"{value:.4f}"
-                        else:
-                            return str(value)
-                    except (ValueError, TypeError):
-                        return str(value)
-
-                metrics_str = ", ".join(
-                    f"{name}={safe_format_metric_value(value)}" for name, value in metrics.items()
+                logger.info(
+                    f"Evaluated program{program_id_str} in {elapsed:.2f}s: "
+                    f"{format_metrics_safe(metrics)}"
                 )
 
                 logger.info(f"Evaluated program{program_id_str} in {elapsed:.2f}s: {metrics_str}")

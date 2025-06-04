@@ -24,6 +24,10 @@ from openevolve.utils.code_utils import (
     parse_evolve_blocks,
     parse_full_rewrite,
 )
+from openevolve.utils.format_utils import (
+    format_metrics_safe,
+    format_improvement_safe,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -332,7 +336,7 @@ class OpenEvolve:
                     logger.info(
                         f"🌟 New best solution found at iteration {i+1}: {child_program.id}"
                     )
-                    logger.info(f"Metrics: {_format_metrics(child_program.metrics)}")
+                    logger.info(f"Metrics: {format_metrics_safe(child_program.metrics)}")
 
                 # Save checkpoint
                 if (i + 1) % self.config.checkpoint_interval == 0:
@@ -396,7 +400,7 @@ class OpenEvolve:
         if best_program:
             logger.info(
                 f"Evolution complete. Best program has metrics: "
-                f"{_format_metrics(best_program.metrics)}"
+                f"{format_metrics_safe(best_program.metrics)}"
             )
 
             # Save the best program (using our tracked best program)
@@ -424,30 +428,13 @@ class OpenEvolve:
             child: Child program
             elapsed_time: Elapsed time in seconds
         """
-        # Calculate improvement
-        improvement = {}
-        for metric, value in child.metrics.items():
-            if metric in parent.metrics:
-                # Only calculate diff for numeric values
-                if (
-                    isinstance(value, (int, float))
-                    and isinstance(parent.metrics[metric], (int, float))
-                    and not isinstance(value, bool)
-                    and not isinstance(parent.metrics[metric], bool)
-                ):
-                    try:
-                        diff = value - parent.metrics[metric]
-                        improvement[metric] = diff
-                    except (TypeError, ValueError):
-                        # Skip non-numeric metrics
-                        pass
-
-        improvement_str = _format_improvement(improvement)
+        # Calculate improvement using safe formatting
+        improvement_str = format_improvement_safe(parent.metrics, child.metrics)
 
         logger.info(
             f"Iteration {iteration+1}: Child {child.id} from parent {parent.id} "
             f"in {elapsed_time:.2f}s. Metrics: "
-            f"{_format_metrics(child.metrics)} "
+            f"{format_metrics_safe(child.metrics)} "
             f"(Δ: {improvement_str})"
         )
 
@@ -503,7 +490,7 @@ class OpenEvolve:
 
             logger.info(
                 f"Saved best program at checkpoint {iteration} with metrics: "
-                f"{_format_metrics(best_program.metrics)}"
+                f"{format_metrics_safe(best_program.metrics)}"
             )
 
         logger.info(f"Saved checkpoint at iteration {iteration} to {checkpoint_path}")

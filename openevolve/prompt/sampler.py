@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from openevolve.config import PromptConfig
 from openevolve.prompt.templates import TemplateManager
+from openevolve.utils.format_utils import format_metrics_safe
+from openevolve.utils.metrics_utils import safe_numeric_average
 
 logger = logging.getLogger(__name__)
 
@@ -126,14 +128,18 @@ class PromptSampler:
         }
 
     def _format_metrics(self, metrics: Dict[str, float]) -> str:
-        """Format metrics for the prompt"""
-        formatted_lines = []
+        """Format metrics for the prompt using safe formatting"""
+        # Use safe formatting to handle mixed numeric and string values
+        formatted_parts = []
         for name, value in metrics.items():
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                formatted_lines.append(f"- {name}: {value:.4f}")
+            if isinstance(value, (int, float)):
+                try:
+                    formatted_parts.append(f"- {name}: {value:.4f}")
+                except (ValueError, TypeError):
+                    formatted_parts.append(f"- {name}: {value}")
             else:
-                formatted_lines.append(f"- {name}: {value}")
-        return "\n".join(formatted_lines)
+                formatted_parts.append(f"- {name}: {value}")
+        return "\n".join(formatted_parts)
 
     def _identify_improvement_areas(
         self,
@@ -170,16 +176,16 @@ class PromptSampler:
 
                 for attempt in recent_attempts:
                     attempt_value = attempt["metrics"].get(metric, 0)
-                    # Skip comparison if attempt value is not numeric
-                    if not isinstance(attempt_value, (int, float)) or isinstance(
-                        attempt_value, bool
-                    ):
-                        continue
-
-                    if attempt_value <= value:
-                        regressed = False
-                    if attempt_value >= value:
+                    # Only compare if both values are numeric
+                    if isinstance(value, (int, float)) and isinstance(attempt_value, (int, float)):
+                        if attempt_value <= value:
+                            regressed = False
+                        if attempt_value >= value:
+                            improved = False
+                    else:
+                        # If either value is non-numeric, skip comparison
                         improved = False
+                        regressed = False
 
                 if improved and metric not in metrics_improved:
                     metrics_improved.append(metric)
@@ -226,12 +232,14 @@ class PromptSampler:
             attempt_number = len(previous_programs) - i
             changes = program.get("changes", "Unknown changes")
 
-            # Format performance metrics
-            metrics_dict = program.get("metrics", {})
+            # Format performance metrics using safe formatting
             performance_parts = []
-            for name, value in metrics_dict.items():
-                if isinstance(value, (int, float)) and not isinstance(value, bool):
-                    performance_parts.append(f"{name}: {value:.4f}")
+            for name, value in program.get("metrics", {}).items():
+                if isinstance(value, (int, float)):
+                    try:
+                        performance_parts.append(f"{name}: {value:.4f}")
+                    except (ValueError, TypeError):
+                        performance_parts.append(f"{name}: {value}")
                 else:
                     performance_parts.append(f"{name}: {value}")
             performance_str = ", ".join(performance_parts)
@@ -240,35 +248,34 @@ class PromptSampler:
             parent_metrics = program.get("parent_metrics", {})
             outcome = "Mixed results"
 
-            # Get only numeric metrics for comparison
-            current_numeric_metrics = {
-                m: v
-                for m, v in program.get("metrics", {}).items()
-                if isinstance(v, (int, float)) and not isinstance(v, bool)
-            }
-            parent_numeric_metrics = {
-                m: v
-                for m, v in parent_metrics.items()
-                if isinstance(v, (int, float)) and not isinstance(v, bool)
-            }
+            # Safely compare only numeric metrics
+            program_metrics = program.get("metrics", {})
 
-            if current_numeric_metrics and parent_numeric_metrics:
-                # Only compare metrics that exist in both
-                common_metrics = set(current_numeric_metrics.keys()) & set(
-                    parent_numeric_metrics.keys()
-                )
+            # Check if all numeric metrics improved
+            numeric_comparisons_improved = []
+            numeric_comparisons_regressed = []
 
-                if common_metrics:
-                    if all(
-                        current_numeric_metrics.get(m, 0) >= parent_numeric_metrics.get(m, 0)
-                        for m in common_metrics
-                    ):
-                        outcome = "Improvement in all metrics"
-                    elif all(
-                        current_numeric_metrics.get(m, 0) <= parent_numeric_metrics.get(m, 0)
-                        for m in common_metrics
-                    ):
-                        outcome = "Regression in all metrics"
+            for m in program_metrics:
+                prog_value = program_metrics.get(m, 0)
+                parent_value = parent_metrics.get(m, 0)
+
+                # Only compare if both values are numeric
+                if isinstance(prog_value, (int, float)) and isinstance(parent_value, (int, float)):
+                    if prog_value >= parent_value:
+                        numeric_comparisons_improved.append(True)
+                    else:
+                        numeric_comparisons_improved.append(False)
+
+                    if prog_value <= parent_value:
+                        numeric_comparisons_regressed.append(True)
+                    else:
+                        numeric_comparisons_regressed.append(False)
+
+            # Determine outcome based on numeric comparisons
+            if numeric_comparisons_improved and all(numeric_comparisons_improved):
+                outcome = "Improvement in all metrics"
+            elif numeric_comparisons_regressed and all(numeric_comparisons_regressed):
+                outcome = "Regression in all metrics"
 
             previous_attempts_str += (
                 previous_attempt_template.format(
@@ -291,22 +298,19 @@ class PromptSampler:
             if len(program_code.split("\n")) > 10:
                 program_snippet += "\n# ... (truncated for brevity)"
 
-            # Calculate a composite score from only numeric metrics
-            metrics_dict = program.get("metrics", {})
-            numeric_values = [
-                v
-                for v in metrics_dict.values()
-                if isinstance(v, (int, float)) and not isinstance(v, bool)
-            ]
-            score = sum(numeric_values) / max(1, len(numeric_values)) if numeric_values else 0.0
+            # Calculate a composite score using safe numeric average
+            score = safe_numeric_average(program.get("metrics", {}))
 
             # Extract key features (this could be more sophisticated)
             key_features = program.get("key_features", [])
             if not key_features:
                 key_features = []
                 for name, value in program.get("metrics", {}).items():
-                    if isinstance(value, (int, float)) and not isinstance(value, bool):
-                        key_features.append(f"Performs well on {name} ({value:.4f})")
+                    if isinstance(value, (int, float)):
+                        try:
+                            key_features.append(f"Performs well on {name} ({value:.4f})")
+                        except (ValueError, TypeError):
+                            key_features.append(f"Performs well on {name} ({value})")
                     else:
                         key_features.append(f"Performs well on {name} ({value})")
 
@@ -347,10 +351,8 @@ class PromptSampler:
                     if len(program_code.split("\n")) > 5:
                         program_snippet += "\n# ... (truncated)"
 
-                    # Calculate a composite score
-                    score = sum(program.get("metrics", {}).values()) / max(
-                        1, len(program.get("metrics", {}))
-                    )
+                    # Calculate a composite score using safe numeric average
+                    score = safe_numeric_average(program.get("metrics", {}))
 
                     # Extract key features
                     key_features = program.get("key_features", [])
