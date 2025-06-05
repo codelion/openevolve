@@ -1,240 +1,216 @@
-# Configuration for Custom Metal Kernel Evolution
-# Focus: Evolve Metal C++ kernel source code for block-diagonal attention
+# Enhanced Configuration for Metal Kernel Evolution
+# Focus: Progressive optimization with incremental rewards and diverse exploration
 
-max_iterations: 80
-checkpoint_interval: 5
+max_iterations: 120
+checkpoint_interval: 10
 log_level: "INFO"
 
-# LLM configuration
+# LLM configuration optimized for code evolution
 llm:
   primary_model: "gemini-2.5-flash-preview-05-20"
-  primary_model_weight: 0.7
+  primary_model_weight: 0.6
   secondary_model: "gemini-2.5-pro-preview-05-06"
-  secondary_model_weight: 0.3
+  secondary_model_weight: 0.4
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
   temperature: 0.8
-  top_p: 0.9
-  max_tokens: 24000
-  timeout: 600
+  top_p: 0.95
+  max_tokens: 32000
+  timeout: 900
 
-# Focused prompt for Metal kernel optimization
+# Structured prompt for progressive Metal kernel evolution
 prompt:
   system_message: |
-    🎯 **MISSION: Evolve High-Performance Metal Kernel for Block-Diagonal Attention**
+    # 🧬 EVOLVE HIGH-PERFORMANCE METAL ATTENTION KERNEL
     
-    You are evolving the **Metal C++ kernel source code** that computes block-diagonal attention
-    for packed sequences. Your goal is to beat `mx.fast.scaled_dot_product_attention` by 
-    optimizing computation patterns and memory access.
+    **MISSION**: Transform a basic Metal C++ kernel into a high-performance block-diagonal attention implementation that exploits sparsity to outperform mx.fast.scaled_dot_product_attention.
     
-    ## **THE EVOLUTION TARGET**
+    ## 🎯 EVOLUTION TARGET
     
-    **SINGLE EVOLUTION BLOCK**: The Metal C++ kernel source code inside the `kernel_source` string.
+    You are evolving **ONLY** the Metal C++ kernel source code within the `kernel_source` string:
     
     ```cpp
+    // EVOLVE THIS KERNEL SOURCE CODE:
     template<typename T>
-    [[kernel]] void block_diagonal_attention(
-        const device T* queries [[buffer(0)]],
-        const device T* keys [[buffer(1)]],
-        const device T* values [[buffer(2)]],
-        const device bool* mask [[buffer(3)]],
-        const device float* scale_ptr [[buffer(4)]],
-        device T* output [[buffer(5)]],
-        // ... thread parameters
-    ) {
-        // THIS IS WHAT YOU EVOLVE - the Metal C++ implementation
-        // Current: Basic implementation that processes each query position
-        // Goal: Optimized kernel that outperforms mx.fast.scaled_dot_product_attention
+    [[kernel]] void block_diagonal_attention(/* fixed signature */) {
+        // 🔥 THIS IS YOUR EVOLUTION PLAYGROUND 🔥
+        // Transform this from basic → optimized → high-performance
     }
     ```
     
-    ## **WHY BLOCK-DIAGONAL SHOULD WIN**
+    ## 📊 SUCCESS FRAMEWORK
     
-    **The Advantage**: Standard SPDA computes attention for ALL positions then masks out unwanted ones.
-    Block-diagonal attention can skip masked computations entirely, saving:
-    - 50-95% of compute (depending on sparsity)
-    - Memory bandwidth on masked regions
-    - Cache pollution from unused data
+    **PROGRESSIVE REWARDS** - You earn points for incremental progress:
     
-    **Test Scenarios**: You'll be evaluated on packed sequences where 50-95% of the attention 
-    matrix is masked (wasted computation in standard SPDA).
+    ### 🏆 LEVEL 1: BASELINE IMPROVEMENT (40% of score)
+    - **Target**: Beat the current/initial kernel implementation
+    - **Reward**: Linear scaling for 1.1x, 1.2x, 1.5x, 2x+ speedup over baseline
+    - **Why**: Incremental progress drives evolution forward
     
-    ## **METAL OPTIMIZATION OPPORTUNITIES**
+    ### 🏆 LEVEL 2: SPDA COMPETITION (40% of score)  
+    - **Target**: Approach and beat mx.fast.scaled_dot_product_attention
+    - **Reward**: Exponential bonus for beating this highly-optimized baseline
+    - **Why**: Ultimate performance goal
     
-    ### 🚀 **HIGH IMPACT** (Focus here first!)
+    ### 🏆 LEVEL 3: SPARSITY MASTERY (20% of score)
+    - **Target**: Efficiently exploit block-diagonal sparsity patterns
+    - **Reward**: Bonus for consistent gains across different sparsity levels
+    - **Why**: Algorithmic efficiency beyond brute-force optimization
     
-    **1. Skip Masked Computations**
+    ## 🚀 OPTIMIZATION STRATEGIES
+    
+    ### **PHASE 1: Foundation (Early Evolution)**
+    Focus on correctness and basic optimization:
     ```cpp
-    // Instead of computing all then masking:
-    for (uint key_pos = 0; key_pos < L; key_pos++) {
-        if (!mask[mask_base + key_pos]) continue;  // SKIP entirely
-        // Only compute for valid positions
-    }
+    // 1. Skip masked computations entirely
+    if (!mask[mask_base + key_pos]) continue;
+    
+    // 2. Cache frequently accessed values
+    T scale_val = T(scale[0]);  // Once per thread
+    
+    // 3. Optimize indexing calculations
+    uint q_base = /* precompute base indices */;
     ```
     
-    **2. Optimize Memory Access Patterns**
+    ### **PHASE 2: Memory Optimization (Mid Evolution)**
+    Attack memory bottlenecks:
     ```cpp
-    // Vectorized loads where possible
-    // Coalesced memory access
-    // Minimize memory bandwidth usage
-    ```
-    
-    **3. Thread Utilization**
-    ```cpp
-    // Better thread assignment
-    // Reduce thread divergence 
-    // Balance workload across threads
-    ```
-    
-    ### ⚡ **MEDIUM IMPACT** 
-    
-    **4. Algorithmic Improvements**
-    ```cpp
-    // Fused operations (score + softmax + output)
-    // Reduced intermediate storage
-    // Optimized softmax computation
-    ```
-    
-    **5. Apple Silicon Specific**
-    ```cpp
-    // Leverage unified memory architecture
-    // Optimize for Apple GPU characteristics
-    // Use Metal-specific features effectively
-    ```
-    
-    ### 🔧 **LOW IMPACT** (Polish)
-    
-    **6. Code Structure**
-    ```cpp
-    // Loop unrolling where beneficial
-    // Register optimization
-    // Instruction scheduling
-    ```
-    
-    ## **CRITICAL CONSTRAINTS**
-    
-    **✅ KEEP THESE UNCHANGED**:
-    - Kernel signature and buffer layout
-    - Template parameters and grid/threadgroup setup
-    - Overall algorithm structure (attention computation)
-    
-    **🎯 EVOLVE THESE**:
-    - Memory access patterns and vectorization
-    - Thread assignment and workload distribution  
-    - Computation ordering and fusion
-    - Optimization of inner loops
-    - Use of Metal-specific features
-    
-    **❌ AVOID THESE ERRORS**:
-    - Changing buffer indices or parameter types
-    - Breaking the attention mathematical correctness
-    - Using undefined Metal features or syntax
-    - Complex control flow that causes thread divergence
-    
-    ## **SUCCESS METRICS**
-    
-    **Correctness** (Must achieve):
-    - ✅ 75%+ test pass rate (MSE < 1e-3 vs reference)
-    - ✅ No NaN/Inf outputs
-    - ✅ Correct output shapes
-    
-    **Performance** (Optimization targets):
-    - 🎯 **1.2x+ speedup** over mx.fast.scaled_dot_product_attention (good)
-    - 🎯 **1.5x+ speedup** over SPDA (excellent)
-    - 🎯 **2.0x+ speedup** over SPDA (outstanding)
-    - 🎯 Consistent gains across sparse patterns
-    
-    ## **EVALUATION SCENARIOS**
-    
-    You'll be tested on increasingly sparse block-diagonal patterns:
-    - **50% sparse**: 2 large blocks (moderate advantage expected)
-    - **75% sparse**: 4 medium blocks (good advantage expected)  
-    - **87.5% sparse**: 8 small blocks (large advantage expected)
-    - **93.75% sparse**: 16 tiny blocks (massive advantage expected)
-    
-    The sparser the pattern, the more your optimized kernel should outperform SPDA!
-    
-    ## **METAL PROGRAMMING TIPS**
-    
-    **Memory Access**:
-    ```cpp
-    // Good: Sequential access
-    const device T* ptr = queries + base_idx;
-    for (uint d = 0; d < D; d++) { score += ptr[d] * other[d]; }
-    
-    // Good: Vectorized access (when aligned)
-    float4 q_vec = *((device float4*)(queries + base_idx));
-    ```
-    
-    **Thread Efficiency**:
-    ```cpp
-    // Good: Minimize thread divergence
-    if (condition_same_for_threadgroup) {
-        // All threads take same path
+    // 4. Vectorized memory access (HUGE WINS)
+    for (uint d = 0; d < HEAD_DIM; d += 4) {
+        float4 q_vec = *((device float4*)(queries + q_base + d));
+        float4 k_vec = *((device float4*)(keys + k_base + d));
+        score += dot(q_vec, k_vec);  // 4x fewer operations
     }
     
-    // Good: Balance workload
-    for (uint i = thread_id; i < work_items; i += num_threads) {
-        // Even distribution
-    }
+    // 5. Coalesced memory patterns
+    // Ensure adjacent threads access adjacent memory
+    
+    // 6. Minimize memory bandwidth
+    // Reduce redundant loads, cache in registers
     ```
     
-    **Computation Optimization**:
+    ### **PHASE 3: Advanced Optimization (Late Evolution)**
+    Push the limits:
     ```cpp
-    // Good: Minimize recomputation
-    float score = precomputed_base + delta;
+    // 7. Fused computation passes
+    // Combine score computation + softmax + output in one pass
     
-    // Good: Fuse operations
-    output[i] = T(softmax_weight * value + bias);
+    // 8. Thread workload balancing
+    // Handle variable block sizes efficiently
+    
+    // 9. Apple Silicon specific optimizations
+    // Leverage unified memory, GPU-specific features
     ```
     
-    ## **EXAMPLE OPTIMIZATIONS TO CONSIDER**
+    ## ⚡ OPTIMIZATION TECHNIQUES PRIORITY
+    
+    **🔥 CRITICAL (Must implement):**
+    1. **Skip masked regions** - 50-95% compute reduction
+    2. **Vectorized loads** - 2-4x memory throughput
+    3. **Register optimization** - Reduce memory pressure
+    
+    **⚡ HIGH IMPACT:**
+    4. **Fused operations** - Reduce memory round-trips
+    5. **Thread balancing** - Better GPU utilization
+    6. **Coalesced access** - Memory bandwidth optimization
+    
+    **🔧 POLISH:**
+    7. **Loop unrolling** - Instruction-level optimization
+    8. **Constant propagation** - Compile-time optimization
+    9. **Specialized variants** - Different strategies for different sparsity
+    
+    ## 🎮 EVOLUTION PATTERNS
+    
+    **Small Mutations (60% of changes):**
+    - Optimize individual loops
+    - Change memory access patterns
+    - Adjust vectorization
+    - Cache more values
+    
+    **Medium Changes (30% of changes):**
+    - Restructure computation order
+    - Add/remove optimization passes
+    - Change thread assignment
+    - Fuse/unfuse operations
+    
+    **Large Rewrites (10% of changes):**
+    - Completely different algorithmic approach
+    - Novel sparsity exploitation
+    - Alternative memory layouts
+    
+    ## 🧪 TEST SCENARIOS
+    
+    Your kernel will be tested on:
+    - **Dense (50% sparse)**: 2 large blocks - baseline performance
+    - **Medium (75% sparse)**: 4 blocks - good optimization opportunity  
+    - **Sparse (87% sparse)**: 8 blocks - major advantage potential
+    - **Very Sparse (94% sparse)**: 16+ blocks - massive wins possible
+    
+    **Success Pattern**: Performance should scale with sparsity!
+    
+    ## 🚫 CRITICAL CONSTRAINTS
+    
+    **NEVER CHANGE:**
+    - Function signature: `block_diagonal_attention(...)`
+    - Buffer parameter order: queries, keys, values, mask, scale, output
+    - Template structure: `template<typename T>` 
+    - Grid/threadgroup setup (handled externally)
+    
+    **ALWAYS MAINTAIN:**
+    - Mathematical correctness of attention computation
+    - Proper bounds checking for array access
+    - Valid Metal C++ syntax
+    
+    ## 💡 METAL-SPECIFIC OPTIMIZATIONS
     
     ```cpp
-    // 1. Skip masked regions entirely
-    if (!mask[mask_idx]) continue;
+    // Apple Silicon advantages to exploit:
     
-    // 2. Vectorize inner loops  
-    for (uint d = 0; d < D; d += 4) {
-        float4 q_chunk = *((device float4*)(q_ptr + d));
-        float4 k_chunk = *((device float4*)(k_ptr + d));
-        score += dot(q_chunk, k_chunk);
-    }
+    // 1. Unified memory - zero-copy between CPU/GPU
+    // 2. Wide SIMD units - vectorize aggressively  
+    // 3. High memory bandwidth - but minimize transfers
+    // 4. Threadgroup memory - use for cache optimization
     
-    // 3. Optimize thread assignment
-    uint items_per_thread = (actual_work + num_threads - 1) / num_threads;
-    uint start_idx = thread_id * items_per_thread;
-    
-    // 4. Reduce memory pressure
-    // Store frequently accessed values in registers
-    float scale_cached = scale_ptr[0];
+    // Example vectorization:
+    float4 q_chunk = *((device float4*)(q_ptr + d));
+    float4 k_chunk = *((device float4*)(k_ptr + d));
+    score += q_chunk.x*k_chunk.x + q_chunk.y*k_chunk.y + 
+             q_chunk.z*k_chunk.z + q_chunk.w*k_chunk.w;
     ```
     
-    Remember: Focus on the **biggest wins first** - skipping masked computations and 
-    optimizing memory access will have much more impact than micro-optimizations!
+    ## 🎯 EVOLUTION MINDSET
+    
+    **Think Incrementally**: Each evolution should be 5-20% better than the parent
+    **Think Systematically**: Attack one bottleneck at a time
+    **Think Sparsity**: Always ask "how can I skip more work?"
+    **Think Metal**: Leverage Apple Silicon's unique advantages
+    
+    **Remember**: This is a marathon, not a sprint. Build up optimizations progressively through many evolution steps!
   
-  num_top_programs: 4
-  num_diverse_programs: 2
+  num_top_programs: 6
+  num_diverse_programs: 4
   use_template_stochasticity: true
 
-# Database configuration
+# Enhanced database configuration for diversity and exploration
 database:
   db_path: "./openevolve_output/program_db"
-  population_size: 50
-  archive_size: 20
-  num_islands: 3
-  elite_selection_ratio: 0.20
-  exploitation_ratio: 0.60
-  exploration_ratio: 0.20
+  population_size: 80           # Increased for more diversity
+  archive_size: 40              # Larger archive for better memory
+  num_islands: 6                # More islands for parallel exploration
+  elite_selection_ratio: 0.15   # Slightly less elitism for more exploration
+  exploitation_ratio: 0.50      # Balanced exploration vs exploitation
+  exploration_ratio: 0.35       # More exploration for diverse approaches
+  island_migration_rate: 0.1    # Regular migration between islands
+  novelty_threshold: 0.3        # Encourage diverse solutions
 
-# Evaluator configuration  
+# Enhanced evaluator configuration
 evaluator:
-  timeout: 600
+  timeout: 900                  # Longer timeout for complex kernels
   cascade_evaluation: true
-  cascade_thresholds: [0.6, 0.75]
-  parallel_evaluations: 1
+  cascade_thresholds: [0.5, 0.7, 0.85]  # More stages for progressive filtering
+  parallel_evaluations: 2       # Utilize multiple cores
   use_llm_feedback: false
-
-# Evolution settings
+  
+# Evolution settings optimized for kernel development
 diff_based_evolution: true
-allow_full_rewrites: false
-max_code_length: 20000
+allow_full_rewrites: false      # Allow major algorithmic changes
+max_code_length: 30000         # Room for complex optimizations
