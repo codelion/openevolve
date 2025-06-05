@@ -313,43 +313,233 @@ def run_block_diagonal_tests(evolved_fn):
     print("Format: Test | Shape | Blocks | Sparsity | Evolved | SPDA | Speedup | Status")
     print("-" * 80)
     
-    # Block-diagonal test configurations
+    # Block-diagonal test configurations - comprehensive coverage
     block_configs = [
+        # ===== BASIC SPARSITY PROGRESSION =====
         {
-            "name": "packed_2x256_sparse50",
+            "name": "dense_2x256_sparse50",
             "B": 1, "H": 8, "L": 512, "D": 64,
-            "block_sizes": [256, 256],  # 50% sparse
-            "expected_speedup": 1.2
+            "block_sizes": [256, 256]  # 50% sparse - baseline
         },
         {
-            "name": "packed_4x128_sparse75", 
+            "name": "medium_4x128_sparse75", 
             "B": 1, "H": 16, "L": 512, "D": 64,
-            "block_sizes": [128, 128, 128, 128],  # 75% sparse
-            "expected_speedup": 1.5
+            "block_sizes": [128, 128, 128, 128]  # 75% sparse
         },
         {
-            "name": "packed_8x128_sparse87",
+            "name": "sparse_8x64_sparse87",
+            "B": 1, "H": 16, "L": 512, "D": 64,
+            "block_sizes": [64] * 8  # 87.5% sparse
+        },
+        {
+            "name": "very_sparse_16x32_sparse93",
+            "B": 1, "H": 16, "L": 512, "D": 64,
+            "block_sizes": [32] * 16  # 93.75% sparse
+        },
+        {
+            "name": "extreme_sparse_32x16_sparse96",
+            "B": 1, "H": 16, "L": 512, "D": 64,
+            "block_sizes": [16] * 32  # 96.875% sparse
+        },
+        
+        # ===== DIFFERENT SEQUENCE LENGTHS =====
+        {
+            "name": "small_seq_4x32_sparse75",
+            "B": 1, "H": 8, "L": 128, "D": 64,
+            "block_sizes": [32, 32, 32, 32]  # Small sequences
+        },
+        {
+            "name": "medium_seq_8x64_sparse87",
+            "B": 1, "H": 16, "L": 512, "D": 64,
+            "block_sizes": [64] * 8  # Medium sequences
+        },
+        {
+            "name": "large_seq_8x128_sparse87",
             "B": 1, "H": 16, "L": 1024, "D": 64,
-            "block_sizes": [128] * 8,  # 87.5% sparse
-            "expected_speedup": 2.0
+            "block_sizes": [128] * 8  # Large sequences
         },
         {
-            "name": "packed_16x64_sparse93",
-            "B": 1, "H": 16, "L": 1024, "D": 128,
-            "block_sizes": [64] * 16,  # 93.75% sparse
-            "expected_speedup": 3.0
+            "name": "huge_seq_16x128_sparse93",
+            "B": 1, "H": 32, "L": 2048, "D": 64,
+            "block_sizes": [128] * 16  # Very large sequences
         },
         {
-            "name": "bert_style_packing",
+            "name": "giant_seq_32x64_sparse96",
+            "B": 1, "H": 32, "L": 2048, "D": 64,
+            "block_sizes": [64] * 32  # Extreme sequences
+        },
+        
+        # ===== DIFFERENT HEAD DIMENSIONS =====
+        {
+            "name": "head64_8x64_sparse87",
+            "B": 1, "H": 16, "L": 512, "D": 64,
+            "block_sizes": [64] * 8  # Standard head dim
+        },
+        {
+            "name": "head80_8x64_sparse87",
+            "B": 1, "H": 16, "L": 512, "D": 80,
+            "block_sizes": [64] * 8  # PaLM head dim
+        },
+        {
+            "name": "head128_8x64_sparse87",
+            "B": 1, "H": 16, "L": 512, "D": 128,
+            "block_sizes": [64] * 8  # Large head dim
+        },
+        {
+            "name": "head32_8x64_sparse87",
+            "B": 1, "H": 16, "L": 512, "D": 32,
+            "block_sizes": [64] * 8  # Small head dim
+        },
+        
+        # ===== MIXED BLOCK SIZES =====
+        {
+            "name": "mixed_sizes_pyramid",
+            "B": 1, "H": 16, "L": 1024, "D": 64,
+            "block_sizes": [512, 256, 128, 64, 32, 16, 8, 8]  # Pyramid pattern
+        },
+        {
+            "name": "mixed_sizes_alternating",
+            "B": 1, "H": 16, "L": 1024, "D": 64,
+            "block_sizes": [128, 64, 128, 64, 128, 64, 128, 64, 128, 64]  # Alternating
+        },
+        {
+            "name": "mixed_sizes_bimodal",
+            "B": 1, "H": 16, "L": 1024, "D": 64,
+            "block_sizes": [256, 256, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32]  # Two large + many small
+        },
+        
+        # ===== BATCH SIZE VARIATIONS =====
+        {
+            "name": "batch1_8x64_sparse87",
+            "B": 1, "H": 16, "L": 512, "D": 64,
+            "block_sizes": [64] * 8  # Single batch
+        },
+        {
+            "name": "batch2_8x64_sparse87",
+            "B": 2, "H": 16, "L": 512, "D": 64,
+            "block_sizes": [64] * 8  # Small batch
+        },
+        {
+            "name": "batch4_8x64_sparse87",
+            "B": 4, "H": 16, "L": 512, "D": 64,
+            "block_sizes": [64] * 8  # Medium batch
+        },
+        {
+            "name": "batch8_8x64_sparse87",
+            "B": 8, "H": 16, "L": 512, "D": 64,
+            "block_sizes": [64] * 8  # Large batch
+        },
+        
+        # ===== HEAD COUNT VARIATIONS =====
+        {
+            "name": "heads4_8x64_sparse87",
+            "B": 1, "H": 4, "L": 512, "D": 64,
+            "block_sizes": [64] * 8  # Few heads
+        },
+        {
+            "name": "heads16_8x64_sparse87",
+            "B": 1, "H": 16, "L": 512, "D": 64,
+            "block_sizes": [64] * 8  # Standard heads
+        },
+        {
+            "name": "heads32_8x64_sparse87",
+            "B": 1, "H": 32, "L": 512, "D": 64,
+            "block_sizes": [64] * 8  # Many heads
+        },
+        {
+            "name": "heads64_8x64_sparse87",
+            "B": 1, "H": 64, "L": 512, "D": 64,
+            "block_sizes": [64] * 8  # Very many heads
+        },
+        
+        # ===== TINY BLOCKS (EXTREME SPARSITY) =====
+        {
+            "name": "tiny_blocks_64x8_sparse98",
+            "B": 1, "H": 16, "L": 512, "D": 64,
+            "block_sizes": [8] * 64  # 98.4% sparse
+        },
+        {
+            "name": "tiny_blocks_128x4_sparse99",
+            "B": 1, "H": 16, "L": 512, "D": 64,
+            "block_sizes": [4] * 128  # 99.2% sparse
+        },
+        
+        # ===== LARGE BLOCKS (DENSE PATTERNS) =====
+        {
+            "name": "large_blocks_2x256_sparse50",
+            "B": 1, "H": 8, "L": 512, "D": 64,
+            "block_sizes": [256, 256]  # Only 50% sparse
+        },
+        {
+            "name": "large_blocks_1x512_sparse0",
+            "B": 1, "H": 8, "L": 512, "D": 64,
+            "block_sizes": [512]  # Not sparse at all
+        },
+        
+        # ===== REAL-WORLD SCENARIOS =====
+        {
+            "name": "bert_base_packing",
             "B": 2, "H": 12, "L": 512, "D": 64,
-            "block_sizes": [128, 128, 128, 128],  # BERT-style
-            "expected_speedup": 1.3
+            "block_sizes": [128, 128, 128, 128]  # BERT-style sequence packing
         },
         {
-            "name": "large_seq_sparse",
-            "B": 1, "H": 32, "L": 2048, "D": 64, 
-            "block_sizes": [256] * 8,  # Large sequence, 87.5% sparse
-            "expected_speedup": 2.5
+            "name": "bert_large_packing",
+            "B": 2, "H": 16, "L": 512, "D": 64,
+            "block_sizes": [256, 256]  # BERT-Large style
+        },
+        {
+            "name": "gpt_style_packing",
+            "B": 1, "H": 32, "L": 1024, "D": 64,
+            "block_sizes": [512, 512]  # GPT-style long sequences
+        },
+        {
+            "name": "t5_encoder_packing",
+            "B": 4, "H": 16, "L": 512, "D": 64,
+            "block_sizes": [128, 128, 128, 128]  # T5 encoder style
+        },
+        {
+            "name": "longformer_sparse",
+            "B": 1, "H": 16, "L": 2048, "D": 64,
+            "block_sizes": [128] * 16  # Longformer-style local attention
+        },
+        
+        # ===== EDGE CASES =====
+        {
+            "name": "single_token_blocks",
+            "B": 1, "H": 8, "L": 64, "D": 64,
+            "block_sizes": [1] * 64  # Extreme case: every token is its own block
+        },
+        {
+            "name": "uneven_tiny_blocks",
+            "B": 1, "H": 16, "L": 512, "D": 64,
+            "block_sizes": [16, 8, 32, 4, 64, 16, 8, 32, 4, 64] * 3  # Uneven tiny blocks
+        },
+        {
+            "name": "power_of_2_progression",
+            "B": 1, "H": 16, "L": 1024, "D": 64,
+            "block_sizes": [512, 256, 128, 64, 32, 16, 8, 4, 2, 2]  # Powers of 2
+        },
+        
+        # ===== PERFORMANCE STRESS TESTS =====
+        {
+            "name": "stress_very_long_seq",
+            "B": 1, "H": 8, "L": 4096, "D": 64,
+            "block_sizes": [256] * 16  # Very long sequences
+        },
+        {
+            "name": "stress_many_heads",
+            "B": 1, "H": 128, "L": 512, "D": 64,
+            "block_sizes": [64] * 8  # Many attention heads
+        },
+        {
+            "name": "stress_large_batch",
+            "B": 16, "H": 16, "L": 512, "D": 64,
+            "block_sizes": [64] * 8  # Large batch size
+        },
+        {
+            "name": "stress_wide_heads",
+            "B": 1, "H": 16, "L": 512, "D": 256,
+            "block_sizes": [64] * 8  # Very wide attention heads
         }
     ]
     
@@ -372,19 +562,18 @@ def run_block_diagonal_tests(evolved_fn):
             
             # Calculate results
             speedup = time_spda / time_evolved if time_evolved > 0 else 0.0
-            expected = config["expected_speedup"]
             
-            # Determine status
+            # Determine status based on objective performance criteria
             if not correctness_ok:
                 status = "❌ WRONG"
                 color = "\033[91m"  # Red
-            elif speedup >= expected * 0.8:  # Within 80% of expected
+            elif speedup >= 1.5:  # Significant speedup
                 status = "✅ GOOD"
                 color = "\033[92m"  # Green
-            elif speedup >= 1.1:
+            elif speedup >= 1.1:  # Modest speedup
                 status = "⚡ OK"
                 color = "\033[93m"  # Yellow
-            else:
+            else:  # No meaningful improvement
                 status = "❌ SLOW"
                 color = "\033[91m"  # Red
             reset = "\033[0m"
@@ -399,7 +588,6 @@ def run_block_diagonal_tests(evolved_fn):
             block_results.append({
                 "config": config["name"],
                 "speedup": speedup,
-                "expected": expected,
                 "sparsity": sparsity,
                 "status": status,
                 "time_evolved": time_evolved,
@@ -455,7 +643,7 @@ def print_comprehensive_summary(official_results, block_results):
             print(f"   Worst speedup: {min(block_speedups):.2f}x")
             
             good_results = sum(1 for r in block_results if "✅" in r.get("status", ""))
-            print(f"   Tests meeting expectations: {good_results}/{len(block_results)} ({good_results/len(block_results)*100:.1f}%)")
+            print(f"   Tests with significant speedups: {good_results}/{len(block_results)} ({good_results/len(block_results)*100:.1f}%)")
     
     # Overall assessment
     print(f"\n🎖️  OVERALL ASSESSMENT:")
