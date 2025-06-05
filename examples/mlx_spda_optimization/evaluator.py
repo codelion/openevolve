@@ -105,8 +105,21 @@ def prepare_inputs(B, qL, kL, D, qH, kH, mask, transpose, dtype):
 
 
 # ============================================================================
-# BASELINE CACHING FOR PROGRESSIVE REWARDS
+# PROGRESSIVE REWARD CONFIGURATION (hardcoded since not in OpenEvolve config)
 # ============================================================================
+
+# Progressive reward weights
+BASELINE_IMPROVEMENT_WEIGHT = 0.4    # 40% for beating initial program
+SPDA_COMPETITION_WEIGHT = 0.4        # 40% for competing with SPDA
+SPARSITY_EXPLOITATION_WEIGHT = 0.2   # 20% for consistent sparsity gains
+
+# Baseline improvement thresholds and rewards (linear scaling)
+BASELINE_SPEEDUP_THRESHOLDS = [1.1, 1.2, 1.5, 2.0, 3.0]
+BASELINE_REWARDS = [0.2, 0.4, 0.6, 0.8, 1.0]
+
+# SPDA competition thresholds and rewards (exponential scaling)
+SPDA_SPEEDUP_THRESHOLDS = [0.8, 0.9, 1.0, 1.2, 1.5, 2.0]
+SPDA_REWARDS = [0.1, 0.2, 0.4, 0.7, 0.9, 1.0]
 
 class BaselineCache:
     """Cache baseline performance for progressive reward calculation"""
@@ -662,19 +675,13 @@ def calculate_progressive_rewards(evolved_fn, test_configs) -> Dict[str, float]:
         if initial_time and initial_time > 0:
             speedup_vs_initial = initial_time / evolved_time
             
-            # Linear reward scaling for baseline improvement
-            if speedup_vs_initial >= 3.0:
-                baseline_score = 1.0
-            elif speedup_vs_initial >= 2.0:
-                baseline_score = 0.8
-            elif speedup_vs_initial >= 1.5:
-                baseline_score = 0.6
-            elif speedup_vs_initial >= 1.2:
-                baseline_score = 0.4
-            elif speedup_vs_initial >= 1.1:
-                baseline_score = 0.2
-            else:
-                baseline_score = 0.0
+            # Linear reward scaling for baseline improvement using hardcoded thresholds
+            baseline_score = 0.0
+            for i, threshold in enumerate(BASELINE_SPEEDUP_THRESHOLDS):
+                if speedup_vs_initial >= threshold:
+                    baseline_score = BASELINE_REWARDS[i]
+                else:
+                    break
             
             baseline_scores.append(baseline_score)
     
@@ -691,21 +698,13 @@ def calculate_progressive_rewards(evolved_fn, test_configs) -> Dict[str, float]:
         if spda_time and spda_time > 0:
             speedup_vs_spda = spda_time / evolved_time
             
-            # Exponential reward scaling for SPDA competition
-            if speedup_vs_spda >= 2.0:
-                spda_score = 1.0
-            elif speedup_vs_spda >= 1.5:
-                spda_score = 0.9
-            elif speedup_vs_spda >= 1.2:
-                spda_score = 0.7
-            elif speedup_vs_spda >= 1.0:
-                spda_score = 0.4
-            elif speedup_vs_spda >= 0.9:
-                spda_score = 0.2
-            elif speedup_vs_spda >= 0.8:
-                spda_score = 0.1
-            else:
-                spda_score = 0.0
+            # Exponential reward scaling for SPDA competition using hardcoded thresholds
+            spda_score = 0.0
+            for i, threshold in enumerate(SPDA_SPEEDUP_THRESHOLDS):
+                if speedup_vs_spda >= threshold:
+                    spda_score = SPDA_REWARDS[i]
+                else:
+                    break
             
             spda_scores.append(spda_score)
     
@@ -732,11 +731,11 @@ def calculate_progressive_rewards(evolved_fn, test_configs) -> Dict[str, float]:
     else:
         sparsity_exploitation_score = 0.0
     
-    # COMBINE SCORES WITH WEIGHTS
+    # COMBINE SCORES WITH HARDCODED WEIGHTS
     overall_progressive_score = (
-        0.4 * baseline_improvement_score +     # 40% for beating initial program
-        0.4 * spda_competition_score +         # 40% for competing with SPDA  
-        0.2 * sparsity_exploitation_score      # 20% for sparsity consistency
+        BASELINE_IMPROVEMENT_WEIGHT * baseline_improvement_score +     # 40% for beating initial program
+        SPDA_COMPETITION_WEIGHT * spda_competition_score +             # 40% for competing with SPDA  
+        SPARSITY_EXPLOITATION_WEIGHT * sparsity_exploitation_score     # 20% for sparsity consistency
     )
     
     return {

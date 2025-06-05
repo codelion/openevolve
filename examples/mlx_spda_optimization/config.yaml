@@ -199,8 +199,8 @@ database:
   elite_selection_ratio: 0.15   # Slightly less elitism for more exploration
   exploitation_ratio: 0.50      # Balanced exploration vs exploitation
   exploration_ratio: 0.35       # More exploration for diverse approaches
-  island_migration_rate: 0.1    # Regular migration between islands
-  novelty_threshold: 0.3        # Encourage diverse solutions
+  migration_interval: 40        # More frequent migration between islands
+  migration_rate: 0.15          # Higher migration rate for diversity
 
 # Enhanced evaluator configuration
 evaluator:
