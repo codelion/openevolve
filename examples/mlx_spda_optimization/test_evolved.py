@@ -6,18 +6,18 @@ This script runs both:
 1. Official SPDA benchmark tests (using exact same methodology as spda_benchmark.py) 
 2. Block-diagonal specific tests where our custom kernel should excel
 
+All benchmarking methodology copied directly from spda_benchmark.py for consistency.
+
 Usage: python test_evolved.py <program_path>
 Example: python test_evolved.py initial_program.py
 Example: python test_evolved.py openevolve_output/best/best_program.py
 """
 
-import argparse
 import importlib.util
 import math
 import os
 import sys
 import time
-import gc
 from typing import Optional
 
 try:
@@ -29,30 +29,113 @@ except ImportError:
     MLX_AVAILABLE = False
     sys.exit(1)
 
-# Import the official SPDA benchmark
-try:
-    import spda_benchmark
-    SPDA_BENCHMARK_AVAILABLE = True
-except ImportError:
-    print("⚠️ spda_benchmark.py not found")
-    SPDA_BENCHMARK_AVAILABLE = False
-    sys.exit(1)
+# ============================================================================
+# BENCHMARKING METHODOLOGY - Copied directly from spda_benchmark.py
+# ============================================================================
+
+# Timing constants from spda_benchmark.py
+N_warmup = 5
+N_iter_bench = 40
+N_iter_func = 8
 
 
-def load_attention_function(program_path: str):
-    """Load the attention function from the specified program file"""
-    if not os.path.exists(program_path):
-        raise FileNotFoundError(f"Program file not found: {program_path}")
+def bench(f, *args):
+    """Benchmarking function copied from spda_benchmark.py"""
+    for i in range(N_warmup):
+        f(*args)
 
-    spec = importlib.util.spec_from_file_location("program", program_path)
-    program = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(program)
+    s = time.perf_counter_ns()
+    for i in range(N_iter_bench):
+        f(*args)
+    e = time.perf_counter_ns()
+    return (e - s) * 1e-9
 
-    if not hasattr(program, "evolved_scaled_dot_product_attention"):
-        raise AttributeError("Program missing evolved_scaled_dot_product_attention function")
 
-    return program.evolved_scaled_dot_product_attention
+def prepare_inputs(B, qL, kL, D, qH, kH, mask, transpose, dtype):
+    """Input preparation copied from spda_benchmark.py"""
+    np_dtype = getattr(np, dtype)
 
+    shape_q = (B, qL, qH, D) if transpose else (B, qH, qL, D)
+    shape_kv = (B, kL, kH, D) if transpose else (B, kH, kL, D)
+
+    scale = 1.0 / math.sqrt(D)
+
+    q_np = np.random.normal(0.0, 1.0, shape_q).astype(np_dtype)
+    k_np = np.random.normal(0.0, scale, shape_kv).astype(np_dtype)
+    v_np = np.random.normal(0.0, scale, shape_kv).astype(np_dtype)
+
+    q_mx = mx.array(q_np)
+    k_mx = mx.array(k_np)
+    v_mx = mx.array(v_np)
+
+    if mask is not None:
+        if mask == "additive":
+            mask_np = np.random.normal(0.0, 1.0, (B, qH, qL, kL)).astype(np_dtype)
+            mask = mx.array(mask_np)
+        elif mask == "bool":
+            mask_np = np.random.uniform(0.0, 1.0, (B, qH, qL, kL)) < 0.5
+            mask = mx.array(mask_np)
+
+    return q_mx, k_mx, v_mx, scale, mask
+
+
+def do_attention(f, q, k, v, scale, mask=None, transpose=False):
+    """Attention computation copied from spda_benchmark.py"""
+    if transpose:
+        q_t = mx.transpose(q, (0, 2, 1, 3))
+        k_t = mx.transpose(k, (0, 2, 1, 3))
+        v_t = mx.transpose(v, (0, 2, 1, 3))
+        o_t = f(q_t, k_t, v_t, scale=scale, mask=mask)
+        return mx.transpose(o_t, (0, 2, 1, 3))
+    else:
+        return f(q, k, v, scale=scale, mask=mask)
+
+
+def do_attention_bench(f, q, k, v, scale, mask=None, transpose=False):
+    """Attention benchmarking copied from spda_benchmark.py"""
+    q_out = q
+
+    for i in range(N_iter_func):
+        q_out = do_attention(f, q_out, k, v, scale, mask=mask, transpose=transpose)
+
+    mx.eval(q_out)
+    return q_out
+
+
+def bench_shape(evolved_fn, B, qsl, ksl, head_dim, n_q_heads, n_kv_heads, dtype, transpose=False, mask_in=None):
+    """Shape benchmarking copied and adapted from spda_benchmark.py"""
+    q_mx, k_mx, v_mx, scale, mask = prepare_inputs(
+        B, qsl, ksl, head_dim, n_q_heads, n_kv_heads, mask_in, transpose, dtype
+    )
+
+    # Benchmark evolved function
+    time_evolved = bench(
+        do_attention_bench, evolved_fn, q_mx, k_mx, v_mx, scale, mask, transpose
+    )
+    
+    # Benchmark SPDA
+    time_spda = bench(
+        do_attention_bench, mx.fast.scaled_dot_product_attention, q_mx, k_mx, v_mx, scale, mask, transpose
+    )
+
+    # Correctness check (same as spda_benchmark.py)
+    o_evolved = do_attention(evolved_fn, q_mx, k_mx, v_mx, scale, mask, transpose)
+    o_spda = do_attention(mx.fast.scaled_dot_product_attention, q_mx, k_mx, v_mx, scale, mask, transpose)
+
+    atol = 1e-5 if dtype == "float32" else 2e-4
+
+    if not mx.allclose(o_evolved, o_spda, atol=atol, rtol=atol):
+        max_diff = mx.max(mx.abs(o_evolved - o_spda))
+        print(f"Failed at (B: {B}, qsl: {qsl}, ksl: {ksl}, head_dim: {head_dim}, "
+              f"n_qh: {n_q_heads}, n_kvh: {n_kv_heads}, mask: {mask_in}) "
+              f"[tpose = {transpose}] with max(|a - b|) = {max_diff:3.2e}")
+
+    return time_spda, time_evolved
+
+
+# ============================================================================
+# BLOCK-DIAGONAL SPECIFIC FUNCTIONS
+# ============================================================================
 
 def create_block_diagonal_mask(B, H, L, block_sizes):
     """Create block-diagonal mask for packed sequences."""
@@ -70,25 +153,81 @@ def create_block_diagonal_mask(B, H, L, block_sizes):
     return mx.array(mask_np)
 
 
+def bench_block_diagonal_shape(evolved_fn, B, H, L, D, block_sizes, dtype="float16"):
+    """Benchmark block-diagonal configuration using same methodology"""
+    # Create inputs using same method as prepare_inputs
+    np_dtype = getattr(np, dtype)
+    scale = 1.0 / math.sqrt(D)
+
+    q_np = np.random.normal(0.0, 1.0, (B, H, L, D)).astype(np_dtype)
+    k_np = np.random.normal(0.0, scale, (B, H, L, D)).astype(np_dtype)
+    v_np = np.random.normal(0.0, scale, (B, H, L, D)).astype(np_dtype)
+
+    q_mx = mx.array(q_np)
+    k_mx = mx.array(k_np)
+    v_mx = mx.array(v_np)
+    
+    # Create block-diagonal mask
+    mask = create_block_diagonal_mask(B, H, L, block_sizes)
+    
+    # Benchmark evolved function using exact same methodology
+    time_evolved = bench(
+        do_attention_bench, evolved_fn, q_mx, k_mx, v_mx, scale, mask, False
+    )
+    
+    # Benchmark SPDA using exact same methodology
+    time_spda = bench(
+        do_attention_bench, mx.fast.scaled_dot_product_attention, q_mx, k_mx, v_mx, scale, mask, False
+    )
+
+    # Correctness check
+    o_evolved = do_attention(evolved_fn, q_mx, k_mx, v_mx, scale, mask, False)
+    o_spda = do_attention(mx.fast.scaled_dot_product_attention, q_mx, k_mx, v_mx, scale, mask, False)
+
+    atol = 1e-5 if dtype == "float32" else 2e-4
+    
+    correctness_ok = True
+    if not mx.allclose(o_evolved, o_spda, atol=atol, rtol=atol):
+        max_diff = mx.max(mx.abs(o_evolved - o_spda))
+        print(f"   ⚠️ Correctness issue: max diff = {max_diff:3.2e}")
+        correctness_ok = False
+
+    return time_spda, time_evolved, correctness_ok
+
+
+# ============================================================================
+# MAIN BENCHMARKING FUNCTIONS
+# ============================================================================
+
+def load_attention_function(program_path: str):
+    """Load the attention function from the specified program file"""
+    if not os.path.exists(program_path):
+        raise FileNotFoundError(f"Program file not found: {program_path}")
+
+    spec = importlib.util.spec_from_file_location("program", program_path)
+    program = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(program)
+
+    if not hasattr(program, "evolved_scaled_dot_product_attention"):
+        raise AttributeError("Program missing evolved_scaled_dot_product_attention function")
+
+    return program.evolved_scaled_dot_product_attention
+
+
 def run_official_spda_benchmark(evolved_fn):
-    """Run the official SPDA benchmark tests with our evolved function using exact same methodology"""
+    """Run the official SPDA benchmark tests using exact same methodology"""
     print("\n" + "=" * 80)
     print("📊 OFFICIAL SPDA BENCHMARK TESTS")
     print("=" * 80)
     print("Testing evolved attention vs mx.fast.scaled_dot_product_attention")
     print("Using EXACT same methodology as spda_benchmark.py")
-    print("Format: B, qsl, ksl, hdim, n_qh, n_kvh, t, dtype, mask, t_fused, t_evolved, diff%")
+    print("Format: B, qsl, ksl, hdim, n_qh, n_kvh, t, dtype, mask, t_spda, t_evolved, diff%")
     print("-" * 80)
     
-    # Temporarily replace the reference function in spda_benchmark
-    original_mlx_ref_attn = spda_benchmark.mlx_ref_attn
-    spda_benchmark.mlx_ref_attn = evolved_fn
-    
-    # Get official test configurations - EXACT same as spda_benchmark.py
-    dtypes = ("float16",)  # Focus on float16 like the official benchmark
+    # EXACT same configurations as spda_benchmark.py
+    dtypes = ("float16",)
     transposes = (False,)
     
-    # EXACT same shapes from spda_benchmark.py
     shapes_64 = (
         (1, 32, 32, 64, 32, 32),
         (1, 64, 64, 64, 32, 32), 
@@ -113,95 +252,66 @@ def run_official_spda_benchmark(evolved_fn):
     )
     
     shapes = shapes_64 + shapes_80 + shapes_128
-    masks = [None, "bool", "causal"]  # EXACT same as official
+    masks = [None, "bool", "causal"]
     
     official_results = []
     
-    try:
-        for dtype in dtypes:
-            for transpose in transposes:
-                for B, qsl, ksl, head_dim, n_q_heads, n_kv_heads in shapes:
-                    for mask_in in masks:
-                        try:
-                            # Use the EXACT same bench_shape function from spda_benchmark.py
-                            time_mlx_fused, time_mlx_evolved = spda_benchmark.bench_shape(
-                                B, qsl, ksl, head_dim, n_q_heads, n_kv_heads, dtype, transpose, mask_in
-                            )
-                            
-                            # Calculate performance difference
-                            diff = time_mlx_evolved / time_mlx_fused - 1.0
-                            speedup = time_mlx_fused / time_mlx_evolved if time_mlx_evolved > 0 else 0.0
-                            
-                            # Color coding: green for speedup, red for slowdown
-                            if diff < -0.05:  # >5% speedup
-                                color = "\033[92m"  # Green
-                            elif diff > 0.05:  # >5% slowdown
-                                color = "\033[91m"  # Red
-                            else:
-                                color = "\033[93m"  # Yellow
-                            reset_color = "\033[0m"
-                            
-                            t_str = 1 if transpose else 0
-                            
-                            print(
-                                f"{color}{B:3d}, {qsl:5d}, {ksl:5d}, {head_dim:4d}, {n_q_heads:4d}, "
-                                f"{n_kv_heads:5d}, {t_str:1d}, {dtype}, {str(mask_in):>8}, "
-                                f"{time_mlx_fused:6.3f}, {time_mlx_evolved:6.3f},{100. * diff:+6.2f}% "
-                                f"(speedup: {speedup:.2f}x){reset_color}"
-                            )
-                            
-                            official_results.append({
-                                "config": f"{qsl}x{head_dim}_{mask_in}",
-                                "speedup": speedup,
-                                "diff_pct": diff * 100,
-                                "time_fused": time_mlx_fused,
-                                "time_evolved": time_mlx_evolved
-                            })
-                            
-                        except Exception as e:
-                            print(f"FAILED: {B}, {qsl}, {ksl}, {head_dim}, {n_q_heads}, {n_kv_heads}, "
-                                  f"{dtype}, {mask_in} - {str(e)}")
-                            
-    finally:
-        # Restore original function
-        spda_benchmark.mlx_ref_attn = original_mlx_ref_attn
+    for dtype in dtypes:
+        for transpose in transposes:
+            for B, qsl, ksl, head_dim, n_q_heads, n_kv_heads in shapes:
+                for mask_in in masks:
+                    try:
+                        # Use our copied bench_shape function
+                        time_spda, time_evolved = bench_shape(
+                            evolved_fn, B, qsl, ksl, head_dim, n_q_heads, n_kv_heads, dtype, transpose, mask_in
+                        )
+                        
+                        # Calculate performance difference
+                        diff = time_evolved / time_spda - 1.0
+                        speedup = time_spda / time_evolved if time_evolved > 0 else 0.0
+                        
+                        # Color coding: green for speedup, red for slowdown
+                        if diff < -0.05:  # >5% speedup
+                            color = "\033[92m"  # Green
+                        elif diff > 0.05:  # >5% slowdown
+                            color = "\033[91m"  # Red
+                        else:
+                            color = "\033[93m"  # Yellow
+                        reset_color = "\033[0m"
+                        
+                        t_str = 1 if transpose else 0
+                        
+                        print(
+                            f"{color}{B:3d}, {qsl:5d}, {ksl:5d}, {head_dim:4d}, {n_q_heads:4d}, "
+                            f"{n_kv_heads:5d}, {t_str:1d}, {dtype}, {str(mask_in):>8}, "
+                            f"{time_spda:6.3f}, {time_evolved:6.3f},{100. * diff:+6.2f}% "
+                            f"(speedup: {speedup:.2f}x){reset_color}"
+                        )
+                        
+                        official_results.append({
+                            "config": f"{qsl}x{head_dim}_{mask_in}",
+                            "speedup": speedup,
+                            "diff_pct": diff * 100,
+                            "time_spda": time_spda,
+                            "time_evolved": time_evolved
+                        })
+                        
+                    except Exception as e:
+                        print(f"FAILED: {B}, {qsl}, {ksl}, {head_dim}, {n_q_heads}, {n_kv_heads}, "
+                              f"{dtype}, {mask_in} - {str(e)}")
     
     return official_results
 
 
 def run_block_diagonal_tests(evolved_fn):
-    """Run block-diagonal specific tests where our kernel should excel"""
+    """Run block-diagonal specific tests using same rigorous methodology"""
     print("\n" + "=" * 80)
     print("🎯 BLOCK-DIAGONAL SPECIFIC TESTS")
     print("=" * 80)
     print("Testing scenarios where block-diagonal attention should outperform SPDA")
-    print("Using same timing methodology as official benchmark")
+    print("Using same rigorous timing methodology as official benchmark")
     print("Format: Test | Shape | Blocks | Sparsity | Evolved | SPDA | Speedup | Status")
     print("-" * 80)
-    
-    # Use EXACT same timing constants as spda_benchmark.py
-    N_warmup = spda_benchmark.N_warmup      # 5
-    N_iter_bench = spda_benchmark.N_iter_bench  # 40  
-    N_iter_func = spda_benchmark.N_iter_func    # 8
-    
-    def bench_custom(f, *args):
-        """Use exact same bench function as spda_benchmark.py"""
-        for i in range(N_warmup):
-            f(*args)
-
-        s = time.perf_counter_ns()
-        for i in range(N_iter_bench):
-            f(*args)
-        e = time.perf_counter_ns()
-        return (e - s) * 1e-9
-    
-    def do_attention_bench_custom(f, q, k, v, scale, mask=None):
-        """Use exact same attention bench pattern as spda_benchmark.py"""
-        q_out = q
-        for i in range(N_iter_func):
-            q_out = f(q_out, k, v, scale=scale, mask=mask)
-        mx.eval(q_out)
-        return q_out
     
     # Block-diagonal test configurations
     block_configs = [
@@ -248,34 +358,27 @@ def run_block_diagonal_tests(evolved_fn):
     for config in block_configs:
         try:
             B, H, L, D = config["B"], config["H"], config["L"], config["D"]
-            
-            # Create test inputs using SAME method as spda_benchmark
-            dtype = "float16"
-            scale = 1.0 / math.sqrt(D)
-            
-            # Use spda_benchmark's input preparation
-            q, k, v, _, _ = spda_benchmark.prepare_inputs(B, L, L, D, H, H, None, False, dtype)
-            
-            # Create block-diagonal mask
-            mask = create_block_diagonal_mask(B, H, L, config["block_sizes"])
+            block_sizes = config["block_sizes"]
             
             # Calculate sparsity
             total_elements = L * L
-            masked_elements = sum(bs * bs for bs in config["block_sizes"])
+            masked_elements = sum(bs * bs for bs in block_sizes)
             sparsity = 1.0 - (masked_elements / total_elements)
             
-            # Benchmark evolved implementation using EXACT same methodology
-            evolved_time = bench_custom(do_attention_bench_custom, evolved_fn, q, k, v, scale, mask)
-            
-            # Benchmark SPDA using EXACT same methodology
-            spda_time = bench_custom(do_attention_bench_custom, mx.fast.scaled_dot_product_attention, q, k, v, scale, mask)
+            # Use our rigorous block-diagonal benchmarking
+            time_spda, time_evolved, correctness_ok = bench_block_diagonal_shape(
+                evolved_fn, B, H, L, D, block_sizes, dtype="float16"
+            )
             
             # Calculate results
-            speedup = spda_time / evolved_time if evolved_time > 0 else 0.0
+            speedup = time_spda / time_evolved if time_evolved > 0 else 0.0
             expected = config["expected_speedup"]
             
             # Determine status
-            if speedup >= expected * 0.8:  # Within 80% of expected
+            if not correctness_ok:
+                status = "❌ WRONG"
+                color = "\033[91m"  # Red
+            elif speedup >= expected * 0.8:  # Within 80% of expected
                 status = "✅ GOOD"
                 color = "\033[92m"  # Green
             elif speedup >= 1.1:
@@ -287,10 +390,10 @@ def run_block_diagonal_tests(evolved_fn):
             reset = "\033[0m"
             
             shape_str = f"{B}x{H}x{L}x{D}"
-            blocks_str = f"{len(config['block_sizes'])}blks"
+            blocks_str = f"{len(block_sizes)}blks"
             
             print(f"{color}{config['name']:<20}{reset} | {shape_str:<12} | {blocks_str:<6} | "
-                  f"{sparsity*100:5.1f}% | {evolved_time*1000:6.1f}ms | {spda_time*1000:6.1f}ms | "
+                  f"{sparsity*100:5.1f}% | {time_evolved*1000:6.1f}ms | {time_spda*1000:6.1f}ms | "
                   f"{speedup:5.2f}x | {status}")
             
             block_results.append({
@@ -299,8 +402,9 @@ def run_block_diagonal_tests(evolved_fn):
                 "expected": expected,
                 "sparsity": sparsity,
                 "status": status,
-                "time_evolved": evolved_time,
-                "time_spda": spda_time
+                "time_evolved": time_evolved,
+                "time_spda": time_spda,
+                "correctness_ok": correctness_ok
             })
             
         except Exception as e:
@@ -339,9 +443,12 @@ def print_comprehensive_summary(official_results, block_results):
     # Block-diagonal specific summary
     if block_results:
         block_speedups = [r["speedup"] for r in block_results if "speedup" in r and r["speedup"] > 0]
+        correct_results = [r for r in block_results if r.get("correctness_ok", False)]
+        
         if block_speedups:
             print(f"\n🎯 BLOCK-DIAGONAL SPECIFIC RESULTS:")
             print(f"   Tests run: {len(block_speedups)}")
+            print(f"   Correct results: {len(correct_results)}/{len(block_results)}")
             print(f"   Average speedup: {np.mean(block_speedups):.2f}x")
             print(f"   Median speedup: {np.median(block_speedups):.2f}x")
             print(f"   Best speedup: {max(block_speedups):.2f}x")
@@ -362,23 +469,21 @@ def print_comprehensive_summary(official_results, block_results):
         
         if avg_block_speedup >= 2.0:
             print("   🏆 EXCELLENT: Custom kernel significantly outperforms SPDA on block-diagonal patterns!")
-            print("   🚀 Evolution successfully discovered optimizations for sparse attention patterns.")
         elif avg_block_speedup >= 1.5:
             print("   🥈 GOOD: Meaningful performance improvements on block-diagonal patterns.")
-            print("   ⚡ Custom kernel shows clear advantage over SPDA for sparse patterns.")
         elif avg_block_speedup >= 1.2:
             print("   🥉 MODERATE: Some improvements, but room for further optimization.")
-            print("   🔧 Kernel needs more work to fully exploit block-diagonal sparsity.")
         elif avg_block_speedup >= 1.0:
             print("   ⚠️  MARGINAL: Small gains, significant optimization potential remains.")
         else:
             print("   ❌ UNDERPERFORMING: Custom kernel slower than SPDA.")
     
     print(f"\n💡 TIMING METHODOLOGY:")
-    print(f"   • Same warmup/iteration counts as official benchmark")
-    print(f"   • Same input preparation and chaining patterns")
+    print(f"   • Warmup iterations: {N_warmup}")
+    print(f"   • Benchmark iterations: {N_iter_bench}")
+    print(f"   • Function calls per iteration: {N_iter_func}")
     print(f"   • Nanosecond precision timing")
-    print(f"   • Results should match spda_benchmark.py when using SPDA")
+    print(f"   • Same as spda_benchmark.py methodology")
 
 
 def main():
