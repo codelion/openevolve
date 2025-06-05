@@ -805,7 +805,9 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
                 passed_count += 1
                 print(f"    ✅ {config['name']}: PASSED (MSE: {result.get('mse', 0):.2e})")
             else:
-                error_msg = result.get("error", f"MSE: {result.get('mse', 1.0):.2e}")
+                mse_val = result.get('mse', 1.0)
+                mse_str = f"{mse_val:.2e}" if isinstance(mse_val, (int, float)) else str(mse_val)
+                error_msg = result.get("error", f"MSE: {mse_str}")
                 print(f"    ❌ {config['name']}: FAILED ({error_msg})")
         
         # Calculate pass rate
