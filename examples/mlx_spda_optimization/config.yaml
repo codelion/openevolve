@@ -1,236 +1,240 @@
-# Configuration for Block-Diagonal Attention Metal Kernel Evolution
-# Focused on evolving efficient Metal kernels for packed sequences
+# Configuration for Custom Metal Kernel Evolution
+# Focus: Evolve Metal C++ kernel source code for block-diagonal attention
 
-max_iterations: 100
+max_iterations: 80
 checkpoint_interval: 5
 log_level: "INFO"
 
 # LLM configuration
 llm:
   primary_model: "gemini-2.5-flash-preview-05-20"
-  primary_model_weight: 0.6
+  primary_model_weight: 0.7
   secondary_model: "gemini-2.5-pro-preview-05-06"
-  secondary_model_weight: 0.4
+  secondary_model_weight: 0.3
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
   temperature: 0.8
   top_p: 0.9
   max_tokens: 24000
   timeout: 600
 
-# Focused prompt for CPU-based block-diagonal attention optimization
+# Focused prompt for Metal kernel optimization
 prompt:
   system_message: |
-    🎯 **MISSION: Evolve High-Performance Block-Diagonal Attention for Packed Sequences**
+    🎯 **MISSION: Evolve High-Performance Metal Kernel for Block-Diagonal Attention**
     
-    You are optimizing attention computation for packed sequences (multiple sequences concatenated 
-    to avoid padding waste) where attention should only occur within sequence boundaries.
+    You are evolving the **Metal C++ kernel source code** that computes block-diagonal attention
+    for packed sequences. Your goal is to beat `mx.fast.scaled_dot_product_attention` by 
+    optimizing computation patterns and memory access.
     
-    ## **THE PROBLEM**
+    ## **THE EVOLUTION TARGET**
     
-    **Current Issue**: Training models with packed sequences requires block-diagonal attention:
-    - Keys/queries from the same sequence can attend to each other
-    - Keys/queries from different sequences should NOT attend to each other  
-    - Naive masking wastes computation on large masked regions
+    **SINGLE EVOLUTION BLOCK**: The Metal C++ kernel source code inside the `kernel_source` string.
     
-    **Goal**: Evolve efficient attention that beats naive masking by:
-    - Smart block detection and processing
-    - Optimized CPU operations with MLX
-    - Memory-efficient computation patterns
-    - Achieving 1.2-2x+ speedup over naive masked attention
-    
-    ## **EVOLUTION TARGET**
-    
-    **Single Evolution Block**: The entire `evolved_scaled_dot_product_attention` function
-    
-    **Focus Areas** (in order of priority):
-    
-    ### 1. **Block Detection & Processing** (HIGHEST PRIORITY)
-    ```python
-    # In detect_packed_sequences() and analyze_mask_structure()
-    # EVOLUTION OPPORTUNITIES:
-    # - Better detection of block-diagonal patterns from masks
-    # - Handle variable-length sequences efficiently
-    # - Optimize for common packing strategies (uniform/variable)
-    # - Cache block structure analysis for repeated use
+    ```cpp
+    template<typename T>
+    [[kernel]] void block_diagonal_attention(
+        const device T* queries [[buffer(0)]],
+        const device T* keys [[buffer(1)]],
+        const device T* values [[buffer(2)]],
+        const device bool* mask [[buffer(3)]],
+        const device float* scale_ptr [[buffer(4)]],
+        device T* output [[buffer(5)]],
+        // ... thread parameters
+    ) {
+        // THIS IS WHAT YOU EVOLVE - the Metal C++ implementation
+        // Current: Basic implementation that processes each query position
+        // Goal: Optimized kernel that outperforms mx.fast.scaled_dot_product_attention
+    }
     ```
     
-    ### 2. **Optimized Block-Diagonal CPU Computation**
-    ```python 
-    # In optimized_block_diagonal_cpu()
-    # EVOLUTION OPPORTUNITIES:
-    # - More efficient block iteration and memory access
-    # - Vectorized MLX operations within blocks
-    # - Minimize memory allocations and copies
-    # - Fused attention computation within blocks
-    # - Parallel processing of independent blocks
+    ## **WHY BLOCK-DIAGONAL SHOULD WIN**
+    
+    **The Advantage**: Standard SPDA computes attention for ALL positions then masks out unwanted ones.
+    Block-diagonal attention can skip masked computations entirely, saving:
+    - 50-95% of compute (depending on sparsity)
+    - Memory bandwidth on masked regions
+    - Cache pollution from unused data
+    
+    **Test Scenarios**: You'll be evaluated on packed sequences where 50-95% of the attention 
+    matrix is masked (wasted computation in standard SPDA).
+    
+    ## **METAL OPTIMIZATION OPPORTUNITIES**
+    
+    ### 🚀 **HIGH IMPACT** (Focus here first!)
+    
+    **1. Skip Masked Computations**
+    ```cpp
+    // Instead of computing all then masking:
+    for (uint key_pos = 0; key_pos < L; key_pos++) {
+        if (!mask[mask_base + key_pos]) continue;  // SKIP entirely
+        // Only compute for valid positions
+    }
     ```
     
-    ### 3. **Smart Fallback Logic**
-    ```python
-    # In main function logic
-    # EVOLUTION OPPORTUNITIES:
-    # - Better heuristics for when to use block-diagonal vs regular attention
-    # - Adaptive algorithm selection based on sequence patterns
-    # - Efficient mask analysis and caching
+    **2. Optimize Memory Access Patterns**
+    ```cpp
+    // Vectorized loads where possible
+    // Coalesced memory access
+    // Minimize memory bandwidth usage
     ```
     
-    ### 4. **MLX Operation Optimization**
-    ```python
-    # Throughout the function
-    # EVOLUTION OPPORTUNITIES:
-    # - Use more efficient MLX operations (avoid numpy conversions)
-    # - Better memory layout and access patterns  
-    # - Minimize intermediate tensor allocations
-    # - Leverage MLX's optimized attention primitives where possible
+    **3. Thread Utilization**
+    ```cpp
+    // Better thread assignment
+    // Reduce thread divergence 
+    // Balance workload across threads
     ```
     
-    ## **CRITICAL SYNTAX AND CODING RULES**
+    ### ⚡ **MEDIUM IMPACT** 
     
-    ⚠️ **AVOID THESE COMMON ERRORS**:
-    
-    1. **String Syntax**: Never use unescaped quotes or f-strings in multi-line strings
-    2. **Variable Scope**: Only use variables that are clearly defined in the current scope
-    3. **MLX API**: Use `mx.concatenate()`, not `.at[]` syntax (that's JAX, not MLX)
-    4. **Comments**: Use `#` for Python comments, `//` only inside actual C/C++ code strings
-    5. **F-strings**: Be very careful with f-strings containing complex expressions
-    
-    ✅ **ALWAYS DO THIS**:
-    
-    ```python
-    # Good: Simple, clear variable usage
-    B, H, L, D = q.shape
-    
-    # Good: MLX-compatible operations
-    output = mx.concatenate(block_outputs, axis=2)
-    
-    # Good: Clear variable definitions within scope
-    block_size = block_info["block_size"]
-    num_blocks = block_info["num_blocks"]
-    
-    # Good: Safe string formatting
-    kernel_source = "// Simple kernel without complex formatting\n"
-    kernel_source += f"const uint block_size = {block_size};\n"
+    **4. Algorithmic Improvements**
+    ```cpp
+    // Fused operations (score + softmax + output)
+    // Reduced intermediate storage
+    // Optimized softmax computation
     ```
     
-    ❌ **NEVER DO THIS**:
-    
-    ```python
-    # Bad: Undefined variables
-    print(f"Using {n_q_heads} heads")  # n_q_heads not defined in this scope!
-    
-    # Bad: JAX syntax in MLX 
-    output = output.at[:, :, start:end, :].set(block_output)  # Wrong framework!
-    
-    # Bad: Complex f-strings with quotes
-    code = f"if (pos < {var}) { print(\"hello\"); }"  # Syntax nightmare!
-    
-    # Bad: C++ comments in Python
-    // This is a Python comment  # Wrong comment style!
+    **5. Apple Silicon Specific**
+    ```cpp
+    // Leverage unified memory architecture
+    // Optimize for Apple GPU characteristics
+    // Use Metal-specific features effectively
     ```
+    
+    ### 🔧 **LOW IMPACT** (Polish)
+    
+    **6. Code Structure**
+    ```cpp
+    // Loop unrolling where beneficial
+    // Register optimization
+    // Instruction scheduling
+    ```
+    
+    ## **CRITICAL CONSTRAINTS**
+    
+    **✅ KEEP THESE UNCHANGED**:
+    - Kernel signature and buffer layout
+    - Template parameters and grid/threadgroup setup
+    - Overall algorithm structure (attention computation)
+    
+    **🎯 EVOLVE THESE**:
+    - Memory access patterns and vectorization
+    - Thread assignment and workload distribution  
+    - Computation ordering and fusion
+    - Optimization of inner loops
+    - Use of Metal-specific features
+    
+    **❌ AVOID THESE ERRORS**:
+    - Changing buffer indices or parameter types
+    - Breaking the attention mathematical correctness
+    - Using undefined Metal features or syntax
+    - Complex control flow that causes thread divergence
     
     ## **SUCCESS METRICS**
     
     **Correctness** (Must achieve):
-    - ✅ 80%+ test pass rate across all scenarios
-    - ✅ MSE < 1e-3 vs reference implementation  
-    - ✅ Handle variable sequence lengths correctly
-    - ✅ No NaN/Inf in outputs
+    - ✅ 75%+ test pass rate (MSE < 1e-3 vs reference)
+    - ✅ No NaN/Inf outputs
+    - ✅ Correct output shapes
     
     **Performance** (Optimization targets):
-    - 🎯 **1.2x+ speedup** over naive masked attention (good)
-    - 🎯 **1.5x+ speedup** over naive masked attention (excellent)  
-    - 🎯 **2.0x+ speedup** over naive masked attention (outstanding)
-    - 🎯 Linear scaling with number of sequences
-    - 🎯 Efficient memory usage
+    - 🎯 **1.2x+ speedup** over mx.fast.scaled_dot_product_attention (good)
+    - 🎯 **1.5x+ speedup** over SPDA (excellent)
+    - 🎯 **2.0x+ speedup** over SPDA (outstanding)
+    - 🎯 Consistent gains across sparse patterns
     
     ## **EVALUATION SCENARIOS**
     
-    You'll be tested on:
-    - **packed_2x256**: Two 256-token sequences packed together
-    - **packed_4x128**: Four 128-token sequences packed together
-    - **packed_variable**: Variable-length sequences (256 + 512)
-    - **packed_large**: Large sequences (4x256 = 1024 total)
-    - **packed_bert_style**: BERT-style training packing
+    You'll be tested on increasingly sparse block-diagonal patterns:
+    - **50% sparse**: 2 large blocks (moderate advantage expected)
+    - **75% sparse**: 4 medium blocks (good advantage expected)  
+    - **87.5% sparse**: 8 small blocks (large advantage expected)
+    - **93.75% sparse**: 16 tiny blocks (massive advantage expected)
     
-    ## **IMPLEMENTATION STRATEGY**
+    The sparser the pattern, the more your optimized kernel should outperform SPDA!
     
-    **Phase 1: Block Detection**
-    - Analyze mask patterns to identify block boundaries
-    - Handle both uniform and variable-length blocks
-    - Cache analysis results for efficiency
+    ## **METAL PROGRAMMING TIPS**
     
-    **Phase 2: Optimized Computation**  
-    - Process each block independently with optimized attention
-    - Use efficient MLX operations within blocks
-    - Minimize memory allocations and data movement
+    **Memory Access**:
+    ```cpp
+    // Good: Sequential access
+    const device T* ptr = queries + base_idx;
+    for (uint d = 0; d < D; d++) { score += ptr[d] * other[d]; }
     
-    **Phase 3: Assembly & Output**
-    - Efficiently combine block outputs
-    - Ensure correct output shape and dtype
-    - Handle edge cases gracefully
-    
-    ## **KEY CONSTRAINTS**
-    
-    **DO NOT CHANGE**:
-    - Function signature of `evolved_scaled_dot_product_attention`
-    - Overall structure (detect -> process -> fallback)
-    - Error handling and fallback mechanisms
-    
-    **FOCUS ON**:
-    - Block detection efficiency and accuracy
-    - CPU computation optimization with MLX
-    - Memory access patterns and data layout
-    - Algorithmic improvements for block processing
-    
-    ## **EXAMPLE IMPROVEMENTS**
-    
-    **Better Block Detection**:
-    ```python
-    # Analyze mask structure more efficiently
-    # Cache block boundaries for reuse
-    # Handle edge cases in variable-length sequences
+    // Good: Vectorized access (when aligned)
+    float4 q_vec = *((device float4*)(queries + base_idx));
     ```
     
-    **Optimized Block Processing**:
-    ```python
-    # Use MLX's optimized operations
-    # Minimize intermediate allocations
-    # Process blocks in optimal order
+    **Thread Efficiency**:
+    ```cpp
+    // Good: Minimize thread divergence
+    if (condition_same_for_threadgroup) {
+        // All threads take same path
+    }
+    
+    // Good: Balance workload
+    for (uint i = thread_id; i < work_items; i += num_threads) {
+        // Even distribution
+    }
     ```
     
-    **Memory Efficiency**:
-    ```python
-    # Avoid unnecessary numpy conversions
-    # Reuse intermediate tensors where possible
-    # Optimize data layout for cache efficiency
+    **Computation Optimization**:
+    ```cpp
+    // Good: Minimize recomputation
+    float score = precomputed_base + delta;
+    
+    // Good: Fuse operations
+    output[i] = T(softmax_weight * value + bias);
     ```
     
-    Remember: Focus on correctness first, then optimize for performance. 
-    Use only MLX operations and avoid complex string formatting that can cause syntax errors!
+    ## **EXAMPLE OPTIMIZATIONS TO CONSIDER**
+    
+    ```cpp
+    // 1. Skip masked regions entirely
+    if (!mask[mask_idx]) continue;
+    
+    // 2. Vectorize inner loops  
+    for (uint d = 0; d < D; d += 4) {
+        float4 q_chunk = *((device float4*)(q_ptr + d));
+        float4 k_chunk = *((device float4*)(k_ptr + d));
+        score += dot(q_chunk, k_chunk);
+    }
+    
+    // 3. Optimize thread assignment
+    uint items_per_thread = (actual_work + num_threads - 1) / num_threads;
+    uint start_idx = thread_id * items_per_thread;
+    
+    // 4. Reduce memory pressure
+    // Store frequently accessed values in registers
+    float scale_cached = scale_ptr[0];
+    ```
+    
+    Remember: Focus on the **biggest wins first** - skipping masked computations and 
+    optimizing memory access will have much more impact than micro-optimizations!
   
-  num_top_programs: 5
-  num_diverse_programs: 3
+  num_top_programs: 4
+  num_diverse_programs: 2
   use_template_stochasticity: true
 
 # Database configuration
 database:
   db_path: "./openevolve_output/program_db"
-  population_size: 60
-  archive_size: 25
-  num_islands: 4
-  elite_selection_ratio: 0.15
-  exploitation_ratio: 0.65
+  population_size: 50
+  archive_size: 20
+  num_islands: 3
+  elite_selection_ratio: 0.20
+  exploitation_ratio: 0.60
   exploration_ratio: 0.20
 
 # Evaluator configuration  
 evaluator:
-  timeout: 900
+  timeout: 600
   cascade_evaluation: true
-  cascade_thresholds: [0.6, 0.8]
+  cascade_thresholds: [0.6, 0.75]
   parallel_evaluations: 1
   use_llm_feedback: false
 
 # Evolution settings
 diff_based_evolution: true
 allow_full_rewrites: false
-max_code_length: 40000
+max_code_length: 25000
