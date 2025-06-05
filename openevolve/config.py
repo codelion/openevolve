@@ -40,7 +40,6 @@ class LLMConfig(LLMModelConfig):
 
     # API configuration
     api_base: str = "https://api.openai.com/v1"
-    name: str = "gpt-4o"
 
     # Generation parameters
     system_message: Optional[str] = "system_message"
@@ -60,10 +59,10 @@ class LLMConfig(LLMModelConfig):
     evaluator_models: List[LLMModelConfig] = field(default_factory=lambda: [])
 
     # Backwardes compatibility with primary_model(_weight) options
-    primary_model: str = "gemini-2.0-flash-lite"
-    primary_model_weight: float = 0.8
-    secondary_model: str = "gemini-2.0-flash"
-    secondary_model_weight: float = 0.2
+    primary_model: str = None
+    primary_model_weight: float = None
+    secondary_model: str = None
+    secondary_model_weight: float = None
 
     def __post_init__(self):
         """Post-initialization to set up model configurations"""
