@@ -74,8 +74,8 @@ def is_true_block_diagonal_mask(mask):
         
         block_size = block_end - block_start
         
-        # Check if this is a valid square block (at least 16x16)
-        if block_size >= 16:
+        # Check if this is a valid square block (at least 8x8)
+        if block_size >= 8:
             # Verify it's actually a square block (all True within the square)
             block_region = mask_np[block_start:block_end, block_start:block_end]
             if np.mean(block_region) > 0.95:  # 95% of block should be True
@@ -92,11 +92,11 @@ def is_true_block_diagonal_mask(mask):
     total_elements = L * L
     block_coverage = total_block_elements / total_elements
     
-    # Should have reasonable sparsity (30-90% masked) and clear block structure
+    # Should have reasonable sparsity (20-99% masked) and clear block structure
     sparsity = 1.0 - np.mean(mask_np)
     
-    return (0.3 <= sparsity <= 0.9 and 
-            0.05 <= block_coverage <= 0.7 and
+    return (0.2 <= sparsity <= 0.99 and 
+            0.01 <= block_coverage <= 0.8 and
             len(blocks_found) >= 2)
 
 

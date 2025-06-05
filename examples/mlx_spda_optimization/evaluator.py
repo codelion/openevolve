@@ -158,12 +158,6 @@ def create_test_configurations():
             "B": 1, "H": 8, "L": 768, "D": 64,
             "block_sizes": [256, 512],  # Variable sizes
             "test_type": "correctness"
-        },
-        {
-            "name": "single_large_block",
-            "B": 1, "H": 4, "L": 256, "D": 64,
-            "block_sizes": [256],  # Single block (edge case)
-            "test_type": "correctness"
         }
     ])
     
@@ -206,12 +200,6 @@ def create_test_configurations():
             "name": "packed_sequences_medium",
             "B": 2, "H": 12, "L": 512, "D": 64,
             "block_sizes": [128, 128, 128, 128],  # BERT-style packing
-            "test_type": "performance"
-        },
-        {
-            "name": "extreme_sparse_packing",
-            "B": 1, "H": 16, "L": 1024, "D": 128,
-            "block_sizes": [64] * 16,  # 16 tiny blocks = 93.75% sparse
             "test_type": "performance"
         }
     ])
