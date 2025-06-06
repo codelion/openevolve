@@ -814,7 +814,7 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
         pass_rate = passed_count / len(correctness_configs) if correctness_configs else 0.0
         stage1_passed = pass_rate >= 0.75  # 75% pass rate required
         
-        print(f"\\n📊 STAGE 1 Results:")
+        print(f"\n📊 STAGE 1 Results:")
         print(f"  Passed: {passed_count}/{len(correctness_configs)} ({pass_rate:.1%})")
         print(f"  Status: {'✅ PASSED' if stage1_passed else '❌ FAILED'}")
         
@@ -828,7 +828,7 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
             }
         
         # ===== STAGE 2: ALL ORIGINAL PERFORMANCE TESTS + PROGRESSIVE REWARDS =====
-        print(f"\\n🏁 STAGE 2: ALL Original Performance Tests + Progressive Rewards")
+        print(f"\n🏁 STAGE 2: ALL Original Performance Tests + Progressive Rewards")
         
         performance_configs = [c for c in test_configs if c["test_type"] == "performance"]
         print(f"  Running {len(performance_configs)} performance tests...")
@@ -837,7 +837,7 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
         # Calculate progressive rewards
         progressive_scores = calculate_progressive_rewards(evolved_fn, test_configs)
         
-        print(f"\\n🎯 PROGRESSIVE REWARDS BREAKDOWN:")
+        print(f"\n🎯 PROGRESSIVE REWARDS BREAKDOWN:")
         print(f"  🏆 Baseline Improvement: {progressive_scores['baseline_improvement_score']:.3f} (40% weight)")
         print(f"  🏆 SPDA Competition:     {progressive_scores['spda_competition_score']:.3f} (40% weight)")  
         print(f"  🏆 Sparsity Exploitation: {progressive_scores['sparsity_exploitation_score']:.3f} (20% weight)")
@@ -850,7 +850,7 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
         # Overall score is the progressive score
         overall_score = progressive_scores['overall_progressive_score']
         
-        print(f"\\n🏆 FINAL EVALUATION:")
+        print(f"\n🏆 FINAL EVALUATION:")
         print(f"  Stage 1 (Correctness): {'✅ PASSED' if stage1_passed else '❌ FAILED'} ({len(correctness_configs)} tests)")
         print(f"  Stage 2 (ALL Original Performance + Progressive): {overall_score:.3f} ({len(performance_configs)} tests)")
         print(f"  🎯 COMBINED SCORE: {overall_score:.3f}")
@@ -910,7 +910,7 @@ if __name__ == "__main__":
     
     if os.path.exists(initial_program_path):
         results = evaluate(initial_program_path)
-        print("\\nComplete Evaluation Results:")
+        print("\nComplete Evaluation Results:")
         for k, v in results.items():
             print(f"  {k}: {v}")
     else:
