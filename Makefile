@@ -33,7 +33,7 @@ install: venv
 # Run Black code formatting
 .PHONY: lint
 lint: venv
-	$(PYTHON) -m black openevolve examples tests
+	$(PYTHON) -m black openevolve examples tests scripts
 
 # Run tests using the virtual environment
 .PHONY: test

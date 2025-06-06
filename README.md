@@ -128,6 +128,20 @@ diff -u checkpoints/checkpoint_10/best_program.py checkpoints/checkpoint_20/best
 # Compare metrics
 cat checkpoints/checkpoint_*/best_program_info.json | grep -A 10 metrics
 ```
+
+### Visualizing the evolution tree
+
+The script in `scripts/visualize.py` allows you to visualize the evolution tree and display it in your webbrowser. The script watches live for the newest checkpoint directory in the examples/ folder structure and updates the graph. Alternatively, you can also provide a specific checkpoint folder with the `--path` parameter.
+
+```bash
+# Install requirements
+pip install -r scripts/requirements.txt
+
+# Start the visualization web server
+python scripts/visualizer.py
+```
+![OpenEvolve Visualizer](openevolve-visualizer.png)
+
 ### Docker
 
 You can also install and execute via Docker:

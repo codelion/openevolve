@@ -13,5 +13,5 @@ jobs:
       - uses: psf/black@stable
         with:
           options: "--check --verbose"
-          src: "./openevolve ./tests ./examples"
+          src: "./openevolve ./tests ./examples ./scripts"
           use_pyproject: true
