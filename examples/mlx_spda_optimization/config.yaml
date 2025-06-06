@@ -1,7 +1,7 @@
 # Enhanced Configuration for Metal Kernel Evolution
 # Focus: Progressive optimization with incremental rewards and diverse exploration
 
-max_iterations: 120
+max_iterations: 50
 checkpoint_interval: 10
 log_level: "INFO"
 

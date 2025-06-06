@@ -105,21 +105,71 @@ def prepare_inputs(B, qL, kL, D, qH, kH, mask, transpose, dtype):
 
 
 # ============================================================================
-# PROGRESSIVE REWARD CONFIGURATION (hardcoded since not in OpenEvolve config)
+# PROGRESSIVE REWARD CONFIGURATION - FINE-GRAINED EVOLUTIONARY PRESSURE
 # ============================================================================
 
-# Progressive reward weights
+# Progressive reward weights  
 BASELINE_IMPROVEMENT_WEIGHT = 0.4    # 40% for beating initial program
 SPDA_COMPETITION_WEIGHT = 0.4        # 40% for competing with SPDA
 SPARSITY_EXPLOITATION_WEIGHT = 0.2   # 20% for consistent sparsity gains
 
-# Baseline improvement thresholds and rewards (linear scaling)
-BASELINE_SPEEDUP_THRESHOLDS = [1.1, 1.2, 1.5, 2.0, 3.0]
-BASELINE_REWARDS = [0.2, 0.4, 0.6, 0.8, 1.0]
+# 🔥 MICRO-OPTIMIZATION REWARDS: Fine-grained baseline improvement detection
+# Designed to create evolutionary pressure for even small optimizations (0.1% - 10%)
+BASELINE_SPEEDUP_THRESHOLDS = [
+    1.001,   # 0.1% improvement
+    1.002,   # 0.2% improvement  
+    1.005,   # 0.5% improvement
+    1.01,    # 1% improvement
+    1.02,    # 2% improvement
+    1.05,    # 5% improvement
+    1.1,     # 10% improvement
+    1.2,     # 20% improvement
+    1.5,     # 50% improvement
+    2.0      # 100% improvement
+]
+BASELINE_REWARDS = [
+    0.05,    # Small but meaningful reward for 0.1% gain
+    0.1,     # 0.2% gain
+    0.15,    # 0.5% gain
+    0.25,    # 1% gain (current best gets ~0.25)
+    0.35,    # 2% gain
+    0.5,     # 5% gain
+    0.65,    # 10% gain
+    0.8,     # 20% gain
+    0.9,     # 50% gain
+    1.0      # 100% gain
+]
 
-# SPDA competition thresholds and rewards (exponential scaling)
-SPDA_SPEEDUP_THRESHOLDS = [0.8, 0.9, 1.0, 1.2, 1.5, 2.0]
-SPDA_REWARDS = [0.1, 0.2, 0.4, 0.7, 0.9, 1.0]
+# 🚀 INCREMENTAL SPDA COMPETITION: Start rewarding much earlier
+# Create evolutionary pathway toward beating SPDA rather than requiring sudden breakthrough
+SPDA_SPEEDUP_THRESHOLDS = [
+    0.05,    # 5% of SPDA speed (terrible but measurable)
+    0.1,     # 10% of SPDA speed  
+    0.2,     # 20% of SPDA speed
+    0.3,     # 30% of SPDA speed
+    0.5,     # 50% of SPDA speed
+    0.7,     # 70% of SPDA speed
+    0.8,     # 80% of SPDA speed
+    0.9,     # 90% of SPDA speed
+    1.0,     # Match SPDA!
+    1.2,     # 20% faster than SPDA
+    1.5,     # 50% faster than SPDA
+    2.0      # 100% faster than SPDA
+]
+SPDA_REWARDS = [
+    0.01,    # Tiny reward for being measurably faster than worst-case
+    0.02,    # 10% of SPDA speed
+    0.05,    # 20% of SPDA speed
+    0.1,     # 30% of SPDA speed
+    0.2,     # 50% of SPDA speed (significant milestone)
+    0.4,     # 70% of SPDA speed (approaching competitive)
+    0.6,     # 80% of SPDA speed (very competitive)
+    0.8,     # 90% of SPDA speed (almost there!)
+    1.0,     # Match SPDA (major breakthrough!)
+    1.0,     # Beat SPDA by 20%
+    1.0,     # Beat SPDA by 50%
+    1.0      # Beat SPDA by 100%
+]
 
 class BaselineCache:
     """Cache baseline performance for progressive reward calculation"""
@@ -641,7 +691,7 @@ def benchmark_performance_single(evolved_fn, config):
 # ============================================================================
 
 def calculate_progressive_rewards(evolved_fn, test_configs) -> Dict[str, float]:
-    """Calculate multi-level progressive rewards for the evolved kernel"""
+    """Calculate multi-level progressive rewards with fine-grained evolutionary pressure"""
     
     # Ensure we have baseline performance cached
     _baseline_cache.ensure_baselines(test_configs)
@@ -661,11 +711,14 @@ def calculate_progressive_rewards(evolved_fn, test_configs) -> Dict[str, float]:
             "spda_competition_score": 0.0, 
             "sparsity_exploitation_score": 0.0,
             "overall_progressive_score": 0.0,
-            "num_successful_tests": 0
+            "num_successful_tests": 0,
+            "reward_breakdown": "No successful tests"
         }
     
-    # LEVEL 1: BASELINE IMPROVEMENT REWARDS (40% weight)
+    # LEVEL 1: MICRO-OPTIMIZATION BASELINE REWARDS (40% weight)
     baseline_scores = []
+    baseline_speedups = []
+    
     for result in evolved_results:
         config_name = result["config_name"]
         evolved_time = result["evolved_time"]
@@ -674,8 +727,9 @@ def calculate_progressive_rewards(evolved_fn, test_configs) -> Dict[str, float]:
         initial_time = _baseline_cache.initial_program_performance.get(config_name)
         if initial_time and initial_time > 0:
             speedup_vs_initial = initial_time / evolved_time
+            baseline_speedups.append(speedup_vs_initial)
             
-            # Linear reward scaling for baseline improvement using hardcoded thresholds
+            # 🔥 FINE-GRAINED reward scaling - every 0.1% improvement gets rewarded!
             baseline_score = 0.0
             for i, threshold in enumerate(BASELINE_SPEEDUP_THRESHOLDS):
                 if speedup_vs_initial >= threshold:
@@ -686,9 +740,12 @@ def calculate_progressive_rewards(evolved_fn, test_configs) -> Dict[str, float]:
             baseline_scores.append(baseline_score)
     
     baseline_improvement_score = np.mean(baseline_scores) if baseline_scores else 0.0
+    avg_baseline_speedup = np.mean(baseline_speedups) if baseline_speedups else 1.0
     
-    # LEVEL 2: SPDA COMPETITION REWARDS (40% weight)  
+    # LEVEL 2: INCREMENTAL SPDA COMPETITION REWARDS (40% weight)  
     spda_scores = []
+    spda_speedups = []
+    
     for result in evolved_results:
         config_name = result["config_name"]
         evolved_time = result["evolved_time"]
@@ -697,8 +754,9 @@ def calculate_progressive_rewards(evolved_fn, test_configs) -> Dict[str, float]:
         spda_time = _baseline_cache.spda_performance.get(config_name)
         if spda_time and spda_time > 0:
             speedup_vs_spda = spda_time / evolved_time
+            spda_speedups.append(speedup_vs_spda)
             
-            # Exponential reward scaling for SPDA competition using hardcoded thresholds
+            # 🚀 INCREMENTAL reward scaling - reward progress toward SPDA!
             spda_score = 0.0
             for i, threshold in enumerate(SPDA_SPEEDUP_THRESHOLDS):
                 if speedup_vs_spda >= threshold:
@@ -709,33 +767,44 @@ def calculate_progressive_rewards(evolved_fn, test_configs) -> Dict[str, float]:
             spda_scores.append(spda_score)
     
     spda_competition_score = np.mean(spda_scores) if spda_scores else 0.0
+    avg_spda_speedup = np.mean(spda_speedups) if spda_speedups else 0.0
     
-    # LEVEL 3: SPARSITY EXPLOITATION REWARDS (20% weight)
+    # LEVEL 3: ENHANCED SPARSITY EXPLOITATION REWARDS (20% weight)
     # Reward consistent performance across different sparsity levels
     sparsity_groups = {}
     for result in evolved_results:
         sparsity = result["sparsity"]
-        difficulty = result["difficulty"]
+        difficulty = result.get("difficulty", "unknown")
         
         if difficulty not in sparsity_groups:
             sparsity_groups[difficulty] = []
         sparsity_groups[difficulty].append(result)
     
-    # Bonus for performing well across multiple sparsity levels
-    if len(sparsity_groups) >= 3:  # Good performance on 3+ difficulty levels
+    # 🎯 ENHANCED: More nuanced sparsity exploitation scoring
+    num_difficulty_levels = len(sparsity_groups)
+    if num_difficulty_levels >= 4:  # Excellent across many sparsity levels
         sparsity_exploitation_score = 1.0
-    elif len(sparsity_groups) >= 2:  # Good performance on 2+ difficulty levels
-        sparsity_exploitation_score = 0.6
-    elif len(sparsity_groups) >= 1:  # Good performance on 1 difficulty level
-        sparsity_exploitation_score = 0.3
+    elif num_difficulty_levels >= 3:  # Good across multiple levels
+        sparsity_exploitation_score = 0.8
+    elif num_difficulty_levels >= 2:  # Decent across some levels
+        sparsity_exploitation_score = 0.5
+    elif num_difficulty_levels >= 1:  # Works on at least one level
+        sparsity_exploitation_score = 0.2
     else:
         sparsity_exploitation_score = 0.0
     
-    # COMBINE SCORES WITH HARDCODED WEIGHTS
+    # COMBINE SCORES WITH WEIGHTS
     overall_progressive_score = (
         BASELINE_IMPROVEMENT_WEIGHT * baseline_improvement_score +     # 40% for beating initial program
         SPDA_COMPETITION_WEIGHT * spda_competition_score +             # 40% for competing with SPDA  
         SPARSITY_EXPLOITATION_WEIGHT * sparsity_exploitation_score     # 20% for sparsity consistency
+    )
+    
+    # 🔍 DETAILED REWARD BREAKDOWN for debugging
+    reward_breakdown = (
+        f"Baseline: {avg_baseline_speedup:.4f}x→{baseline_improvement_score:.3f} | "
+        f"SPDA: {avg_spda_speedup:.4f}x→{spda_competition_score:.3f} | "
+        f"Sparsity: {num_difficulty_levels}lvls→{sparsity_exploitation_score:.3f}"
     )
     
     return {
@@ -744,7 +813,13 @@ def calculate_progressive_rewards(evolved_fn, test_configs) -> Dict[str, float]:
         "sparsity_exploitation_score": float(sparsity_exploitation_score),
         "overall_progressive_score": float(overall_progressive_score),
         "num_successful_tests": len(evolved_results),
-        "total_performance_tests": len(performance_configs)
+        "total_performance_tests": len(performance_configs),
+        
+        # 📊 DETAILED METRICS for analysis
+        "avg_baseline_speedup": float(avg_baseline_speedup),
+        "avg_spda_speedup": float(avg_spda_speedup),
+        "num_difficulty_levels": num_difficulty_levels,
+        "reward_breakdown": reward_breakdown
     }
 
 
@@ -837,11 +912,15 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
         # Calculate progressive rewards
         progressive_scores = calculate_progressive_rewards(evolved_fn, test_configs)
         
-        print(f"\n🎯 PROGRESSIVE REWARDS BREAKDOWN:")
+        print(f"\n🎯 PROGRESSIVE REWARDS BREAKDOWN (Fine-Grained):")
         print(f"  🏆 Baseline Improvement: {progressive_scores['baseline_improvement_score']:.3f} (40% weight)")
+        print(f"      ↳ Avg speedup vs initial: {progressive_scores.get('avg_baseline_speedup', 1.0):.4f}x")
         print(f"  🏆 SPDA Competition:     {progressive_scores['spda_competition_score']:.3f} (40% weight)")  
+        print(f"      ↳ Avg speedup vs SPDA: {progressive_scores.get('avg_spda_speedup', 0.0):.4f}x")
         print(f"  🏆 Sparsity Exploitation: {progressive_scores['sparsity_exploitation_score']:.3f} (20% weight)")
+        print(f"      ↳ Difficulty levels covered: {progressive_scores.get('num_difficulty_levels', 0)}")
         print(f"  🎯 Overall Progressive Score: {progressive_scores['overall_progressive_score']:.3f}")
+        print(f"  📊 Detailed: {progressive_scores.get('reward_breakdown', 'N/A')}")
         
         successful_tests = progressive_scores['num_successful_tests']
         total_tests = progressive_scores['total_performance_tests']
@@ -856,15 +935,17 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
         print(f"  🎯 COMBINED SCORE: {overall_score:.3f}")
         
         if overall_score >= 0.8:
-            print(f"  🥇 EXCELLENT: High-performance optimization with ALL tests!")
+            print(f"  🥇 EXCELLENT: High-performance optimization with fine-grained rewards!")
         elif overall_score >= 0.6:
-            print(f"  🥈 GOOD: Meaningful improvements across original test suite")
+            print(f"  🥈 GOOD: Strong improvements detected by progressive reward system")
         elif overall_score >= 0.4:
-            print(f"  🥉 MODERATE: Progressive improvement, comprehensive testing")
+            print(f"  🥉 MODERATE: Meaningful progress with enhanced evolutionary pressure")
         elif overall_score >= 0.2:
-            print(f"  📈 PROGRESS: Incremental gains detected on full test suite")
+            print(f"  📈 PROGRESS: Micro-optimizations rewarded, evolution guided effectively")
+        elif overall_score >= 0.05:
+            print(f"  🔍 MICRO-GAINS: Fine-grained detection working, small improvements found")
         else:
-            print(f"  🔄 BASELINE: All tests preserved, evolution progressing")
+            print(f"  🔄 BASELINE: Enhanced reward system ready for optimization discovery")
         
         # Return comprehensive results
         result = {
@@ -873,10 +954,16 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
             "overall_score": float(overall_score),
             "combined_score": float(overall_score),  # Primary metric for OpenEvolve
             
-            # Progressive reward breakdown
+            # Progressive reward breakdown (enhanced)
             "baseline_improvement_score": progressive_scores['baseline_improvement_score'],
             "spda_competition_score": progressive_scores['spda_competition_score'], 
             "sparsity_exploitation_score": progressive_scores['sparsity_exploitation_score'],
+            
+            # Fine-grained metrics for analysis
+            "avg_baseline_speedup": progressive_scores.get('avg_baseline_speedup', 1.0),
+            "avg_spda_speedup": progressive_scores.get('avg_spda_speedup', 0.0),
+            "num_difficulty_levels": progressive_scores.get('num_difficulty_levels', 0),
+            "reward_breakdown": progressive_scores.get('reward_breakdown', 'N/A'),
             
             # Test statistics
             "num_correctness_tests": len(correctness_configs),
@@ -885,8 +972,9 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
             "passed_correctness_tests": passed_count,
             
             # Metadata
-            "evaluation_methodology": "all_original_tests_plus_progressive_rewards",
-            "timing_methodology": "rigorous"
+            "evaluation_methodology": "all_original_tests_plus_fine_grained_progressive_rewards",
+            "timing_methodology": "rigorous",
+            "reward_system_version": "fine_grained_v1.0"
         }
         
         return result
