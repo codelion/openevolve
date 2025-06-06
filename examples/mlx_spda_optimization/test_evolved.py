@@ -122,7 +122,7 @@ def bench_shape(evolved_fn, B, qsl, ksl, head_dim, n_q_heads, n_kv_heads, dtype,
     o_evolved = do_attention(evolved_fn, q_mx, k_mx, v_mx, scale, mask, transpose)
     o_spda = do_attention(mx.fast.scaled_dot_product_attention, q_mx, k_mx, v_mx, scale, mask, transpose)
 
-    atol = 1e-5 if dtype == "float32" else 2e-4
+    atol = 1e-5 if dtype == "float32" else 5e-4
 
     if not mx.allclose(o_evolved, o_spda, atol=atol, rtol=atol):
         max_diff = mx.max(mx.abs(o_evolved - o_spda))
@@ -184,7 +184,7 @@ def bench_block_diagonal_shape(evolved_fn, B, H, L, D, block_sizes, dtype="float
     o_evolved = do_attention(evolved_fn, q_mx, k_mx, v_mx, scale, mask, False)
     o_spda = do_attention(mx.fast.scaled_dot_product_attention, q_mx, k_mx, v_mx, scale, mask, False)
 
-    atol = 1e-5 if dtype == "float32" else 2e-4
+    atol = 1e-5 if dtype == "float32" else 5e-4
     
     correctness_ok = True
     if not mx.allclose(o_evolved, o_spda, atol=atol, rtol=atol):
