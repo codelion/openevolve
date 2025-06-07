@@ -2,243 +2,13 @@ import os
 import json
 import glob
 import logging
-from flask import Flask, render_template_string, jsonify
-from pathlib import Path
+import shutil
+import re as _re
+from flask import Flask, render_template, render_template_string, jsonify
 
-app = Flask(__name__)
-
-# HTML template with D3.js for network visualization
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>OpenEvolve Evolution Visualizer</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <style>
-        html, body { height: 100%; margin: 0; padding: 0; }
-        body { font-family: Arial, sans-serif; background: #f7f7f7; height: 100vh; width: 100vw; }
-        #graph { width: 100vw; height: 100vh; }
-        .node circle { stroke: #fff; stroke-width: 2px; }
-        .node text { pointer-events: none; font-size: 12px; }
-        .link { stroke: #999; stroke-opacity: 0.6; }
-        .tooltip {
-            position: absolute;
-            text-align: left;
-            width: 400px;
-            max-width: 90vw;
-            max-height: 60vh;
-            overflow: auto;
-            padding: 10px;
-            font: 12px sans-serif;
-            background: #fff;
-            border: 1px solid #aaa;
-            border-radius: 8px;
-            pointer-events: none;
-            box-shadow: 2px 2px 8px #aaa;
-            z-index: 10;
-        }
-        pre {
-            background: #f0f0f0;
-            padding: 6px;
-            border-radius: 4px;
-            max-height: 200px;
-            overflow: auto;
-            white-space: pre;
-        }
-    </style>
-</head>
-<body>
-    <h1>OpenEvolve Evolution Visualizer</h1>
-    <div id="graph"></div>
-    <script>
-    let width = window.innerWidth;
-    let height = window.innerHeight - document.querySelector('h1').offsetHeight;
-
-    const svg = d3.select("#graph").append("svg")
-        .attr("width", width)
-        .attr("height", height)
-        .call(d3.zoom()
-            .scaleExtent([0.1, 10])
-            .on("zoom", (event) => {
-                g.attr("transform", event.transform);
-            }))
-        .on("dblclick.zoom", null);
-
-    const g = svg.append("g");
-
-    const tooltip = d3.select("body").append("div")
-        .attr("class", "tooltip")
-        .style("opacity", 0);
-
-    let lastDataStr = null;
-    let sticky = false;
-
-    function formatMetrics(metrics) {
-        return Object.entries(metrics).map(([k, v]) => `<b>${k}</b>: ${v}`).join('<br>');
-    }
-
-    function showTooltip(event, d) {
-        tooltip.transition().duration(200).style("opacity", .95);
-        tooltip.html(
-            `<b>Program ID:</b> ${d.id}<br>` +
-            `<b>Island:</b> ${d.island}<br>` +
-            `<b>Generation:</b> ${d.generation}<br>` +
-            `<b>Parent ID:</b> ${d.parent_id || 'None'}<br>` +
-            `<b>Metrics:</b><br>${formatMetrics(d.metrics)}<br>` +
-            `<b>Code:</b><pre>${d.code.replace(/</g, '&lt;')}</pre>`
-        )
-        .style("left", (event.pageX + 20) + "px")
-        .style("top", (event.pageY - 20) + "px");
-    }
-    function showTooltipSticky(event, d) {
-        sticky = true;
-        showTooltip(event, d);
-    }
-
-    function hideTooltip() {
-        if (sticky) return;
-        tooltip.transition().duration(300).style("opacity", 0);
-    }
-    function resetTooltip() {
-        sticky = false;
-        hideTooltip(true);
-    }
-
-    function openInNewTab(event, d) {
-        const url = `/program/${d.id}`;
-        window.open(url, '_blank');
-        event.stopPropagation(); // Prevent tooltip from closing
-    }
-
-    function renderGraph(data) {
-        g.selectAll("*").remove();
-        const simulation = d3.forceSimulation(data.nodes)
-            .force("link", d3.forceLink(data.edges).id(d => d.id).distance(80))
-            .force("charge", d3.forceManyBody().strength(-200))
-            .force("center", d3.forceCenter(width / 2, height / 2));
-
-        const link = g.append("g")
-            .attr("stroke", "#999")
-            .attr("stroke-opacity", 0.6)
-            .selectAll("line")
-            .data(data.edges)
-            .enter().append("line")
-            .attr("stroke-width", 2);
-
-        const node = g.append("g")
-            .attr("stroke", "#fff")
-            .attr("stroke-width", 1.5)
-            .selectAll("circle")
-            .data(data.nodes)
-            .enter().append("circle")
-            .attr("r", 16)
-            .attr("fill", d => d.island !== undefined ? d3.schemeCategory10[d.island % 10] : "#888")
-            .on("mouseover", showTooltip)
-            .on("click", showTooltipSticky)
-            .on("dblclick", openInNewTab)
-            .on("mouseout", hideTooltip)
-            .call(d3.drag()
-                .on("start", dragstarted)
-                .on("drag", dragged)
-                .on("end", dragended));
-
-        node.append("title").text(d => d.id);
-
-        simulation.on("tick", () => {
-            link
-                .attr("x1", d => d.source.x)
-                .attr("y1", d => d.source.y)
-                .attr("x2", d => d.target.x)
-                .attr("y2", d => d.target.y);
-            node
-                .attr("cx", d => d.x)
-                .attr("cy", d => d.y);
-        });
-
-        function dragstarted(event, d) {
-            if (!event.active) simulation.alphaTarget(0.3).restart();
-            d.fx = d.x;
-            d.fy = d.y;
-        }
-        function dragged(event, d) {
-            d.fx = event.x;
-            d.fy = event.y;
-        }
-        function dragended(event, d) {
-            if (!event.active) simulation.alphaTarget(0);
-            d.fx = null;
-            d.fy = null;
-        }
-    }
-
-    // Add background click handler to reset tooltip
-    svg.on("click", function(event) {
-        // Only reset if the click target is the SVG itself (not a node)
-        if (event.target === this) {
-            resetTooltip();
-        }
-    });
-
-    function fetchAndRender() {
-        fetch('/api/data')
-            .then(resp => resp.json())
-            .then(data => {
-                const dataStr = JSON.stringify(data);
-                if (dataStr !== lastDataStr) {
-                    renderGraph(data);
-                    lastDataStr = dataStr;
-                }
-
-                // set headline to include data.checkpoint_dir
-                let title = "OpenEvolve Evolution Visualizer | Checkpoint: " + data.checkpoint_dir;
-                document.querySelector('h1').textContent = title;
-            });
-    }
-    fetchAndRender();
-    setInterval(fetchAndRender, 2000); // Live update every 2s
-
-    // Responsive resize
-    function resize() {
-        width = window.innerWidth;
-        height = window.innerHeight - document.querySelector('h1').offsetHeight;
-        svg.attr("width", width).attr("height", height);
-        fetchAndRender();
-    }
-    window.addEventListener('resize', resize);
-    </script>
-</body>
-</html>
-"""
-HTML_TEMPLATE_PROGRAM_PAGE = """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <title>Program {{ program_data.id }}</title>
-        <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            pre { background: #f0f0f0; padding: 10px; border-radius: 5px; }
-        </style>
-    </head>
-    <body>
-        <h1>Checkpoint: {{checkpoint_dir}} | Program ID: {{ program_data.id }}</h1>
-        <h2>Island: {{ program_data.island }}</h2>
-        <h3>Generation: {{ program_data.generation }}</h3>
-        <h3>Parent ID: {{ program_data.parent_id or 'None' }}</h3>
-        <h3>Metrics:</h3>
-        <ul>
-            {% for key, value in program_data.metrics.items() %}
-                <li><strong>{{ key }}:</strong> {{ value }}</li>
-            {% endfor %}
-        </ul>
-        <h3>Code:</h3>
-        <pre>{{ program_data.code }}</pre>
-    </body>
-    </html>
-"""
 
 logger = logging.getLogger("openevolve.visualizer")
+app = Flask(__name__, template_folder="templates")
 
 
 def find_latest_checkpoint(base_folder):
@@ -261,7 +31,7 @@ def load_evolution_data(checkpoint_folder):
     programs_dir = os.path.join(checkpoint_folder, "programs")
     if not os.path.exists(meta_path) or not os.path.exists(programs_dir):
         logger.info(f"Missing metadata.json or programs dir in {checkpoint_folder}")
-        return {"nodes": [], "edges": [], "checkpoint_dir": checkpoint_folder}
+        return {"archive": [], "nodes": [], "edges": [], "checkpoint_dir": checkpoint_folder}
     with open(meta_path) as f:
         meta = json.load(f)
 
@@ -286,12 +56,17 @@ def load_evolution_data(checkpoint_folder):
             edges.append({"source": parent_id, "target": prog["id"]})
 
     logger.info(f"Loaded {len(nodes)} nodes and {len(edges)} edges from {checkpoint_folder}")
-    return {"nodes": nodes, "edges": edges, "checkpoint_dir": checkpoint_folder}
+    return {
+        "archive": meta.get("archive", []),
+        "nodes": nodes,
+        "edges": edges,
+        "checkpoint_dir": checkpoint_folder,
+    }
 
 
 @app.route("/")
 def index():
-    return render_template_string(HTML_TEMPLATE)
+    return render_template("index.html", checkpoint_dir=checkpoint_dir)
 
 
 checkpoint_dir = None  # Global variable to store the checkpoint directory
@@ -299,18 +74,15 @@ checkpoint_dir = None  # Global variable to store the checkpoint directory
 
 @app.route("/api/data")
 def data():
-    base_folder = os.environ.get("EVOLVE_OUTPUT", "examples/")
-    checkpoint = find_latest_checkpoint(base_folder)
-    if not checkpoint:
-        logger.info(f"No checkpoints found in {base_folder}")
-        return jsonify({"nodes": [], "edges": [], "checkpoint_dir": ""})
-
-    # Memorize checkpoint directory for usage in other routes
     global checkpoint_dir
-    checkpoint_dir = checkpoint
+    base_folder = os.environ.get("EVOLVE_OUTPUT", "examples/")
+    checkpoint_dir = find_latest_checkpoint(base_folder)
+    if not checkpoint_dir:
+        logger.info(f"No checkpoints found in {base_folder}")
+        return jsonify({"archive": [], "nodes": [], "edges": [], "checkpoint_dir": ""})
 
-    logger.info(f"Loading data from checkpoint: {checkpoint}")
-    data = load_evolution_data(checkpoint)
+    logger.info(f"Loading data from checkpoint: {checkpoint_dir}")
+    data = load_evolution_data(checkpoint_dir)
     logger.debug(f"Data: {data}")
     return jsonify(data)
 
@@ -321,15 +93,57 @@ def program_page(program_id):
     if checkpoint_dir is None:
         return "No checkpoint loaded", 500
 
-    program_path = os.path.join(checkpoint_dir, f"programs/{program_id}.json")
-    if not os.path.exists(program_path):
-        return "Program not found", 404
+    data = load_evolution_data(checkpoint_dir)
+    program_data = next((p for p in data["nodes"] if p["id"] == program_id), None)
+    program_data = {"code": "", "prompts": {}, **program_data}
 
-    with open(program_path) as f:
-        program_data = json.load(f)
+    return render_template(
+        "program_page.html", program_data=program_data, checkpoint_dir=checkpoint_dir
+    )
 
-    return render_template_string(
-        HTML_TEMPLATE_PROGRAM_PAGE, program_data=program_data, checkpoint_dir=checkpoint_dir
+
+def run_static_export(args):
+    output_dir = args.static_output
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Load data and prepare JSON string
+    checkpoint_dir = find_latest_checkpoint(args.path)
+    if not checkpoint_dir:
+        raise RuntimeError(f"No checkpoint found in {args.path}")
+    data = load_evolution_data(checkpoint_dir)
+    logger.info(f"Exporting visualization for checkpoint: {checkpoint_dir}")
+
+    with app.app_context():
+        data_json = jsonify(data).get_data(as_text=True)
+    inlined = f"<script>window.STATIC_DATA = {data_json};</script>"
+
+    # Load index.html template
+    templates_dir = os.path.join(os.path.dirname(__file__), "templates")
+    template_path = os.path.join(templates_dir, "index.html")
+    with open(template_path, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    # Insert static json data into the HTML
+    html = _re.sub(r"\{\{\s*url_for\('static', filename='([^']+)'\)\s*\}\}", r"static/\1", html)
+    script_tag_idx = html.find('<script type="module"')
+
+    if script_tag_idx != -1:
+        html = html[:script_tag_idx] + inlined + "\n" + html[script_tag_idx:]
+    else:
+        html = html.replace("</body>", inlined + "\n</body>")
+
+    with open(os.path.join(output_dir, "index.html"), "w", encoding="utf-8") as f:
+        f.write(html)
+
+    # Copy over static files
+    static_src = os.path.join(os.path.dirname(__file__), "static")
+    static_dst = os.path.join(output_dir, "static")
+    if os.path.exists(static_dst):
+        shutil.rmtree(static_dst)
+    shutil.copytree(static_src, static_dst)
+
+    logging.info(
+        f"Static export written to {output_dir}/\nNote: This will only work correctly with a web server, not by opening the HTML file directly in a browser. Try $ python3 -m http.server --directory {output_dir} 8080"
     )
 
 
@@ -351,10 +165,21 @@ if __name__ == "__main__":
         default="INFO",
         help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
     )
+    parser.add_argument(
+        "--static-output",
+        type=str,
+        default=None,
+        help="Produce a static HTML export in this directory and exit.",
+    )
     args = parser.parse_args()
 
     log_level = getattr(logging, args.log_level.upper(), logging.INFO)
     logging.basicConfig(level=log_level, format="[%(asctime)s] %(levelname)s %(name)s: %(message)s")
+
+    logger.info(f"Current working directory: {os.getcwd()}")
+
+    if args.static_output:
+        run_static_export(args)
 
     os.environ["EVOLVE_OUTPUT"] = args.path
     logger.info(

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>OpenEvolve Evolution Visualizer</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+    <div id="toolbar">
+        <div style="display:flex;flex-direction:column;min-width:220px;">
+            <span style="font-size:1.1em;font-weight:bold;">OpenEvolve Evolution Visualizer</span>
+            <span id="checkpoint-label" style="font-size:0.9em;color:#888;">Checkpoint: None</span>
+        </div>
+        <div class="toolbar-spacer"></div>
+        <div class="tabs">
+            <div class="tab active" id="tab-branching">Branching</div>
+            <div class="tab" id="tab-performance">Performance</div>
+            <div class="tab" id="tab-list">List</div>
+        </div>
+        <label class="toolbar-label" for="metric-select">Metric:
+        <select id="metric-select">
+            <option value="combined_score" selected>combined_score</option>
+        </select></label>
+        <label class="toolbar-label" for="highlight-select">Highlight:
+        <select id="highlight-select">
+            <option value="none">None</option>
+            <option value="top" selected>Top score</option>
+            <option value="first">First generation</option>
+            <option value="failed">Failed</option>
+            <option value="unset">Metric unset</option>
+        </select></label>
+        <div class="toolbar-darkmode">
+            <label class="toolbar-label" >Dark mode:</label>
+            <input type="checkbox" id="darkmode-toggle">
+            <span id="darkmode-label">🌙</span>
+        </div>
+    </div>
+    <div id="sidebar">
+        <div id="sidebar-content">
+            <span style="color:#888;">
+                Select a node to see details.
+            </span>
+        </div>
+    </div>
+    <div id="view-branching" class="active" style="padding-top:3.5em;">
+        <div id="graph"></div>
+    </div>
+    <div id="view-list" style="display:none;padding-top:3.5em;">
+        <div style="display:flex;align-items:center;gap:1em;margin-bottom:1em;">
+            <input id="list-search" type="text" placeholder="Search program ID..." style="font-size:1em;padding:0.4em 1em;border-radius:6px;border:1px solid #ccc;min-width:220px;">
+            <select id="list-sort" style="font-size:1em;padding:0.3em 1em;border-radius:6px;border:1px solid #ccc;">
+                <option value="id">Sort by ID</option>
+                <option value="generation" selected>Sort by generation</option>
+                <option value="island">Sort by island</option>
+                <option value="score">Sort by score</option>
+            </select>
+        </div>
+        <div id="node-list-container"></div>
+    </div>
+    <div id="view-performance" style="padding-top:4.5em;"></div>
+    <div id="view-prompts" style="padding-top:3.5em;"></div>
+    <script type="module" src="{{ url_for('static', filename='js/state.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/mainUI.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/graph.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/performance.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/list.js') }}"></script>
+</body>
+</html>
