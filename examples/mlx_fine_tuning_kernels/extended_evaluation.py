@@ -164,11 +164,7 @@ def create_realistic_instruction_dataset(tokenizer, num_samples: int, seq_len: i
     """Create a robust instruction-following dataset with better error handling."""
     
     try:
-        # Try to import the robust dataset generation function
-        import sys
-        import os
-        temp_dir = os.path.join(os.path.dirname(__file__), 'temp')
-        sys.path.insert(0, temp_dir)
+        # Import the robust dataset generation function from the main directory
         from robust_dataset import create_robust_instruction_dataset
         
         return create_robust_instruction_dataset(tokenizer, num_samples, seq_len)
