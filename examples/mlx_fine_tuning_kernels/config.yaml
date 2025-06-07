@@ -1,0 +1,147 @@
+# MLX Fine-tuning Kernels Configuration
+# Target: Optimize transformer operations for fine-tuning performance
+
+max_iterations: 40
+checkpoint_interval: 5
+log_level: "INFO"
+
+# LLM configuration - use powerful models for complex optimizations
+llm:
+  primary_model: "gemini-2.5-flash-preview-05-20"
+  primary_model_weight: 0.8
+  secondary_model: "gemini-2.5-pro-preview-06-05"
+  secondary_model_weight: 0.2
+  temperature: 0.7
+  top_p: 0.9
+  max_tokens: 24000
+  timeout: 360
+
+# Detailed prompt for fine-tuning kernel optimization
+prompt:
+  system_message: |
+    You are optimizing MLX fine-tuning kernels to achieve Liger Kernel-level performance improvements.
+    
+    # 🎯 GOAL
+    Optimize custom MLX implementations of transformer operations to be significantly faster
+    than naive baselines while maintaining numerical correctness. Target 20%+ speedups in
+    actual fine-tuning workloads.
+    
+    # 🔧 KEY OPTIMIZATION OPPORTUNITIES
+    
+    **1. RMSNorm Fusion**
+    ```python
+    # Instead of: separate variance, rsqrt, scaling
+    variance = mx.mean(x * x, axis=-1, keepdims=True)
+    rstd = mx.rsqrt(variance + eps)
+    result = weight * (x * rstd)
+    
+    # Try: mathematical simplification, fused operations
+    # Target: 2-3x speedup like Liger Kernel
+    ```
+    
+    **2. RoPE Optimization**
+    ```python
+    # Instead of: many intermediate arrays for rotation
+    x1, x2 = x[..., ::2], x[..., 1::2]
+    rotated_x1 = x1 * cos - x2 * sin
+    # ...many steps...
+    
+    # Try: fused rotation, better memory patterns
+    # Target: 2-3x speedup
+    ```
+    
+    **3. SwiGLU Fusion**
+    ```python
+    # Instead of: separate linear ops + activation
+    gate = mx.linear(x, w_gate)
+    gate_activated = mx.silu(gate)
+    up = mx.linear(x, w_up)
+    result = gate_activated * up
+    
+    # Try: fused computation, reduced memory
+    # Target: 50% memory reduction
+    ```
+    
+    **4. CrossEntropy Optimization**
+    ```python
+    # Instead of: full logits materialization
+    exp_logits = mx.exp(logits - max_logits)
+    # ... full softmax computation
+    
+    # Try: online/chunked computation, avoid materializing large tensors
+    # Target: 4x memory reduction
+    ```
+    
+    **5. LoRA Fusion**
+    ```python
+    # Instead of: separate base + LoRA paths
+    base_out = mx.linear(x, base_weight)
+    lora_out = mx.linear(mx.linear(x, lora_a), lora_b)
+    result = base_out + scale * lora_out
+    
+    # Try: fused computation patterns
+    # Target: memory and speed improvements
+    ```
+    
+    # 🚀 PROVEN OPTIMIZATION TECHNIQUES
+    
+    **Operation Fusion**: Combine multiple operations to reduce kernel launches
+    **Memory Access Optimization**: Better cache utilization, reduced allocations
+    **Mathematical Simplification**: More efficient mathematical formulations
+    **Lazy Evaluation**: Remove unnecessary mx.eval() calls, let MLX optimize
+    **Vectorization**: Use MLX's optimized primitives effectively
+    
+    # 📊 SUCCESS METRICS
+    
+    **Micro-benchmarks (Individual Kernels)**:
+    - Correctness: Results must match baseline (< 1e-2 tolerance)
+    - Speed: Target 1.2x+ speedup per kernel
+    - Memory: Reduce allocations where possible
+    
+    **Macro-benchmark (Fine-tuning Performance)**:
+    - Training Speed: Faster time to reach same loss
+    - Memory Efficiency: Lower peak memory usage
+    - Convergence: Same final loss quality
+    
+    # 🎖️ LIGER KERNEL INSPIRATION
+    
+    Liger Kernel achieved:
+    - **RMSNorm**: 3x speedup, 3x memory reduction
+    - **RoPE**: 3x speedup, 3x memory reduction  
+    - **SwiGLU**: 1.5x memory reduction
+    - **CrossEntropy**: 2x speedup, 4x memory reduction
+    - **Overall**: 20%+ fine-tuning speedup, 60% memory reduction
+    
+    Your optimizations should target similar improvements adapted for MLX.
+    
+    # 🚫 CONSTRAINTS
+    - Keep the same function signatures
+    - Maintain numerical correctness (< 1e-2 difference)
+    - Support all tensor shapes and edge cases
+    - No external dependencies beyond MLX
+    
+    Focus on implementable optimizations with clear performance benefits.
+    Evolve the entire `evolved_fine_tuning_kernels` function systematically.
+  
+  num_top_programs: 5
+  num_diverse_programs: 4
+
+# Database configuration for complex optimization
+database:
+  db_path: "./openevolve_output/program_db"
+  population_size: 60
+  archive_size: 30
+  num_islands: 4
+  elite_selection_ratio: 0.25
+  exploitation_ratio: 0.65
+  exploration_ratio: 0.35
+
+# Evaluator configuration
+evaluator:
+  timeout: 600  # Longer timeout for complex evaluations
+  parallel_evaluations: 1
+
+# Evolution settings
+diff_based_evolution: true
+allow_full_rewrites: false  
+max_code_length: 24000

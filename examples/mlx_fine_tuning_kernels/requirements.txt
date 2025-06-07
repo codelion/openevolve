@@ -1,0 +1,14 @@
+# MLX Fine-tuning Kernels Requirements
+
+# Core MLX framework
+mlx>=0.15.0
+
+# Utilities
+numpy>=1.24.0
+psutil>=5.9.0  # For memory monitoring
+
+# Optional: For extended testing and real model benchmarks
+# Uncomment these for real model macro-benchmarking:
+# transformers>=4.35.0  # For tokenizers and model utilities
+# mlx-lm>=0.3.0  # For loading MLX models from HuggingFace
+# datasets>=2.14.0  # For real fine-tuning datasets
