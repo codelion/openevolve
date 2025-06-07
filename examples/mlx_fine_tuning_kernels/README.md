@@ -162,10 +162,10 @@ pip install mlx>=0.15.0 numpy psutil
 For the most realistic benchmarks using multiple real HuggingFace models:
 ```bash
 # Install comprehensive evaluation dependencies
-python temp/setup_comprehensive_evaluation.py
+python setup_comprehensive_evaluation.py
 
 # Or manually:
-pip install transformers>=4.35.0 mlx-lm>=0.3.0 datasets>=2.14.0
+pip install transformers>=4.35.0 mlx-lm>=0.3.0 datasets>=2.14.0 psutil
 ```
 
 Comprehensive evaluation will test your kernels across multiple real models:
