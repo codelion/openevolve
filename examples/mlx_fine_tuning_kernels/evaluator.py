@@ -98,11 +98,11 @@ class MLXLoRABenchmark:
             "seed": 42,
             "num_layers": 2,  # Small for fast testing
             "batch_size": 1,  # Small for memory efficiency
-            "iters": 5,       # Very few iterations for speed
-            "val_batches": 2,
+            "iters": 10,      # More iterations for larger dataset
+            "val_batches": 5,
             "learning_rate": 1e-4,
-            "steps_per_report": 2,
-            "steps_per_eval": 10,
+            "steps_per_report": 5,
+            "steps_per_eval": 20,
             "adapter_path": adapter_dir,
             "save_every": 100,
             "max_seq_length": 256,  # Shorter sequences
@@ -110,7 +110,7 @@ class MLXLoRABenchmark:
             "mask_prompt": False,
             # Additional MLX-LM expected attributes
             "test": True,
-            "test_batches": 2,
+            "test_batches": 5,
             "resume_adapter_file": None,
             "config": None,
             "grad_checkpoint": False,
@@ -122,17 +122,16 @@ class MLXLoRABenchmark:
         self,
         baseline_kernels: Dict,
         evolved_kernels: Dict,
-        num_trials: int = 5  # Multiple trials to reduce system noise
+        num_trials: int = 1
     ) -> Dict[str, Any]:
         """Compare baseline vs evolved LoRA implementations using real mlx-lm."""
         
         if not MLX_LM_AVAILABLE:
             return {"error": "MLX-LM not available for real benchmarking"}
         
-        print(f"\n📊 MLX-LM LORA FINE-TUNING COMPARISON (WITH NOISE REDUCTION)")
+        print(f"\n📊 MLX-LM LORA FINE-TUNING COMPARISON")
         print(f"  Model: {self.model_name}")
-        print(f"  Trials: {num_trials} (multiple trials to reduce system noise)")
-        print(f"  Method: Randomized order with statistical analysis")
+        print(f"  Trials: {num_trials}")
         
         results = {
             'baseline': [],
@@ -198,37 +197,203 @@ class MLXLoRABenchmark:
         
         return self._analyze_results(results)
     
-    def _create_test_dataset(self, output_dir: str, num_samples: int = 50):
-        """Create a test dataset for LoRA fine-tuning."""
+    def _create_test_dataset(self, output_dir: str, num_samples: int = 300):
+        """Create a comprehensive test dataset for LoRA fine-tuning with diverse examples."""
         examples = [
-            {"text": "What is AI?\nAI is artificial intelligence, enabling computers to perform human-like tasks."},
-            {"text": "How does ML work?\nMachine learning trains algorithms on data to recognize patterns and make predictions."},
-            {"text": "What is Python?\nPython is a versatile programming language popular for data science and AI development."},
-            {"text": "Explain deep learning.\nDeep learning uses neural networks with multiple layers to model complex data patterns."},
+            # AI and Machine Learning
+            {"text": "What is AI?\nAI is artificial intelligence, a field where computers perform tasks that typically require human intelligence."},
+            {"text": "How does ML work?\nMachine learning involves algorithms learning patterns from data to make predictions or decisions."},
+            {"text": "What is Python?\nPython is a versatile, high-level programming language known for its readability and simplicity."},
+            {"text": "Explain deep learning.\nDeep learning uses neural networks with multiple layers to model complex patterns in data."},
             {"text": "What is NLP?\nNatural Language Processing enables computers to understand and generate human language."},
-            {"text": "What is computer vision?\nComputer vision teaches machines to interpret and analyze visual information from images."},
-            {"text": "What is reinforcement learning?\nReinforcement learning trains agents through trial and error using rewards and penalties."},
-            {"text": "What is a neural network?\nA neural network is a computing system inspired by biological neural networks."},
+            {"text": "What is a neural network?\nA neural network is a computing system inspired by biological neural networks that learns from data."},
+            {"text": "What is supervised learning?\nSupervised learning trains models on labeled data to predict outcomes for new data."},
+            {"text": "What is unsupervised learning?\nUnsupervised learning finds patterns in unlabeled data without predefined outcomes."},
+            {"text": "What is reinforcement learning?\nReinforcement learning trains agents to make decisions by rewarding desired behaviors."},
+            {"text": "What is a transformer model?\nA transformer model processes sequential data using attention mechanisms, common in NLP."},
+            {"text": "What is computer vision?\nComputer vision enables computers to interpret and understand visual information from images and videos."},
             {"text": "What is data science?\nData science extracts insights from data using statistics, programming, and domain expertise."},
-            {"text": "What is machine learning?\nMachine learning is a subset of AI that enables systems to learn from data."},
+            {"text": "What is a decision tree?\nA decision tree is a model that makes decisions by splitting data based on feature values."},
+            {"text": "What is overfitting?\nOverfitting occurs when a model learns training data too well, reducing its ability to generalize."},
+            {"text": "What is cross-validation?\nCross-validation assesses model performance by splitting data into training and testing sets."},
+            
+            # Programming and Technology
+            {"text": "What is a database?\nA database is an organized collection of data, typically stored and accessed electronically."},
+            {"text": "What is cloud computing?\nCloud computing delivers computing services over the internet, providing scalability and flexibility."},
+            {"text": "What is blockchain?\nBlockchain is a decentralized ledger technology that ensures secure and transparent transactions."},
+            {"text": "What is an API?\nAn API is an interface that allows different software applications to communicate with each other."},
+            {"text": "What is a GPU?\nA Graphics Processing Unit is specialized hardware for accelerating computations, often used in AI."},
+            {"text": "What is quantum computing?\nQuantum computing uses quantum mechanics to perform computations, potentially solving problems faster than classical computers."},
+            {"text": "What is cybersecurity?\nCybersecurity protects computer systems, networks, and data from digital attacks and unauthorized access."},
+            {"text": "What is DevOps?\nDevOps combines software development and IT operations to improve collaboration and deployment efficiency."},
+            {"text": "What is version control?\nVersion control tracks changes to files over time, allowing multiple people to collaborate on projects."},
+            {"text": "What is open source software?\nOpen source software has publicly available source code that anyone can view, modify, and distribute."},
+            {"text": "What is a web browser?\nA web browser is software that allows users to access and navigate websites on the internet."},
+            {"text": "What is JavaScript?\nJavaScript is a programming language commonly used for web development and interactive websites."},
+            {"text": "What is mobile app development?\nMobile app development creates software applications designed to run on smartphones and tablets."},
+            {"text": "What is artificial neural networks?\nArtificial neural networks are computing systems inspired by biological neural networks in animal brains."},
+            {"text": "What is the Internet of Things?\nThe Internet of Things connects everyday devices to the internet, enabling data collection and automation."},
+            
+            # Science and Nature
+            {"text": "What is photosynthesis?\nPhotosynthesis is the process by which plants use sunlight, water, and carbon dioxide to create oxygen and energy in the form of sugar."},
+            {"text": "What is DNA?\nDNA is the molecule that carries genetic instructions for the development and functioning of living organisms."},
+            {"text": "What is climate change?\nClimate change refers to long-term shifts in global temperatures and weather patterns due to human activities."},
+            {"text": "What is renewable energy?\nRenewable energy comes from natural sources that replenish themselves, like solar, wind, and hydroelectric power."},
+            {"text": "What is evolution?\nEvolution is the process by which species change over time through natural selection and genetic variation."},
+            {"text": "What is the periodic table?\nThe periodic table organizes chemical elements by their atomic number and properties in a systematic arrangement."},
+            {"text": "What is gravity?\nGravity is a fundamental force that attracts objects with mass toward each other, keeping us on Earth."},
+            {"text": "What is the water cycle?\nThe water cycle describes how water moves through Earth's systems via evaporation, condensation, and precipitation."},
+            {"text": "What is biodiversity?\nBiodiversity refers to the variety of life forms in an ecosystem, including species, genetic, and ecosystem diversity."},
+            {"text": "What is an ecosystem?\nAn ecosystem is a community of living organisms interacting with their physical environment."},
+            {"text": "What is conservation?\nConservation involves protecting and preserving natural resources and wildlife for future generations."},
+            {"text": "What is astronomy?\nAstronomy is the scientific study of celestial objects, space, and the universe as a whole."},
+            {"text": "What is geology?\nGeology studies the Earth's physical structure, substances, history, and the processes that act on them."},
+            {"text": "What is marine biology?\nMarine biology studies organisms in the ocean and other saltwater environments."},
+            {"text": "What is meteorology?\nMeteorology is the study of weather patterns, atmospheric conditions, and climate systems."},
+            
+            # Health and Medicine
+            {"text": "What is the immune system?\nThe immune system defends the body against infections and diseases through specialized cells and organs."},
+            {"text": "What are vitamins?\nVitamins are essential nutrients that the body needs in small amounts for proper growth and function."},
+            {"text": "What is exercise?\nExercise is physical activity that improves fitness, health, and overall well-being."},
+            {"text": "What is nutrition?\nNutrition is the process of obtaining and consuming food necessary for health and growth."},
+            {"text": "What is mental health?\nMental health encompasses emotional, psychological, and social well-being affecting how we think and feel."},
+            {"text": "What is meditation?\nMeditation is a practice that focuses the mind to achieve mental clarity, emotional stability, and relaxation."},
+            {"text": "What are antibiotics?\nAntibiotics are medicines that fight bacterial infections by killing bacteria or stopping their growth."},
+            {"text": "What is vaccination?\nVaccination introduces weakened or inactive parts of organisms to stimulate immune system protection against diseases."},
+            {"text": "What is stress?\nStress is the body's response to challenging or demanding situations, affecting both physical and mental health."},
+            {"text": "What is sleep?\nSleep is a natural state of rest that allows the body and mind to recover and maintain essential functions."},
+            {"text": "What is diabetes?\nDiabetes is a condition where the body cannot properly process blood glucose due to insulin problems."},
+            {"text": "What is cardiovascular health?\nCardiovascular health refers to the well-being of the heart and blood vessels in the circulatory system."},
+            {"text": "What is physical therapy?\nPhysical therapy helps restore movement and function when someone is affected by injury, illness, or disability."},
+            {"text": "What is public health?\nPublic health focuses on protecting and improving the health of entire populations and communities."},
+            {"text": "What is preventive medicine?\nPreventive medicine focuses on preventing diseases and health problems before they occur."},
+            
+            # Geography and Culture
+            {"text": "What is the capital of France?\nThe capital of France is Paris."},
+            {"text": "What is the Great Wall of China?\nThe Great Wall of China is an ancient series of walls and fortifications built to protect Chinese states."},
+            {"text": "What is democracy?\nDemocracy is a system of government where citizens exercise power through voting and elected representatives."},
+            {"text": "What is globalization?\nGlobalization is the increasing interconnectedness of countries through trade, culture, and communication."},
+            {"text": "What is culture?\nCulture encompasses the beliefs, customs, arts, and social behaviors of a particular group or society."},
+            {"text": "What is the United Nations?\nThe United Nations is an international organization that promotes peace, security, and cooperation among nations."},
+            {"text": "What is the European Union?\nThe European Union is a political and economic union of European countries promoting integration and cooperation."},
+            {"text": "What is the Amazon rainforest?\nThe Amazon rainforest is the world's largest tropical rainforest, playing a crucial role in global climate regulation."},
+            {"text": "What is the Pacific Ocean?\nThe Pacific Ocean is the largest and deepest ocean on Earth, covering about one-third of the planet's surface."},
+            {"text": "What is Mount Everest?\nMount Everest is the highest mountain peak on Earth, located in the Himalayas between Nepal and Tibet."},
+            {"text": "What is urbanization?\nUrbanization is the process of population shift from rural to urban areas, leading to city growth."},
+            {"text": "What is migration?\nMigration is the movement of people from one place to another, often for economic or social reasons."},
+            {"text": "What is archaeology?\nArchaeology studies human history through the excavation and analysis of artifacts and other physical remains."},
+            {"text": "What is anthropology?\nAnthropology is the study of human societies, cultures, and their development over time."},
+            {"text": "What is linguistics?\nLinguistics is the scientific study of language and its structure, evolution, and use."},
+            
+            # Mathematics and Physics
+            {"text": "What is algebra?\nAlgebra is a branch of mathematics that uses symbols and letters to represent numbers and quantities in equations."},
+            {"text": "What is geometry?\nGeometry is the branch of mathematics that deals with shapes, sizes, positions, and properties of space."},
+            {"text": "What is calculus?\nCalculus is the mathematical study of continuous change, involving derivatives and integrals."},
+            {"text": "What is statistics?\nStatistics is the science of collecting, analyzing, interpreting, and presenting data to make informed decisions."},
+            {"text": "What is physics?\nPhysics is the science that studies matter, energy, motion, and the fundamental forces of the universe."},
+            {"text": "What is electricity?\nElectricity is the flow of electric charge through conductors, powering countless devices and systems."},
+            {"text": "What is magnetism?\nMagnetism is a physical phenomenon where certain materials attract or repel each other through magnetic fields."},
+            {"text": "What is energy?\nEnergy is the capacity to do work or cause change, existing in many forms like kinetic, potential, and thermal."},
+            {"text": "What is the speed of light?\nThe speed of light is approximately 299,792,458 meters per second in a vacuum, the fastest possible speed."},
+            {"text": "What is relativity?\nRelativity is Einstein's theory describing how space and time are linked and affected by gravity and motion."},
+            {"text": "What is thermodynamics?\nThermodynamics studies the relationships between heat, work, temperature, and energy in physical systems."},
+            {"text": "What is quantum mechanics?\nQuantum mechanics describes the behavior of matter and energy at the atomic and subatomic scale."},
+            {"text": "What is probability?\nProbability measures the likelihood of events occurring, expressed as numbers between 0 and 1."},
+            {"text": "What is trigonometry?\nTrigonometry studies relationships between angles and sides of triangles, used in many applications."},
+            {"text": "What is number theory?\nNumber theory is a branch of mathematics devoted to the study of integers and integer-valued functions."},
+            
+            # Business and Economics
+            {"text": "What is entrepreneurship?\nEntrepreneurship is the process of creating and managing a business venture to generate profit and innovation."},
+            {"text": "What is marketing?\nMarketing involves promoting and selling products or services by understanding and meeting customer needs."},
+            {"text": "What is economics?\nEconomics studies how societies allocate scarce resources to satisfy unlimited wants and needs."},
+            {"text": "What is inflation?\nInflation is the general increase in prices of goods and services over time, reducing purchasing power."},
+            {"text": "What is supply and demand?\nSupply and demand are economic forces that determine the price and quantity of goods in a market."},
+            {"text": "What is cryptocurrency?\nCryptocurrency is digital money secured by cryptography and typically based on blockchain technology."},
+            {"text": "What is e-commerce?\nE-commerce is the buying and selling of goods and services over the internet through digital platforms."},
+            {"text": "What is leadership?\nLeadership is the ability to guide, motivate, and influence others toward achieving common goals."},
+            {"text": "What is teamwork?\nTeamwork is the collaborative effort of individuals working together to accomplish shared objectives."},
+            {"text": "What is innovation?\nInnovation is the process of creating new ideas, products, or methods that provide value and solve problems."},
+            {"text": "What is investment?\nInvestment involves allocating money or resources with the expectation of generating income or profit."},
+            {"text": "What is financial planning?\nFinancial planning involves managing money and assets to achieve personal financial goals and security."},
+            {"text": "What is project management?\nProject management coordinates resources, tasks, and timelines to achieve specific objectives within constraints."},
+            {"text": "What is human resources?\nHuman resources manages employee relations, recruitment, training, and organizational development."},
+            {"text": "What is strategic planning?\nStrategic planning defines long-term goals and determines the best approach to achieve them."},
+            
+            # Arts and Literature
+            {"text": "What is art?\nArt is the expression of human creativity and imagination through various mediums like painting, sculpture, and music."},
+            {"text": "What is literature?\nLiterature comprises written works of artistic merit, including novels, poetry, and plays that express human experience."},
+            {"text": "What is music?\nMusic is the art of organizing sounds in time through rhythm, melody, harmony, and expression."},
+            {"text": "What is photography?\nPhotography is the art and science of capturing light to create images that document or express visual ideas."},
+            {"text": "What is theater?\nTheater is the performance of stories through acting, dialogue, music, and stagecraft for live audiences."},
+            {"text": "What is poetry?\nPoetry is literary art that uses aesthetic and rhythmic language to express emotions, ideas, and experiences."},
+            {"text": "What is architecture?\nArchitecture is the art and science of designing and constructing buildings and other physical structures."},
+            {"text": "What is sculpture?\nSculpture is the art of creating three-dimensional works by carving, modeling, or assembling materials."},
+            {"text": "What is dance?\nDance is the art of movement through space and time, often accompanied by music and expressing emotions."},
+            {"text": "What is film?\nFilm is the art of creating moving pictures that tell stories through visual and auditory elements."},
+            {"text": "What is creative writing?\nCreative writing is the art of crafting original works that express ideas, emotions, and stories imaginatively."},
+            {"text": "What is graphic design?\nGraphic design combines text, images, and visual elements to communicate messages effectively."},
+            {"text": "What is interior design?\nInterior design plans and designs interior spaces to be functional, safe, and aesthetically pleasing."},
+            {"text": "What is fashion design?\nFashion design creates clothing and accessories that combine function, style, and artistic expression."},
+            {"text": "What is digital art?\nDigital art uses digital technology as an essential part of the creative or presentation process."},
+            
+            # History and Philosophy
+            {"text": "What is history?\nHistory is the study of past events, their causes, and their impact on human civilization."},
+            {"text": "What is philosophy?\nPhilosophy is the study of fundamental questions about existence, knowledge, values, and human nature."},
+            {"text": "What is the Renaissance?\nThe Renaissance was a period of cultural rebirth in Europe from the 14th to 17th centuries, marked by art and learning."},
+            {"text": "What is the Industrial Revolution?\nThe Industrial Revolution was a period of major industrialization and innovation that transformed society from agriculture to manufacturing."},
+            {"text": "What is democracy in ancient Greece?\nAncient Greek democracy was a system where citizens participated directly in political decision-making in city-states like Athens."},
+            {"text": "What is ethics?\nEthics is the branch of philosophy that deals with moral principles and determining right and wrong behavior."},
+            {"text": "What is logic?\nLogic is the systematic study of the principles of valid reasoning and correct inference."},
+            {"text": "What is existentialism?\nExistentialism is a philosophical movement emphasizing individual existence, freedom, and the meaning of life."},
+            {"text": "What is the Enlightenment?\nThe Enlightenment was an 18th-century intellectual movement emphasizing reason, science, and individual rights."},
+            {"text": "What is the Scientific Revolution?\nThe Scientific Revolution was a period of major advances in scientific thought and methodology in the 16th and 17th centuries."},
+            {"text": "What is world history?\nWorld history studies the development of human civilization across all regions and time periods globally."},
+            {"text": "What is political science?\nPolitical science examines government systems, political behavior, and the theory and practice of politics."},
+            {"text": "What is sociology?\nSociology studies human society, social relationships, and the forces that shape social behavior."},
+            {"text": "What is psychology?\nPsychology is the scientific study of mind and behavior, including cognitive, emotional, and social processes."},
+            {"text": "What is theology?\nTheology is the study of religious beliefs, practices, and the nature of the divine."},
+            
+            # Food and Cooking
+            {"text": "How do you make tea?\nTo make tea, boil water, add tea leaves or a tea bag to a cup, pour the hot water over the tea, let it steep for 3-5 minutes, then remove the tea leaves or bag."},
+            {"text": "How do you cook pasta?\nTo cook pasta, boil salted water, add pasta and cook according to package directions, then drain and serve with sauce."},
+            {"text": "What is nutrition science?\nNutrition science studies how food affects the body, providing essential nutrients for growth, energy, and health."},
+            {"text": "What is organic food?\nOrganic food is produced without synthetic pesticides, fertilizers, or genetic modification, following natural farming practices."},
+            {"text": "What is vegetarianism?\nVegetarianism is a diet that excludes meat, focusing on plant-based foods for health, ethical, or environmental reasons."},
+            {"text": "What is fermentation?\nFermentation is a process where microorganisms convert sugars into acids, gases, or alcohol, used in food preservation."},
+            {"text": "What is baking?\nBaking is cooking food using dry heat in an oven, commonly used for bread, cakes, and pastries."},
+            {"text": "What are spices?\nSpices are aromatic plant substances used to flavor, color, and preserve food, derived from seeds, bark, or roots."},
+            {"text": "What is sustainable farming?\nSustainable farming practices maintain soil health and environmental balance while producing food efficiently."},
+            {"text": "What is food safety?\nFood safety involves proper handling, preparation, and storage of food to prevent contamination and foodborne illness."},
+            {"text": "What is culinary arts?\nCulinary arts involve the preparation, cooking, and presentation of food as both sustenance and artistic expression."},
+            {"text": "What is agriculture?\nAgriculture is the cultivation of plants and livestock for food, fiber, and other products used to sustain life."},
+            {"text": "What is gastronomy?\nGastronomy is the art and science of good eating, including the study of food and culture relationships."},
+            {"text": "What is food chemistry?\nFood chemistry studies the chemical processes and interactions of biological and non-biological components in food."},
+            {"text": "What is dietetics?\nDietetics applies nutrition science to promote health and treat disease through proper food and eating habits."},
         ]
         
-        # Create consistent dataset
-        dataset = []
-        for i in range(num_samples):
-            dataset.append(examples[i % len(examples)])
+        # Ensure we have enough diverse examples
+        if num_samples > len(examples):
+            # Cycle through examples to reach desired number
+            dataset = []
+            for i in range(num_samples):
+                dataset.append(examples[i % len(examples)])
+        else:
+            # Use subset if we have more examples than needed
+            dataset = examples[:num_samples]
         
-        # Create splits with sufficient validation data
-        train_size = max(1, int(0.7 * num_samples))
-        val_size = max(3, int(0.2 * num_samples))
+        # Create balanced splits with sufficient validation data
+        train_size = max(10, int(0.7 * num_samples))
+        val_size = max(5, int(0.2 * num_samples))
         test_size = num_samples - train_size - val_size
-        if test_size < 1:
-            test_size = 1
+        if test_size < 3:
+            test_size = 3
             val_size = num_samples - train_size - test_size
         
         train_data = dataset[:train_size]
         val_data = dataset[train_size:train_size + val_size]
         test_data = dataset[train_size + val_size:train_size + val_size + test_size]
+        
+        print(f"📊 Creating comprehensive dataset: {len(train_data)} train, {len(val_data)} valid, {len(test_data)} test examples")
         
         # Write datasets - CRITICAL: Use "valid" not "val" for MLX-LM
         os.makedirs(output_dir, exist_ok=True)
@@ -409,7 +574,7 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
         comparison_results = benchmark.compare_implementations(
             baseline_kernels=baseline_kernels,
             evolved_kernels=evolved_kernels,
-            num_trials=1
+            num_trials=5
         )
         
         if 'error' in comparison_results:
