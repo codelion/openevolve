@@ -1,7 +1,7 @@
 # MLX LoRA Fine-tuning Optimization Configuration
 # Target: Real LoRA fine-tuning efficiency improvements while maintaining convergence
 
-max_iterations: 40
+max_iterations: 60  # More iterations for breakthrough discoveries
 checkpoint_interval: 5
 log_level: "INFO"
 
@@ -12,8 +12,8 @@ llm:
   secondary_model: "gemini-2.5-pro-preview-06-05"
   secondary_model_weight: 0.3
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
-  temperature: 0.8
-  top_p: 0.9
+  temperature: 0.9  # Higher creativity for breakthrough optimizations
+  top_p: 0.95
   max_tokens: 32000
   timeout: 600
 
@@ -86,13 +86,43 @@ prompt:
     # Reduce memory footprint during loss calculation
     ```
     
-    # 🚀 PROVEN LORA OPTIMIZATION TECHNIQUES
+    **6. UNSLOTH-STYLE MLX KERNEL FUSION** 🎯 PRIMARY SPEED TARGET
+    ```python
+    # Standard: Separate operations
+    x = mx.add(input, lora_out)
+    x = activation_fn(x) 
+    x = mx.matmul(x, next_weight)
     
-    **Weight Fusion**: Pre-compute LoRA deltas when weights don't change
-    **Gradient Reuse**: Optimize gradient computation patterns for LoRA structure  
-    **Memory Access Optimization**: Better cache utilization during LoRA computations
-    **Selective Computation**: Skip unnecessary computations based on LoRA rank
-    **Training-Specific Optimizations**: Leverage LoRA's low-rank structure
+    # Target: Fused kernels using MLX primitives
+    # Combine LoRA, activation, and next operation
+    # Leverage mx.compile and mx.eval strategically
+    ```
+    
+    **7. Smart Gradient Accumulation** 
+    ```python
+    # Standard: Individual gradient updates
+    for batch in batches:
+        loss = forward(batch)
+        grads = backward(loss)
+        optimizer.update(grads)
+    
+    # Target: Accumulated updates with reduced sync points
+    # Batch multiple LoRA layer updates together
+    ```
+    
+    # 🚀 UNSLOTH-INSPIRED OPTIMIZATION TECHNIQUES (Target 2x+ Speed Improvements)
+    
+    **🔥 Flash Attention Equivalents for MLX**: Fused attention computation patterns
+    **⚡ Kernel Fusion**: Combine LoRA operations with activation functions
+    **🧠 Smart Gradient Accumulation**: Batch gradient updates efficiently  
+    **⭐ Optimized MLX Operations**: Leverage mx.fast for critical paths
+    **🚀 Parameter-Efficient Updates**: Minimize optimizer state overhead
+    **💾 Memory Mapping**: Efficient tensor reuse and allocation patterns
+    **🎯 Selective Computation**: Skip unnecessary ops based on LoRA rank/scale
+    **🔧 Mixed Precision**: Smart FP16/FP32 usage for speed without loss
+    
+    Current baseline shows 1.57x memory improvement but only 1.01x speed.
+    FOCUS: Discover speed optimizations like unsloth's 2-5x improvements!
     
     # 📊 SUCCESS METRICS
     
@@ -114,28 +144,35 @@ prompt:
     
     Your optimizations should target similar patterns adapted for MLX.
     
-    # 🚫 CONSTRAINTS
-    - Keep the same function signatures and class interfaces
-    - Maintain numerical correctness (final loss must match baseline within 1%)
-    - Support all LoRA configurations (different ranks, scales, etc.)
-    - No external dependencies beyond MLX
-    - Focus on PRACTICAL optimizations that maintain convergence
-    - 🚨 CRITICAL: Keep code changes MINIMAL and FOCUSED (under 40,000 chars)
-    - NO verbose comments, examples, or redundant code
-    - Use concise variable names and efficient implementations
+    # 🚫 CONSTRAINTS  
+    - Keep exact function signatures from initial_program.py
+    - Maintain numerical correctness (loss must match baseline within 0.01)
+    - Support all LoRA configs (ranks 8-64, any scale/dropout)
+    - MLX-only dependencies (mx.core, mx.nn, mx.optimizers)
+    - 🚨 CRITICAL: Concise evolution changes (under 35,000 chars total)
+    - NO verbose comments - focus on algorithmic improvements
+    - Prioritize SPEED over memory (we already have 1.57x memory gain)
+    - Test mx.compile, mx.eval, kernel fusion, gradient accumulation patterns
     
-    # 🔍 WHAT TO EVOLVE
+    # 🔍 WHAT TO EVOLVE - TARGET UNSLOTH-STYLE 2x+ SPEED GAINS
     
-    Focus on the `evolved_lora_kernels` function. The key operations to optimize:
+    Focus on `evolved_lora_kernels` function. Prioritize SPEED optimizations:
     
-    1. **OptimizedLoRALinear**: Improved LoRA linear layer implementation
-    2. **optimized_lora_training_step**: More efficient training loop
-    3. **optimized_multi_layer_lora_application**: Batch LoRA operations
-    4. **memory_efficient_lora_loss**: Reduced memory loss computation
-    5. **optimized_gradient_checkpointing_lora**: Memory-efficient checkpointing
+    1. **optimized_lora_fine_tuning**: Main training pipeline with kernel fusion
+    2. **optimized_training_loop**: Batch gradient accumulation like unsloth  
+    3. **optimized_train_step**: Fused forward/backward with mx.compile
+    4. **optimized_linear_to_lora_layers**: Batched multi-layer LoRA application
+    5. **optimized_evaluate**: Fast inference with weight pre-computation
     
-    Evolve towards optimizations that provide real efficiency gains while maintaining
-    the exact same training loss convergence as the baseline implementation.
+    🎯 PRIMARY TARGETS FOR SPEED BREAKTHROUGH:
+    - Leverage `mx.compile()` for hot paths (like unsloth's kernel compilation)
+    - Use `mx.eval()` strategically to minimize sync points  
+    - Batch operations across multiple LoRA layers simultaneously
+    - Pre-compute weights when beneficial (inference mode optimization)
+    - Implement gradient accumulation patterns that reduce memory allocations
+    
+    Current Results: 1.57x memory ✅, 1.01x speed ❌
+    Target: Discover 2-5x speed improvements while maintaining perfect convergence!
   
   num_top_programs: 6
   num_diverse_programs: 4
@@ -143,12 +180,12 @@ prompt:
 # Database configuration for LoRA optimization
 database:
   db_path: "./openevolve_output/program_db"
-  population_size: 60
-  archive_size: 30
+  population_size: 80  # Larger population for more diverse explorations
+  archive_size: 40
   num_islands: 4
-  elite_selection_ratio: 0.25
-  exploitation_ratio: 0.7
-  exploration_ratio: 0.3
+  elite_selection_ratio: 0.20  # Less elite pressure, more exploration
+  exploitation_ratio: 0.6   # Balanced exploration for breakthroughs
+  exploration_ratio: 0.4
 
 # Evaluator configuration
 evaluator:
@@ -158,4 +195,4 @@ evaluator:
 # Evolution settings
 diff_based_evolution: true
 allow_full_rewrites: false  
-max_code_length: 50000
+max_code_length: 45000  # Encourage concise, focused optimizations
