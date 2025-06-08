@@ -1,11 +1,11 @@
-# MLX Fusion-Based Kernels Configuration
-# Target: Multi-operation fusion and algorithmic improvements for beating standard MLX
+# MLX LoRA Fine-tuning Optimization Configuration
+# Target: Real LoRA fine-tuning efficiency improvements while maintaining convergence
 
-max_iterations: 50
+max_iterations: 40
 checkpoint_interval: 5
 log_level: "INFO"
 
-# LLM configuration - use powerful models for complex fusion optimizations
+# LLM configuration - use powerful models for LoRA optimization
 llm:
   primary_model: "gemini-2.5-flash-preview-05-20"
   primary_model_weight: 0.7
@@ -17,143 +17,145 @@ llm:
   max_tokens: 32000
   timeout: 600
 
-# Detailed prompt for fusion-based optimization
+# Detailed prompt for LoRA optimization
 prompt:
   system_message: |
-    You are optimizing MLX FUSION-BASED kernels to beat standard MLX operations through 
-    multi-operation fusion and algorithmic improvements.
+    You are optimizing MLX LoRA fine-tuning implementations to achieve the same training loss
+    as standard LoRA but with improved memory efficiency and/or training speed.
     
-    # 🎯 NEW GOAL: Beat Standard MLX (Not Individual Kernels)
-    Your target is to achieve 1.1x+ speedup over STANDARD MLX operation sequences
-    through fusion patterns and algorithmic improvements, following Liger Kernel's approach.
+    # 🎯 GOAL: Efficient LoRA Fine-tuning with Maintained Convergence
+    Your target is to achieve the SAME training loss as baseline LoRA implementations
+    while providing 10%+ improvements in memory usage and/or training speed.
     
-    # 🔧 KEY FUSION OPPORTUNITIES
+    # 🔧 KEY OPTIMIZATION OPPORTUNITIES
     
-    **1. LoRA Weight Pre-Fusion** ⭐ HIGH SUCCESS PROBABILITY
+    **1. LoRA Weight Pre-computation** ⭐ HIGH SUCCESS PROBABILITY
     ```python
-    # Instead of: 3 separate matrix multiplications
+    # Standard: 3 separate matrix multiplications per forward pass
     base_out = x @ base_weight.T
-    lora_out = x @ lora_a.T @ lora_b.T
-    result = base_out + scale * lora_out
+    lora_a_out = x @ lora_a.T  
+    lora_b_out = lora_a_out @ lora_b.T
+    result = base_out + scale * lora_b_out
     
-    # Target: Pre-compute combined weights (1 matmul instead of 3)
-    fused_weight = base_weight + scale * (lora_b @ lora_a)
-    result = x @ fused_weight.T
+    # Target: Pre-compute combined weights when beneficial
+    if not self.training:  # During inference
+        fused_weight = base_weight + scale * (lora_b @ lora_a)
+        result = x @ fused_weight.T
     ```
     
-    **2. Multi-Operation Transformer Fusion**
+    **2. Memory-Efficient Gradient Computation**
     ```python
-    # Instead of: separate RMSNorm + Attention + RMSNorm + MLP
-    x = rms_norm(x, w1) -> attention(x) -> rms_norm(x, w2) -> mlp(x)
+    # Standard: Separate gradient computations
+    grad_base = grad_output @ x.T
+    grad_lora_b = grad_output @ lora_a_out.T  
+    grad_lora_a = lora_b.T @ grad_output @ x.T
     
-    # Target: Fused transformer block with shared intermediate computation
-    # Combine operations to reduce kernel launches and memory transfers
+    # Target: Fused gradient computation to reduce memory allocations
+    # Reuse intermediate tensors, optimize memory access patterns
     ```
     
-    **3. Online/Chunked Algorithms for Memory-Bound Operations**
+    **3. Training Loop Optimization**
     ```python
-    # Instead of: Full softmax materialization for large vocab
-    probs = softmax(logits)  # Memory: O(vocab_size)
-    loss = cross_entropy(probs, targets)
-    
-    # Target: Online CrossEntropy without full materialization
-    loss = online_cross_entropy(logits, targets)  # Memory: O(chunk_size)
-    ```
-    
-    **4. Memory-Efficient Attention (FlashAttention-style)**
-    ```python
-    # Instead of: Full attention matrix O(seq_len^2)
-    scores = q @ k.T  # Materializes seq_len x seq_len
-    attn = softmax(scores) @ v
-    
-    # Target: Chunked attention computation O(chunk_size^2)
-    # Process attention in chunks to reduce peak memory
-    ```
-    
-    **5. Training Step Fusion**
-    ```python
-    # Instead of: separate forward, backward, optimizer steps
+    # Standard: Separate forward, loss, backward, update steps
     logits = model(inputs)
-    loss = cross_entropy(logits, targets)
-    grads = backward(loss)
-    optimizer.step(grads)
+    loss = loss_fn(logits, targets)
+    grads = compute_gradients(loss)
+    optimizer.update(model, grads)
     
-    # Target: Fused training computation
-    # Combine operations to reduce intermediate storage
+    # Target: Reduce kernel launches and memory overhead
+    # Optimize for LoRA-specific gradient patterns
     ```
     
-    # 🚀 PROVEN FUSION TECHNIQUES (From Liger Kernel)
+    **4. Multi-Layer LoRA Batch Processing**
+    ```python
+    # Standard: Apply LoRA to layers one by one
+    for layer in layers:
+        layer.q_proj = LoRALinear.from_linear(layer.q_proj)
+        layer.v_proj = LoRALinear.from_linear(layer.v_proj)
     
-    **Operation Fusion**: Combine multiple operations to reduce kernel launches
-    **Weight Pre-Computation**: Pre-fuse weights where possible (LoRA, layer combinations)
-    **Memory Access Optimization**: Better cache utilization, chunk processing
-    **Online Algorithms**: Avoid materializing large intermediate tensors
-    **Chunked Computation**: Process large operations in memory-efficient chunks
+    # Target: Batch LoRA operations across layers
+    # Share computation, optimize memory utilization
+    ```
+    
+    **5. Memory-Efficient Loss Computation**
+    ```python
+    # Standard: Full vocabulary materialization
+    loss = cross_entropy(logits, targets)  # Memory: O(batch * seq * vocab)
+    
+    # Target: Chunked or online loss computation for large vocabularies
+    # Reduce memory footprint during loss calculation
+    ```
+    
+    # 🚀 PROVEN LORA OPTIMIZATION TECHNIQUES
+    
+    **Weight Fusion**: Pre-compute LoRA deltas when weights don't change
+    **Gradient Reuse**: Optimize gradient computation patterns for LoRA structure  
+    **Memory Access Optimization**: Better cache utilization during LoRA computations
+    **Selective Computation**: Skip unnecessary computations based on LoRA rank
+    **Training-Specific Optimizations**: Leverage LoRA's low-rank structure
     
     # 📊 SUCCESS METRICS
     
-    **Primary Metric**: Speedup vs Standard MLX operations
-    - Target: 1.1x+ speedup over standard `nn.LayerNorm`, `nn.Linear`, etc.
-    - Success: Match Liger Kernel's 20%+ improvements over standard frameworks
+    **Primary Metric**: Training Loss Convergence (MUST MATCH BASELINE ±1%)
+    - Target: Same final loss as standard LoRA implementation
+    - Critical: Maintain numerical stability and gradient flow
     
-    **Secondary Metrics**:
-    - Memory efficiency (reduce peak memory usage)
-    - Correctness (results must match within 1e-1 tolerance)
-    - Speedup vs naive implementations (should be 1.2x+)
+    **Secondary Metrics**: Efficiency Improvements
+    - Memory efficiency: 10%+ reduction in peak memory usage
+    - Training speed: 10%+ improvement in tokens/second
+    - Ideal: Both memory AND speed improvements
     
-    # 🎖️ LIGER KERNEL SUCCESS PATTERNS TO EMULATE
+    # 🎖️ REAL-WORLD LORA OPTIMIZATION PATTERNS
     
-    Liger Kernel achieved 20% speedup over PyTorch through:
-    - **Multi-op fusion**: RMSNorm + scaling in single kernel
-    - **Memory optimization**: In-place operations, reduced allocations
-    - **Algorithmic improvements**: Online softmax, chunked computation
-    - **Pre-computation**: Computing invariants once, reusing across operations
+    Successful LoRA optimizations typically achieve:
+    - **Memory reduction**: 15-30% through weight fusion and gradient optimization
+    - **Speed improvement**: 10-25% through reduced kernel launches and better memory access
+    - **Maintained convergence**: Critical for practical adoption
     
     Your optimizations should target similar patterns adapted for MLX.
     
     # 🚫 CONSTRAINTS
-    - Keep the same function signatures
-    - Maintain numerical correctness (< 1e-1 difference for fusion ops)
-    - Support all tensor shapes and edge cases
+    - Keep the same function signatures and class interfaces
+    - Maintain numerical correctness (final loss must match baseline within 1%)
+    - Support all LoRA configurations (different ranks, scales, etc.)
     - No external dependencies beyond MLX
-    - Focus on FUSION not individual kernel speed
-    - 🚨 CRITICAL: Keep code changes MINIMAL and CONCISE (under 40,000 chars)
+    - Focus on PRACTICAL optimizations that maintain convergence
+    - 🚨 CRITICAL: Keep code changes MINIMAL and FOCUSED (under 40,000 chars)
     - NO verbose comments, examples, or redundant code
-    - Use short variable names and compact formatting
+    - Use concise variable names and efficient implementations
     
     # 🔍 WHAT TO EVOLVE
     
-    Focus on the `evolved_fine_tuning_kernels` function. The key operations to optimize:
+    Focus on the `evolved_lora_kernels` function. The key operations to optimize:
     
-    1. **fused_lora_linear**: Pre-compute lora_b @ lora_a, single matmul
-    2. **online_cross_entropy_loss**: Chunked/online computation for large vocab
-    3. **memory_efficient_attention**: Chunked attention to reduce memory O(seq_len^2)
-    4. **fused_transformer_block**: Combine norm + attention + norm + mlp
-    5. **fused_training_step**: Combine forward + loss + gradients + optimizer
-    6. **fused_multi_layer_norm**: Multiple normalizations in single pass
+    1. **OptimizedLoRALinear**: Improved LoRA linear layer implementation
+    2. **optimized_lora_training_step**: More efficient training loop
+    3. **optimized_multi_layer_lora_application**: Batch LoRA operations
+    4. **memory_efficient_lora_loss**: Reduced memory loss computation
+    5. **optimized_gradient_checkpointing_lora**: Memory-efficient checkpointing
     
-    Evolve towards fusion patterns that MLX's compiler doesn't automatically optimize.
-    The goal is operation SEQUENCES that are faster than standard MLX equivalents.
+    Evolve towards optimizations that provide real efficiency gains while maintaining
+    the exact same training loss convergence as the baseline implementation.
   
   num_top_programs: 6
   num_diverse_programs: 4
 
-# Database configuration for fusion optimization
+# Database configuration for LoRA optimization
 database:
   db_path: "./openevolve_output/program_db"
-  population_size: 80
-  archive_size: 40
-  num_islands: 6
-  elite_selection_ratio: 0.2
+  population_size: 60
+  archive_size: 30
+  num_islands: 4
+  elite_selection_ratio: 0.25
   exploitation_ratio: 0.7
   exploration_ratio: 0.3
 
 # Evaluator configuration
 evaluator:
-  timeout: 900  # Longer timeout for fusion evaluations
+  timeout: 1200  # Longer timeout for real LoRA training
   parallel_evaluations: 1
 
 # Evolution settings
 diff_based_evolution: true
 allow_full_rewrites: false  
-max_code_length: 60000
+max_code_length: 50000

@@ -1,195 +1,182 @@
-# MLX Fine-tuning Kernels - OpenEvolve Example
+# MLX LoRA Fine-tuning Optimization - OpenEvolve Example
 
-This example demonstrates optimizing **real fine-tuning operations** in MLX, inspired by [Liger Kernel's](https://github.com/linkedin/Liger-Kernel) proven optimizations. Instead of competing with MLX's highly optimized kernels, we create custom implementations of transformer operations that can be meaningfully improved over naive baselines.
+This example demonstrates optimizing **real LoRA fine-tuning** using the official **MLX-LM library** by evolving kernels that can achieve the same training loss as the standard MLX-LM implementation but with improved memory efficiency and/or training speed.
 
-## 🎯 The Real Opportunity
+## 🎯 The Real Challenge
 
-Liger Kernel demonstrated that **20%+ fine-tuning speedups** and **60% memory reductions** are achievable through optimized implementations of:
-- **RMSNorm**: 3x speedup, 3x memory reduction
-- **RoPE**: 3x speedup, 3x memory reduction  
-- **SwiGLU**: 1.5x memory reduction
-- **CrossEntropy**: 2x speedup, 4x memory reduction
+Instead of optimizing theoretical kernels, this example targets **actual MLX-LM LoRA fine-tuning** optimization using the official mlx-lm library. The goal is to discover kernel implementations that can:
 
-This example targets **MLX equivalents** of these optimizations.
+- **Achieve the same training loss** as standard MLX-LM LoRA fine-tuning
+- **Reduce memory usage** during training
+- **Increase training speed** (tokens/second)
+- **Maintain numerical stability** and convergence quality
+- **Use real MLX-LM infrastructure** for authentic benchmarking
+
+This demonstrates real performance benefits like unsloth and liger kernel libraries provide for NVIDIA GPUs, but for MLX on Apple Silicon using production MLX-LM code.
 
 ## 🚀 What Gets Optimized
 
-### Core Transformer Operations
+### Target Model & Dataset
+- **Model**: `mlx-community/Qwen2.5-0.5B-Instruct-4bit` (500M parameters, 4-bit quantized)
+- **Training**: Real LoRA fine-tuning using MLX-LM library on instruction-following dataset
+- **Baseline**: Standard MLX-LM LoRA implementation (official mlx-lm code)
+- **Metric**: Training loss convergence with efficiency improvements
 
-#### 1. **RMSNorm** - Layer Normalization
+### Core LoRA Operations for Optimization
+
+#### 1. **LoRA Linear Forward Pass**
 ```python
-# Baseline: Separate operations with forced evaluations
-variance = mx.mean(x * x, axis=-1, keepdims=True)
-mx.eval(variance)  # Inefficient!
-rstd = mx.rsqrt(variance + eps)
-mx.eval(rstd)
-result = weight * (x * rstd)
+# Standard MLX LoRA: Separate base + LoRA computation
+base_out = x @ base_weight.T
+lora_a_out = x @ lora_a.T  
+lora_b_out = lora_a_out @ lora_b.T
+result = base_out + scale * lora_b_out
 
-# Optimization Target: Fused variance + rsqrt + scaling
-# Expected: 2-3x speedup like Liger Kernel
+# Optimization Target: Fused or pre-computed LoRA
+# Expected: Memory reduction + speedup
 ```
 
-#### 2. **RoPE** - Rotary Position Embeddings
+#### 2. **LoRA Backward Pass & Gradient Computation**
 ```python
-# Baseline: Multiple tensor operations, many intermediates
-x1, x2 = x[..., ::2], x[..., 1::2]
-# ... many temporary arrays and evaluations ...
+# Standard: Separate gradient computations for base, lora_a, lora_b
+grad_base = grad_output @ x.T
+grad_lora_b = grad_output @ lora_a_out.T  
+grad_lora_a = lora_b.T @ grad_output @ x.T
 
-# Optimization Target: Fused rotation computation
-# Expected: 2-3x speedup
+# Optimization Target: Fused gradient computation
+# Expected: Reduced memory allocations
 ```
 
-#### 3. **SwiGLU** - Gated Linear Unit
+#### 3. **Multi-Layer LoRA Application**
 ```python
-# Baseline: Separate linear operations + activation
-gate = mx.linear(x, w_gate)
-gate_activated = mx.silu(gate)
-up = mx.linear(x, w_up)
-result = gate_activated * up
+# Standard: Apply LoRA to each layer separately (q_proj, v_proj, etc.)
+for layer in model.layers:
+    layer.self_attn.q_proj = LoRALinear.from_linear(layer.self_attn.q_proj)
+    layer.self_attn.v_proj = LoRALinear.from_linear(layer.self_attn.v_proj)
 
-# Optimization Target: Fused linear + silu + multiply
-# Expected: 50% memory reduction
+# Optimization Target: Batch LoRA operations across layers
+# Expected: Better memory utilization
 ```
 
-#### 4. **CrossEntropy** - Loss Function
+#### 4. **Training Step Optimization**
 ```python
-# Baseline: Full logits materialization in memory
-exp_logits = mx.exp(logits - max_logits)
-# ... complete softmax for large vocabularies
+# Standard: Separate forward, loss, backward, optimizer steps
+logits = model(inputs)
+loss = cross_entropy(logits, targets)
+grads = compute_gradients(loss)
+optimizer.update(model, grads)
 
-# Optimization Target: Online/chunked computation
-# Expected: 4x memory reduction
+# Optimization Target: Fused training operations
+# Expected: Reduced kernel launches and memory overhead
 ```
 
-#### 5. **LoRA Linear** - Low-Rank Adaptation
-```python
-# Baseline: Separate base + LoRA computations
-base_out = mx.linear(x, base_weight)
-lora_out = mx.linear(mx.linear(x, lora_a), lora_b)
+## 📊 Evaluation Approach
 
-# Optimization Target: Fused LoRA computation
-# Expected: Memory and speed improvements
-```
+### Real LoRA Fine-tuning Benchmark
+- **Model**: Uses actual MLX-LM models with standard architecture
+- **Dataset**: Instruction-following examples (100 samples for quick testing)
+- **Training**: 2 epochs, same hyperparameters for baseline and evolved
+- **Metrics**: 
+  - Training loss convergence (must match within 1% of baseline)
+  - Training speed (tokens/second)
+  - Peak memory usage (MB)
+  - Memory efficiency (MB/token)
 
-## 📊 Two-Level Evaluation
-
-### Level 1: Micro-benchmarks
-Tests individual kernel performance against naive baselines:
-- **Correctness**: Results must match baseline (< 1e-2 tolerance)
-- **Speed**: Target 1.2x+ speedup per kernel
-- **Memory**: Measure allocation efficiency
-
-### Level 2: Real Model Macro-benchmark  
-Tests **actual fine-tuning performance** using real HuggingFace MLX models:
-
-#### **Comprehensive Real Model Testing**:
-- **Multiple Real Models**: Tests across 2-5 actual MLX community models
-  - `mlx-community/Qwen3-0.6B-bf16` (600M parameters)
-  - `mlx-community/SmolLM-135M-Instruct-4bit` (135M parameters)  
-  - `mlx-community/TinyLlama-1.1B-Chat-v1.0-4bit` (1.1B parameters)
-  - `mlx-community/Qwen2.5-0.5B-Instruct-4bit` (500M parameters)
-  - `mlx-community/Phi-3.5-mini-instruct-4bit` (3.8B parameters)
-
-#### **Comprehensive Metrics**:
-- **Training Speed**: Real fine-tuning speedup across models
-- **Memory Efficiency**: VRAM usage improvements
-- **Convergence Quality**: Loss trajectory analysis
-- **Cross-Model Consistency**: Optimization robustness
-- **NO SYNTHETIC MODELS**: Only real production models used
-
-**This is the ultimate test** - do kernel optimizations provide consistent benefits across multiple real models that users actually fine-tune?
+### Success Criteria
+- **Primary**: Achieve same final training loss (±1%)
+- **Secondary**: Memory reduction (10%+ improvement) OR speed improvement (10%+ improvement)
+- **Ideal**: Both memory AND speed improvements
 
 ## 🏗️ Implementation Structure
 
-### Evolved Kernels (`evolved_fine_tuning_kernels()`)
+### Official MLX-LM Integration
+- Uses real MLX-LM models and training infrastructure (`mlx-community/Qwen2.5-0.5B-Instruct-4bit`)
+- Leverages official MLX-LM functions: `linear_to_lora_layers`, `train`, `evaluate`, `load_dataset`
+- Works with actual MLX-LM training pipelines and optimizers
+- Uses MLX-LM's `TrainingArgs`, `CacheDataset`, and adapter saving mechanisms
+
+### Evolved LoRA Kernels (`evolved_lora_kernels()`)
 ```python
 # EVOLVE-BLOCK-START
-def rms_norm(x, weight, eps=1e-6):
-    # Custom RMSNorm with fusion opportunities
-    # Target: 2-3x speedup vs naive baseline
+def optimized_lora_fine_tuning(model_name, train_data_path, config, adapter_save_path):
+    """Complete optimized LoRA fine-tuning pipeline using MLX-LM"""
+    # Load model using official MLX-LM
+    model, tokenizer = load(model_name)
     
-def rope_embeddings(x, freqs_cos, freqs_sin):
-    # Custom RoPE with optimized rotation
-    # Target: 2-3x speedup vs naive baseline
+    # Use MLX-LM dataset loading
+    train_set, valid_set, test_set = load_dataset(args, tokenizer)
     
-def swiglu_activation(x, w_gate, w_up):
-    # Custom SwiGLU with operation fusion  
-    # Target: 50% memory reduction vs naive baseline
+    # Apply LoRA using official functions with optimizations
+    model.freeze()
+    optimized_linear_to_lora_layers(model, num_layers, lora_parameters)
     
-# ... other kernels
+    # Optimized training loop using MLX-LM infrastructure
+    optimized_training_loop(model, train_dataset, val_dataset, args, optimizer)
+    
+    # Evaluation using MLX-LM evaluate function
+    final_loss = optimized_evaluate(model, test_dataset)
+
+def optimized_linear_to_lora_layers(model, num_layers, lora_parameters):
+    """Enhanced LoRA layer conversion based on mlx-lm's linear_to_lora_layers"""
+    # Use official implementation with potential memory optimizations
+    return linear_to_lora_layers(model, num_layers, lora_parameters)
 # EVOLVE-BLOCK-END
 ```
 
-### Naive Baselines
-Intentionally inefficient implementations with:
-- Excessive `mx.eval()` calls (forces computation)
-- Poor memory access patterns
-- Missed fusion opportunities
-- Many intermediate arrays
-
-### Simple Transformer Model
-Uses the custom kernels in a realistic transformer block for macro-benchmarking.
+### Realistic Baseline: Standard MLX-LM LoRA
+- Uses official `linear_to_lora_layers()` from MLX-LM
+- Standard MLX-LM training infrastructure with `train()` function
+- Official MLX-LM dataset loading with `load_dataset()`
+- Standard `TrainingArgs` and `CacheDataset` usage
+- Works with real MLX-LM models and tokenizers
 
 ## 🎯 Expected Evolution Path
 
-Based on Liger Kernel's proven optimizations:
+Based on proven LoRA optimization techniques:
 
-1. **Early generations**: Remove unnecessary `mx.eval()` calls → 10-20% speedup
-2. **Mid generations**: Fuse operations, optimize memory patterns → 20-40% speedup
-3. **Later generations**: Mathematical simplifications, advanced fusion → 30-60% speedup
+1. **Early generations**: Reduce unnecessary memory allocations → 5-10% memory reduction
+2. **Mid generations**: Fuse forward/backward operations → 10-15% speedup  
+3. **Later generations**: Advanced mathematical optimizations → 20%+ improvements
 
 ## 📈 Success Metrics
 
-### Micro-benchmark Targets:
-- **Minimum**: 1.2x average kernel speedup (20% improvement)
-- **Good**: 1.5x average kernel speedup (50% improvement)  
-- **Excellent**: 2.0x+ average kernel speedup (100%+ improvement)
+### Training Convergence (Required):
+- **Must achieve**: Same final training loss (±1% tolerance)
+- **Must maintain**: Numerical stability and gradient flow
 
-### Macro-benchmark Targets:
-- **Training speedup**: 20%+ faster fine-tuning to same loss
-- **Memory reduction**: 30%+ lower peak memory usage
-- **Correctness**: Same convergence quality
+### Efficiency Improvements (Target):
+- **Memory efficiency**: 10%+ reduction in peak memory usage
+- **Training speed**: 10%+ improvement in tokens/second  
+- **Ideal**: 15%+ improvement in both metrics
 
 ## 🚀 Usage
 
 ### Prerequisites
 ```bash
-pip install mlx>=0.15.0 numpy psutil
-# Or: pip install -r requirements.txt
+# Install MLX
+pip install mlx>=0.15.0
+
+# Install MLX-LM for real model support
+pip install mlx-lm>=0.15.0
+
+# Install other dependencies
+pip install numpy psutil transformers
+
+# Or install all at once:
+pip install -r requirements.txt
 ```
-
-### Optional: Enable Comprehensive Real Model Evaluation
-For the most realistic benchmarks using multiple real HuggingFace models:
-```bash
-# Install comprehensive evaluation dependencies
-python setup_comprehensive_evaluation.py
-
-# Or manually:
-pip install transformers>=4.35.0 mlx-lm>=0.3.0 datasets>=2.14.0 psutil
-```
-
-Comprehensive evaluation will test your kernels across multiple real models:
-- `mlx-community/Qwen3-0.6B-bf16` (600M parameters) - Primary
-- `mlx-community/SmolLM-135M-Instruct-4bit` (135M parameters) - Fast testing
-- `mlx-community/TinyLlama-1.1B-Chat-v1.0-4bit` (1.1B parameters) - Larger scale
-- `mlx-community/Qwen2.5-0.5B-Instruct-4bit` (500M parameters) - Alternative
-- `mlx-community/Phi-3.5-mini-instruct-4bit` (3.8B parameters) - Large scale
-
-**Benefits of comprehensive evaluation:**
-- Tests across multiple model architectures and sizes
-- Validates optimization consistency across real models
-- Uses realistic instruction-following datasets
-- Provides cross-model performance analysis
-- NO synthetic model fallbacks
 
 ### Quick Test
 ```bash
 cd examples/mlx_fine_tuning_kernels
 
+# Test the setup first
+python test_setup.py
+
 # Test the initial implementation
 python initial_program.py
 
-# Test the evaluator
+# Test real LoRA training evaluation
 python evaluator.py
 ```
 
@@ -199,119 +186,109 @@ python evaluator.py
 python ../../../openevolve-run.py initial_program.py evaluator.py --config config.yaml
 ```
 
-### Expected Output - Comprehensive Real Model Evaluation
+### Expected Output
 ```
-🚀 Evaluating MLX Fine-tuning Kernels...
+🚀 Evaluating MLX-LM LoRA Fine-tuning Optimization...
 
-📊 MICRO-BENCHMARKS: Individual Kernel Performance
-  rms_norm: 1.34x speedup, 0.85x memory (2.1ms vs 2.8ms) 🟢
-  swiglu_activation: 1.41x speedup, 0.78x memory (3.2ms vs 4.5ms) 🟢
-  … (all 6 kernels tested)
+✅ MLX-LM available for evaluation
+✅ LoRA implementations loaded successfully
 
-🚀 COMPREHENSIVE REAL MODEL EVALUATION
-============================================================
+📊 MLX-LM LORA FINE-TUNING COMPARISON
+  Model: mlx-community/Qwen2.5-0.5B-Instruct-4bit
+  Trials: 1
 
-🔍 Discovering available real models...
-  Testing mlx-community/Qwen3-0.6B-bf16 (600M)...
-    ✅ Tokenizer loaded
-    ✅ Model available
-  Testing mlx-community/SmolLM-135M-Instruct-4bit (135M)...
-    ✅ Tokenizer loaded  
-    ✅ Model available
+--- Trial 1/1 ---
+🔬 Testing BASELINE implementation...
+Loading model: mlx-community/Qwen2.5-0.5B-Instruct-4bit
+Loading datasets...
+Applying baseline LoRA...
+Trainable parameters: 2.097M
+Total parameters: 494.033M
+Starting baseline training...
+  🧪 Running BASELINE LoRA fine-tuning...
+    Final loss: 2.1234
+    Training time: 12.45s
+    Memory delta: 245.1 MB
 
-📊 Found 2 available models:
-  - mlx-community/Qwen3-0.6B-bf16 (600M)
-  - mlx-community/SmolLM-135M-Instruct-4bit (135M)
+🚀 Testing EVOLVED implementation...
+Loading model: mlx-community/Qwen2.5-0.5B-Instruct-4bit
+Loading datasets...
+Applying LoRA...
+Trainable parameters: 2.097M
+Total parameters: 494.033M
+Starting optimized training...
+  🧪 Running EVOLVED LoRA fine-tuning...
+    Final loss: 2.1189
+    Training time: 10.82s
+    Memory delta: 218.3 MB
 
-🧪 Benchmarking mlx-community/Qwen3-0.6B-bf16 (600M)...
-  Config: batch_size=2, seq_len=128, samples=200, epochs=5
-    🔬 EVOLVED experiment...
-      Generated 200 training samples
-      Epoch 1/5: loss=2.1234, time=1.45s
-      Epoch 5/5: loss=1.8765, time=1.23s
-      EVOLVED completed: 6.85s total, 1.8765 final loss
-    🔬 NAIVE experiment...
-      Epoch 1/5: loss=2.1298, time=1.89s  
-      Epoch 5/5: loss=1.8823, time=1.67s
-      NAIVE completed: 8.92s total, 1.8823 final loss
-  📊 Results: 1.30x speedup, 0.91x memory, 0.0058 loss diff
+📊 MLX-LM LORA FINE-TUNING OPTIMIZATION RESULTS:
+  Loss Convergence: ✅ (diff: 0.0045)
+  Speed Improvement: 1.15x
+  Memory Improvement: 1.12x
+  Time Improvement: 1.15x
+  Convergence Score: 1.000
+  Efficiency Score: 0.612
+  Overall Score: 0.784
 
-🧪 Benchmarking mlx-community/SmolLM-135M-Instruct-4bit (135M)...
-  📊 Results: 1.38x speedup, 0.87x memory, 0.0076 loss diff
-
-📊 COMPREHENSIVE RESULTS ACROSS 2 REAL MODELS:
-  Models Tested: 600M, 135M
-  Average Speedup: 1.34x
-  Speedup Range: 1.30x - 1.38x
-  Average Memory Ratio: 0.89x  
-  Average Loss Difference: 0.0067
-  Comprehensive Score: 0.745
-
-🥇 VERY GOOD: Strong improvements on real models!
-
-🏆 FINAL EVALUATION:
-  Overall Score: 0.832
-  Micro Score: 0.945
-  Macro Score: 0.745  
-  Real Models Tested: 2
-  Cross-Model Consistency: High
-🥈 EXCELLENT: Consistent strong performance across real models!
+🥇 EXCELLENT: Strong improvements while maintaining convergence!
 ```
 
-## 🏆 Why This Will Succeed
+## 💡 Why This Will Succeed
 
-### ✅ **Proven Optimization Space**
-- Liger Kernel demonstrates these optimizations work in practice
-- Clear fusion opportunities in transformer operations  
-- Realistic targets vs naive baselines (not competing with Apple's optimized kernels)
-
-### ✅ **Real-World Validation**
-- Tests actual fine-tuning performance, not just synthetic benchmarks
-- Measures practical benefits: training speed and memory usage
-- Uses realistic transformer architecture and operations
-
-### ✅ **Appropriate Complexity**
-- More meaningful than simple tensor operations
-- Less complex than full Metal kernel programming
-- Achievable through operation fusion and algorithmic improvements
+### ✅ **Uses Real MLX Models**
+- Integrates with actual MLX-LM models and architectures
+- Tests on real model layers (attention projections, MLPs)
+- Measures actual training metrics (loss, speed, memory)
 
 ### ✅ **Clear Success Metrics**
-- **Binary correctness**: Pass/fail with reasonable tolerance
-- **Primary metric**: Overall score combining micro + macro performance
-- **Real impact**: Faster fine-tuning with less memory
+- **Binary convergence check**: Final loss must match (±1%)
+- **Efficiency improvements**: Memory and/or speed gains
+- **Real-world impact**: Actual fine-tuning becomes more efficient
 
-## 🎓 Learning from AlphaEvolve Paper
+### ✅ **Proven Optimization Space**
+- LoRA operations have known optimization opportunities
+- Weight pre-computation and fusion techniques
+- Memory access pattern improvements
+- Gradient computation optimization
 
-This example applies AlphaEvolve's success principles correctly:
+### ✅ **Beatable Baseline**
+- Standard MLX LoRA implementation (not heavily optimized)
+- Room for kernel-level optimizations
+- Opportunity for memory access pattern improvements
 
-### ✅ **Right Problem Selection**
-- **Paper**: Optimized existing algorithms (tiling heuristics)
-- **This example**: Optimizes existing operations (transformer kernels)
+## 🎓 Learning from Production LoRA Optimizations
 
-### ✅ **Beatable Baseline**  
-- **Paper**: Compared against existing solutions (improvable)
-- **This example**: Compares against naive implementations (clearly improvable)
+This example applies proven LoRA optimization techniques:
 
-### ✅ **Clear Metrics**
-- **Paper**: Direct performance measurement (kernel runtime)
-- **This example**: Direct performance measurement (training speed + memory)
+### ✅ **Weight Pre-computation**
+- Pre-fuse LoRA weights when possible during inference
+- Reduce matrix multiplications from 3 to 1
 
-### ✅ **Incremental Improvement**
-- **Paper**: 23% improvement through many optimizations  
-- **This example**: Target 20-30% through step-by-step fusion
+### ✅ **Memory-Efficient Gradients**  
+- Optimize gradient computation patterns for LoRA structure
+- Reduce intermediate tensor allocations
+
+### ✅ **Training Loop Optimization**
+- Fuse forward/backward/update operations
+- Reduce kernel launch overhead
+
+### ✅ **Multi-Layer Batch Processing**
+- Apply LoRA optimizations across multiple layers efficiently
+- Better utilize MLX's parallelization capabilities
 
 ## 🔮 Real-World Impact
 
 Success here would demonstrate:
-- **MLX optimization capabilities**: Showing MLX can be optimized beyond naive implementations
-- **Practical fine-tuning improvements**: Real speedups for the MLX community
-- **OpenEvolve effectiveness**: Proving evolutionary optimization works on complex, practical problems
+- **Practical LoRA optimization**: Real improvements for MLX fine-tuning
+- **Production-ready techniques**: Optimizations that users can apply
+- **OpenEvolve effectiveness**: Evolutionary approach works on realistic problems
 
-This represents a **genuinely valuable and achievable target** that bridges the gap between toy examples and production optimization challenges.
+This represents a **genuinely valuable optimization challenge** that bridges research and practical application in the MLX ecosystem, similar to how Unsloth provides 2x speedups and Liger Kernel provides 20%+ memory savings for NVIDIA GPUs.
 
 ## 📚 References
 
-- [Liger Kernel](https://github.com/linkedin/Liger-Kernel): Proven transformer optimizations for PyTorch
-- [Unsloth](https://github.com/unslothai/unsloth): 2x faster training with custom kernels
-- [AlphaEvolve Paper](https://arxiv.org/abs/2502.05229): Evolutionary optimization for coding problems
-- [MLX Documentation](https://ml-explore.github.io/mlx/build/html/index.html): Apple's machine learning framework
+- [MLX-LM Documentation](https://github.com/ml-explore/mlx-examples): Apple's ML framework examples
+- [LoRA Paper](https://arxiv.org/abs/2106.09685): Low-Rank Adaptation of Large Language Models
+- [Unsloth](https://github.com/unslothai/unsloth): Proven LoRA speedup techniques for NVIDIA
+- [MLX Documentation](https://ml-explore.github.io/mlx/build/html/index.html): Apple's ML framework

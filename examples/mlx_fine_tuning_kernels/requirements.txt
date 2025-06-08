@@ -1,14 +1,15 @@
-# MLX Fine-tuning Kernels Requirements
-
-# Core MLX framework
+# Core MLX dependencies for LoRA fine-tuning optimization
 mlx>=0.15.0
+mlx-lm>=0.15.0
 
-# Utilities
-numpy>=1.24.0
-psutil>=5.9.0  # For memory monitoring
+# ML/Data dependencies
+numpy>=1.21.0
+transformers>=4.35.0
 
-# Optional: For extended testing and real model benchmarks
-# Uncomment these for real model macro-benchmarking:
-# transformers>=4.35.0  # For tokenizers and model utilities
-# mlx-lm>=0.3.0  # For loading MLX models from HuggingFace
-# datasets>=2.14.0  # For real fine-tuning datasets
+# System monitoring for performance benchmarking
+psutil>=5.8.0
+
+# Optional: For comprehensive real model evaluation and tokenization
+# These are included in mlx-lm but listed here for clarity
+# torch>=2.0.0  # For tokenizer compatibility if needed
+# sentencepiece>=0.1.99  # For some tokenizers

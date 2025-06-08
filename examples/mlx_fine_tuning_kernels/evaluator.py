@@ -1,9 +1,9 @@
 """
-MLX Fusion-Based Kernels Evaluator
+MLX LoRA Fine-tuning Optimization Evaluator
 
-This evaluator tests fusion-based operations that combine multiple MLX operations
-to reduce kernel launches and memory transfers. The goal is to demonstrate that
-fusion patterns can achieve speedups over standard MLX operation sequences.
+This evaluator performs real LoRA fine-tuning benchmarks using the mlx-lm library,
+comparing evolved implementations against standard MLX-LM LoRA implementations. 
+The goal is to achieve the same training loss with improved memory efficiency and/or speed.
 """
 
 import importlib.util
@@ -13,7 +13,11 @@ import statistics
 import gc
 import psutil
 import os
-from typing import Dict, Union, List, Tuple, Optional
+import tempfile
+import shutil
+import json
+from typing import Dict, Union, List, Tuple, Optional, Any
+from pathlib import Path
 
 # Required imports - fail fast if not available
 try:
@@ -29,389 +33,342 @@ try:
 except ImportError as e:
     raise ImportError(f"psutil not available: {e}. Please install with: pip install psutil")
 
+try:
+    from mlx_lm import load
+    from mlx_lm.tuner.trainer import TrainingArgs, evaluate, train
+    from mlx_lm.tuner.datasets import CacheDataset, load_dataset
+    from mlx_lm.tuner.utils import (
+        linear_to_lora_layers,
+        print_trainable_parameters,
+    )
+    from mlx_lm.utils import save_config
+    MLX_LM_AVAILABLE = True
+    print("✅ MLX-LM available for evaluation")
+except ImportError as e:
+    print(f"⚠️ MLX-LM not available: {e}")
+    MLX_LM_AVAILABLE = False
+
 
 def get_memory_usage() -> float:
     """Get current memory usage in MB."""
     return psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
 
 
-def benchmark_kernel(kernel_func, args, num_trials=5, warmup=2):
-    """Benchmark a kernel function with proper warmup and timing."""
-    
-    # Warmup runs
-    for _ in range(warmup):
-        result = kernel_func(*args)
-        if isinstance(result, tuple):
-            # Handle training step which returns multiple values
-            for r in result:
-                if isinstance(r, mx.array):
-                    mx.eval(r)
-                elif isinstance(r, dict):
-                    for v in r.values():
-                        if isinstance(v, mx.array):
-                            mx.eval(v)
-        else:
-            mx.eval(result)
-    
-    # Clear cache
+def clear_mlx_cache_and_gc():
+    """Clear MLX cache and run garbage collection."""
     mx.clear_cache()
-    
-    # Benchmark runs
-    times = []
-    memory_before = get_memory_usage()
-    
-    for _ in range(num_trials):
-        start_time = time.perf_counter()
-        result = kernel_func(*args)
-        
-        # Ensure computation completes
-        if isinstance(result, tuple):
-            for r in result:
-                if isinstance(r, mx.array):
-                    mx.eval(r)
-                elif isinstance(r, dict):
-                    for v in r.values():
-                        if isinstance(v, mx.array):
-                            mx.eval(v)
-        else:
-            mx.eval(result)
-            
-        end_time = time.perf_counter()
-        times.append(end_time - start_time)
-    
-    memory_after = get_memory_usage()
-    memory_delta = memory_after - memory_before
-    
-    return result, statistics.median(times), memory_delta
+    gc.collect()
 
 
-def create_standard_mlx_baselines():
-    """Create standard MLX implementations using built-in operations for comparison."""
+class MLXLoRABenchmark:
+    """
+    Benchmark for comparing MLX-LM LoRA fine-tuning implementations.
+    Measures training loss convergence, speed, and memory usage using real mlx-lm.
+    """
     
-    def standard_transformer_block(x: mx.array,
-                                  attn_weights: Dict[str, mx.array],
-                                  mlp_weights: Dict[str, mx.array], 
-                                  norm_weights: Tuple[mx.array, mx.array],
-                                  freqs_cos: mx.array, freqs_sin: mx.array,
-                                  eps: float = 1e-6) -> mx.array:
-        """Standard transformer block using MLX built-in operations."""
-        batch_size, seq_len, d_model = x.shape
+    def __init__(self, model_name: str = "mlx-community/Qwen2.5-0.5B-Instruct-4bit"):
+        self.model_name = model_name
+        self.temp_dirs = []
         
-        # Standard layer norm (not RMS norm)
-        x_norm1 = nn.LayerNorm(d_model)(x)
-        
-        # Standard multi-head attention (simplified)
-        q = x_norm1 @ attn_weights['q_proj'].T
-        k = x_norm1 @ attn_weights['k_proj'].T
-        v = x_norm1 @ attn_weights['v_proj'].T
-        
-        # Simplified attention (without proper multi-head reshaping for speed)
-        scale = 1.0 / (d_model ** 0.5)
-        scores = q @ k.T * scale
-        attn_weights_computed = mx.softmax(scores, axis=-1)
-        attn_out = attn_weights_computed @ v
-        attn_out = attn_out @ attn_weights['o_proj'].T
-        
-        # Residual connection
-        x = x + attn_out
-        
-        # Standard layer norm
-        x_norm2 = nn.LayerNorm(d_model)(x)
-        
-        # Standard MLP
-        mlp = nn.Sequential(
-            nn.Linear(d_model, d_model * 4),
-            nn.SiLU(),
-            nn.Linear(d_model * 4, d_model)
-        )
-        mlp_out = mlp(x_norm2)
-        
-        return x + mlp_out
-    
-    def standard_lora_linear(x: mx.array, base_weight: mx.array,
-                            lora_a: mx.array, lora_b: mx.array,
-                            scale: float = 1.0) -> mx.array:
-        """Standard LoRA implementation with separate operations."""
-        base_out = x @ base_weight.T
-        lora_out = x @ lora_a.T @ lora_b.T
-        return base_out + scale * lora_out
-    
-    def standard_cross_entropy_loss(logits: mx.array, targets: mx.array,
-                                   ignore_index: int = -100,
-                                   chunk_size: int = 2048) -> mx.array:
-        """Standard MLX CrossEntropy loss."""
-        return nn.losses.cross_entropy(
-            logits.reshape(-1, logits.shape[-1]),
-            targets.reshape(-1),
-            reduction='mean'
-        )
-    
-    def standard_attention(query: mx.array, key: mx.array, value: mx.array,
-                          chunk_size: int = 1024) -> mx.array:
-        """Standard MLX attention implementation."""
-        batch_size, n_heads, seq_len, head_dim = query.shape
-        scale = 1.0 / (head_dim ** 0.5)
-        
-        scores = mx.matmul(query, mx.transpose(key, axes=(0, 1, 3, 2))) * scale
-        attn_weights = mx.softmax(scores, axis=-1)
-        output = mx.matmul(attn_weights, value)
-        return output
-    
-    def standard_training_step(inputs: mx.array, targets: mx.array,
-                              model_weights: Dict[str, mx.array],
-                              optimizer_state: Dict, learning_rate: float) -> Tuple[Dict[str, mx.array], mx.array]:
-        """Standard training step with separate operations."""
-        logits = inputs @ model_weights['output_proj'].T
-        loss = standard_cross_entropy_loss(logits, targets)
-        
-        # Simplified weight update
-        updated_weights = {}
-        for name, weight in model_weights.items():
-            grad_estimate = mx.random.normal(weight.shape) * 0.001
-            updated_weights[name] = weight - learning_rate * grad_estimate
-            
-        return updated_weights, loss
-    
-    def standard_multi_layer_norm(x: mx.array, weights: List[mx.array], eps: float = 1e-6) -> mx.array:
-        """Standard multi-layer normalization."""
-        result = x
-        for weight in weights:
-            result = nn.LayerNorm(x.shape[-1])(result)
-        return result
-    
-    return {
-        'fused_transformer_block': standard_transformer_block,
-        'apply_rope_optimized': lambda x, cos, sin: x,  # Simplified
-        'fused_lora_linear': standard_lora_linear,
-        'online_cross_entropy_loss': standard_cross_entropy_loss,
-        'memory_efficient_attention': standard_attention,
-        'fused_training_step': standard_training_step,
-        'fused_multi_layer_norm': standard_multi_layer_norm
-    }
-
-
-def evaluate_fusion_benchmarks(evolved_kernels, naive_kernels, standard_kernels):
-    """Test fusion operations against both naive and standard MLX implementations."""
-    print("\n📊 FUSION BENCHMARKS: Multi-Operation Performance")
-    
-    # Test configurations focused on fusion opportunities
-    test_configs = [
-        {"batch_size": 2, "seq_len": 64, "d_model": 256, "vocab_size": 1000},
-        {"batch_size": 4, "seq_len": 128, "d_model": 512, "vocab_size": 2000},
-        {"batch_size": 1, "seq_len": 256, "d_model": 512, "vocab_size": 5000},  # Large vocab test
-    ]
-    
-    fusion_tests = [
-        'fused_lora_linear', 'online_cross_entropy_loss', 'memory_efficient_attention',
-        'fused_training_step', 'fused_multi_layer_norm'
-    ]
-    
-    all_results = []
-    correctness_passed = 0
-    total_tests = 0
-    
-    for config in test_configs:
-        print(f"\n--- Config: {config} ---")
-        
-        # Create test data for fusion operations
-        from fusion_based_initial_program import create_test_data
-        test_data = create_test_data(**config)
-        
-        for kernel_name in fusion_tests:
-            print(f"  {kernel_name}:")
-            total_tests += 1
-            
-            # Get kernel arguments
-            if kernel_name == 'fused_lora_linear':
-                args = [test_data['x_lora'], test_data['base_weight'],
-                       test_data['lora_a'], test_data['lora_b']]
-            elif kernel_name == 'online_cross_entropy_loss':
-                args = [test_data['logits'], test_data['targets']]
-            elif kernel_name == 'memory_efficient_attention':
-                args = [test_data['query'], test_data['key'], test_data['value']]
-            elif kernel_name == 'fused_training_step':
-                args = [test_data['inputs_train'], test_data['targets_train'],
-                       test_data['model_weights'], test_data['optimizer_state'], 0.001]
-            elif kernel_name == 'fused_multi_layer_norm':
-                args = [test_data['x_norm'], test_data['norm_weights_list']]
-            else:
-                continue
-            
+    def cleanup(self):
+        """Clean up temporary directories."""
+        for temp_dir in self.temp_dirs:
             try:
-                # Benchmark evolved (fusion) implementation
-                evolved_result, evolved_time, evolved_memory = benchmark_kernel(
-                    evolved_kernels[kernel_name], args
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except:
+                pass
+        self.temp_dirs.clear()
+        
+        # Also run general cleanup
+        try:
+            from cleanup import cleanup_temp_files
+            cleanup_temp_files()
+        except ImportError:
+            pass
+    
+    def create_test_config(self, data_dir: str, adapter_dir: str) -> Dict[str, Any]:
+        """Create test configuration for LoRA fine-tuning with all MLX-LM expected attributes."""
+        return {
+            "model": self.model_name,
+            "train": True,
+            "fine_tune_type": "lora",
+            "optimizer": "adam",
+            "optimizer_config": {"adam": {}},
+            "data": data_dir,
+            "seed": 42,
+            "num_layers": 2,  # Small for fast testing
+            "batch_size": 1,  # Small for memory efficiency
+            "iters": 5,       # Very few iterations for speed
+            "val_batches": 2,
+            "learning_rate": 1e-4,
+            "steps_per_report": 2,
+            "steps_per_eval": 10,
+            "adapter_path": adapter_dir,
+            "save_every": 100,
+            "max_seq_length": 256,  # Shorter sequences
+            "lora_parameters": {"rank": 8, "dropout": 0.0, "scale": 16.0},  # Smaller rank
+            "mask_prompt": False,
+            # Additional MLX-LM expected attributes
+            "test": True,
+            "test_batches": 2,
+            "resume_adapter_file": None,
+            "config": None,
+            "grad_checkpoint": False,
+            "lr_schedule": None,
+            "wandb": None,
+        }
+    
+    def compare_implementations(
+        self,
+        baseline_kernels: Dict,
+        evolved_kernels: Dict,
+        num_trials: int = 5  # Multiple trials to reduce system noise
+    ) -> Dict[str, Any]:
+        """Compare baseline vs evolved LoRA implementations using real mlx-lm."""
+        
+        if not MLX_LM_AVAILABLE:
+            return {"error": "MLX-LM not available for real benchmarking"}
+        
+        print(f"\n📊 MLX-LM LORA FINE-TUNING COMPARISON (WITH NOISE REDUCTION)")
+        print(f"  Model: {self.model_name}")
+        print(f"  Trials: {num_trials} (multiple trials to reduce system noise)")
+        print(f"  Method: Randomized order with statistical analysis")
+        
+        results = {
+            'baseline': [],
+            'evolved': []
+        }
+        
+        for trial in range(num_trials):
+            print(f"\n--- Trial {trial + 1}/{num_trials} ---")
+            
+            # Create temporary directories for this trial
+            baseline_data_dir = tempfile.mkdtemp(prefix="baseline_data_")
+            baseline_adapter_dir = tempfile.mkdtemp(prefix="baseline_adapters_")
+            evolved_data_dir = tempfile.mkdtemp(prefix="evolved_data_")
+            evolved_adapter_dir = tempfile.mkdtemp(prefix="evolved_adapters_")
+            
+            self.temp_dirs.extend([
+                baseline_data_dir, baseline_adapter_dir,
+                evolved_data_dir, evolved_adapter_dir
+            ])
+            
+            # Test baseline implementation
+            try:
+                print("🔬 Testing BASELINE implementation...")
+                
+                # Create test dataset
+                self._create_test_dataset(baseline_data_dir)
+                baseline_config = self.create_test_config(baseline_data_dir, baseline_adapter_dir)
+                
+                clear_mlx_cache_and_gc()
+                baseline_result = self._run_lora_benchmark(
+                    baseline_kernels['optimized_lora_fine_tuning'],
+                    baseline_config,
+                    "BASELINE"
                 )
+                results['baseline'].append(baseline_result)
                 
-                # Benchmark naive implementation
-                naive_result, naive_time, naive_memory = benchmark_kernel(
-                    naive_kernels[kernel_name], args
-                )
-                
-                # Benchmark standard MLX implementation
-                standard_result, standard_time, standard_memory = benchmark_kernel(
-                    standard_kernels[kernel_name], args
-                )
-                
-                # Check correctness against naive baseline
-                correctness_ok = True
-                
-                if kernel_name == 'fused_training_step':
-                    # Special handling for training step
-                    evolved_weights, evolved_loss = evolved_result
-                    naive_weights, naive_loss = naive_result
-                    standard_weights, standard_loss = standard_result
-                    
-                    loss_diff_naive = abs(float(evolved_loss) - float(naive_loss))
-                    loss_diff_standard = abs(float(evolved_loss) - float(standard_loss))
-                    
-                    if loss_diff_naive < 0.1:  # Allow some randomness
-                        correctness_passed += 1
-                        
-                        speedup_vs_naive = naive_time / evolved_time if evolved_time > 0 else 0.0
-                        speedup_vs_standard = standard_time / evolved_time if evolved_time > 0 else 0.0
-                        memory_ratio = evolved_memory / naive_memory if naive_memory > 0 else 1.0
-                        
-                        status_naive = "🟢" if speedup_vs_naive >= 1.1 else "🟡" if speedup_vs_naive >= 0.9 else "🔴"
-                        status_standard = "🟢" if speedup_vs_standard >= 1.0 else "🔴"
-                        
-                        print(f"    vs Naive: {speedup_vs_naive:.2f}x speedup {status_naive}")
-                        print(f"    vs Standard MLX: {speedup_vs_standard:.2f}x speedup {status_standard}")
-                        print(f"    Memory ratio: {memory_ratio:.2f}x")
-                        
-                        all_results.append({
-                            'kernel': kernel_name,
-                            'config': config,
-                            'speedup_vs_naive': speedup_vs_naive,
-                            'speedup_vs_standard': speedup_vs_standard,
-                            'memory_ratio': memory_ratio,
-                            'evolved_time': evolved_time,
-                            'naive_time': naive_time,
-                            'standard_time': standard_time,
-                            'correctness': True
-                        })
-                    else:
-                        print(f"    ❌ CORRECTNESS FAILED: loss_diff={loss_diff_naive:.4f}")
-                        correctness_ok = False
-                
-                else:
-                    # Standard tensor comparison
-                    if (evolved_result.shape == naive_result.shape and 
-                        evolved_result.shape == standard_result.shape):
-                        
-                        max_diff_naive = float(mx.max(mx.abs(evolved_result - naive_result)))
-                        max_diff_standard = float(mx.max(mx.abs(evolved_result - standard_result)))
-                        
-                        if max_diff_naive < 1e-1:  # More lenient for fusion operations
-                            correctness_passed += 1
-                            
-                            speedup_vs_naive = naive_time / evolved_time if evolved_time > 0 else 0.0
-                            speedup_vs_standard = standard_time / evolved_time if evolved_time > 0 else 0.0
-                            memory_ratio = evolved_memory / naive_memory if naive_memory > 0 else 1.0
-                            
-                            status_naive = "🟢" if speedup_vs_naive >= 1.1 else "🟡" if speedup_vs_naive >= 0.9 else "🔴"
-                            status_standard = "🟢" if speedup_vs_standard >= 1.0 else "🔴"
-                            
-                            print(f"    vs Naive: {speedup_vs_naive:.2f}x speedup, {memory_ratio:.2f}x memory ({evolved_time*1000:.1f}ms vs {naive_time*1000:.1f}ms) {status_naive}")
-                            print(f"    vs Standard MLX: {speedup_vs_standard:.2f}x speedup ({evolved_time*1000:.1f}ms vs {standard_time*1000:.1f}ms) {status_standard}")
-                            
-                            all_results.append({
-                                'kernel': kernel_name,
-                                'config': config,
-                                'speedup_vs_naive': speedup_vs_naive,
-                                'speedup_vs_standard': speedup_vs_standard,
-                                'memory_ratio': memory_ratio,
-                                'evolved_time': evolved_time,
-                                'naive_time': naive_time,
-                                'standard_time': standard_time,
-                                'correctness': True
-                            })
-                        else:
-                            print(f"    ❌ CORRECTNESS FAILED: max_diff_naive={max_diff_naive:.2e}")
-                            correctness_ok = False
-                    else:
-                        print(f"    ❌ SHAPE MISMATCH")
-                        correctness_ok = False
-                
-                if not correctness_ok:
-                    all_results.append({
-                        'kernel': kernel_name,
-                        'config': config,
-                        'speedup_vs_naive': 0.0,
-                        'speedup_vs_standard': 0.0,
-                        'memory_ratio': 1.0,
-                        'correctness': False
-                    })
-                    
             except Exception as e:
-                print(f"    ❌ ERROR: {e}")
-                all_results.append({
-                    'kernel': kernel_name,
-                    'config': config,
-                    'speedup_vs_naive': 0.0,
-                    'speedup_vs_standard': 0.0,
-                    'memory_ratio': 1.0,
-                    'correctness': False
-                })
+                print(f"  ❌ Baseline trial failed: {e}")
+                results['baseline'].append({"error": str(e)})
+            
+            # Test evolved implementation  
+            try:
+                print("🚀 Testing EVOLVED implementation...")
+                
+                # Create test dataset (same as baseline)
+                self._create_test_dataset(evolved_data_dir)
+                evolved_config = self.create_test_config(evolved_data_dir, evolved_adapter_dir)
+                
+                clear_mlx_cache_and_gc()
+                evolved_result = self._run_lora_benchmark(
+                    evolved_kernels['optimized_lora_fine_tuning'],
+                    evolved_config,
+                    "EVOLVED"
+                )
+                results['evolved'].append(evolved_result)
+                
+            except Exception as e:
+                print(f"  ❌ Evolved trial failed: {e}")
+                results['evolved'].append({"error": str(e)})
+        
+        # Cleanup after all trials
+        self.cleanup()
+        
+        return self._analyze_results(results)
     
-    # Calculate summary statistics
-    correct_results = [r for r in all_results if r['correctness']]
+    def _create_test_dataset(self, output_dir: str, num_samples: int = 50):
+        """Create a test dataset for LoRA fine-tuning."""
+        examples = [
+            {"text": "What is AI?\nAI is artificial intelligence, enabling computers to perform human-like tasks."},
+            {"text": "How does ML work?\nMachine learning trains algorithms on data to recognize patterns and make predictions."},
+            {"text": "What is Python?\nPython is a versatile programming language popular for data science and AI development."},
+            {"text": "Explain deep learning.\nDeep learning uses neural networks with multiple layers to model complex data patterns."},
+            {"text": "What is NLP?\nNatural Language Processing enables computers to understand and generate human language."},
+            {"text": "What is computer vision?\nComputer vision teaches machines to interpret and analyze visual information from images."},
+            {"text": "What is reinforcement learning?\nReinforcement learning trains agents through trial and error using rewards and penalties."},
+            {"text": "What is a neural network?\nA neural network is a computing system inspired by biological neural networks."},
+            {"text": "What is data science?\nData science extracts insights from data using statistics, programming, and domain expertise."},
+            {"text": "What is machine learning?\nMachine learning is a subset of AI that enables systems to learn from data."},
+        ]
+        
+        # Create consistent dataset
+        dataset = []
+        for i in range(num_samples):
+            dataset.append(examples[i % len(examples)])
+        
+        # Create splits with sufficient validation data
+        train_size = max(1, int(0.7 * num_samples))
+        val_size = max(3, int(0.2 * num_samples))
+        test_size = num_samples - train_size - val_size
+        if test_size < 1:
+            test_size = 1
+            val_size = num_samples - train_size - test_size
+        
+        train_data = dataset[:train_size]
+        val_data = dataset[train_size:train_size + val_size]
+        test_data = dataset[train_size + val_size:train_size + val_size + test_size]
+        
+        # Write datasets - CRITICAL: Use "valid" not "val" for MLX-LM
+        os.makedirs(output_dir, exist_ok=True)
+        for split, data in [("train", train_data), ("valid", val_data), ("test", test_data)]:
+            file_path = os.path.join(output_dir, f"{split}.jsonl")
+            with open(file_path, "w") as f:
+                for example in data:
+                    f.write(json.dumps(example) + "\n")
     
-    if correct_results:
-        speedups_vs_naive = [r['speedup_vs_naive'] for r in correct_results]
-        speedups_vs_standard = [r['speedup_vs_standard'] for r in correct_results]
-        memory_ratios = [r['memory_ratio'] for r in correct_results]
+    def _run_lora_benchmark(
+        self,
+        lora_fine_tuning_fn,
+        config: Dict[str, Any],
+        implementation_name: str
+    ) -> Dict[str, Union[float, str]]:
+        """Run LoRA fine-tuning benchmark."""
         
-        avg_speedup_naive = statistics.mean(speedups_vs_naive)
-        avg_speedup_standard = statistics.mean(speedups_vs_standard)
-        avg_memory_ratio = statistics.mean(memory_ratios)
-        correctness_rate = correctness_passed / total_tests
+        print(f"  🧪 Running {implementation_name} LoRA fine-tuning...")
         
-        # Score calculation emphasizing standard MLX comparison
-        correctness_component = 0.4 * correctness_rate
-        naive_performance_component = 0.3 * min(avg_speedup_naive / 1.2, 2.0)
-        standard_performance_component = 0.3 * min(avg_speedup_standard / 1.0, 2.0)  # Key metric!
-        
-        fusion_score = correctness_component + naive_performance_component + standard_performance_component
-        
-        print(f"\n📈 FUSION BENCHMARK SUMMARY:")
-        print(f"  Correctness: {correctness_passed}/{total_tests} ({correctness_rate:.1%})")
-        print(f"  Average Speedup vs Naive: {avg_speedup_naive:.2f}x")
-        print(f"  Average Speedup vs Standard MLX: {avg_speedup_standard:.2f}x ⭐")
-        print(f"  Average Memory Ratio: {avg_memory_ratio:.2f}x")
-        print(f"  Fusion Score: {fusion_score:.3f}")
-        
-        # Key success metric
-        if avg_speedup_standard >= 1.1:
-            print("  🎉 SUCCESS: Beating standard MLX operations!")
-        elif avg_speedup_standard >= 1.0:
-            print("  📈 PROGRESS: Approaching standard MLX performance!")
-        else:
-            print("  🔄 DEVELOPING: Still behind standard MLX")
-    else:
-        fusion_score = 0.0
-        avg_speedup_naive = 0.0
-        avg_speedup_standard = 0.0
-        avg_memory_ratio = 1.0
-        correctness_rate = 0.0
+        try:
+            # Memory before
+            memory_before = get_memory_usage()
+            start_time = time.perf_counter()
+            
+            # Run LoRA fine-tuning
+            final_loss, metrics = lora_fine_tuning_fn(
+                model_name=config['model'],
+                train_data_path=config['data'],
+                config=config,
+                adapter_save_path=config['adapter_path']
+            )
+            
+            # Timing and memory
+            end_time = time.perf_counter()
+            memory_after = get_memory_usage()
+            
+            total_time = end_time - start_time
+            memory_delta = memory_after - memory_before
+            
+            # Extract additional metrics
+            training_time = metrics.get('training_time', total_time)
+            
+            # Calculate approximate tokens/second (rough estimate)
+            estimated_tokens = config['iters'] * config['batch_size'] * config['max_seq_length']
+            tokens_per_second = estimated_tokens / training_time if training_time > 0 else 0
+            
+            print(f"    Final loss: {final_loss:.4f}")
+            print(f"    Training time: {training_time:.2f}s")
+            print(f"    Memory delta: {memory_delta:.1f} MB")
+            
+            return {
+                'final_loss': float(final_loss),
+                'training_time': float(training_time),
+                'total_time': float(total_time),
+                'memory_delta': float(memory_delta),
+                'tokens_per_second': float(tokens_per_second),
+                'lora_rank': config['lora_parameters']['rank'],
+                'num_layers': config['num_layers'],
+            }
+            
+        except Exception as e:
+            print(f"    ❌ Failed: {e}")
+            return {"error": str(e)}
     
-    return fusion_score, {
-        'avg_speedup_vs_naive': avg_speedup_naive,
-        'avg_speedup_vs_standard': avg_speedup_standard,
-        'avg_memory_ratio': avg_memory_ratio,
-        'correctness_rate': correctness_rate,
-        'all_results': all_results
-    }
+    def _analyze_results(self, results: Dict[str, List[Dict]]) -> Dict[str, Any]:
+        """Analyze comparison results."""
+        
+        # Filter successful results
+        baseline_success = [r for r in results['baseline'] if 'error' not in r]
+        evolved_success = [r for r in results['evolved'] if 'error' not in r]
+        
+        if not baseline_success or not evolved_success:
+            return {
+                "error": "No successful trials for comparison",
+                "baseline_success": len(baseline_success),
+                "evolved_success": len(evolved_success)
+            }
+        
+        # Calculate averages
+        baseline_avg = {
+            'final_loss': np.mean([r['final_loss'] for r in baseline_success]),
+            'training_time': np.mean([r['training_time'] for r in baseline_success]),
+            'memory_delta': np.mean([r['memory_delta'] for r in baseline_success]),
+            'tokens_per_second': np.mean([r['tokens_per_second'] for r in baseline_success])
+        }
+        
+        evolved_avg = {
+            'final_loss': np.mean([r['final_loss'] for r in evolved_success]),
+            'training_time': np.mean([r['training_time'] for r in evolved_success]),
+            'memory_delta': np.mean([r['memory_delta'] for r in evolved_success]),
+            'tokens_per_second': np.mean([r['tokens_per_second'] for r in evolved_success])
+        }
+        
+        # Calculate improvements
+        loss_difference = abs(evolved_avg['final_loss'] - baseline_avg['final_loss'])
+        loss_tolerance = max(0.01 * baseline_avg['final_loss'], 0.001)  # 1% or 0.001 minimum
+        loss_convergence_ok = loss_difference <= loss_tolerance
+        
+        speed_improvement = evolved_avg['tokens_per_second'] / baseline_avg['tokens_per_second'] if baseline_avg['tokens_per_second'] > 0 else 1.0
+        time_improvement = baseline_avg['training_time'] / evolved_avg['training_time'] if evolved_avg['training_time'] > 0 else 1.0
+        memory_improvement = baseline_avg['memory_delta'] / evolved_avg['memory_delta'] if evolved_avg['memory_delta'] > 0 else 1.0
+        
+        # Overall score calculation
+        convergence_score = 1.0 if loss_convergence_ok else max(0.0, 1.0 - (loss_difference / baseline_avg['final_loss']))
+        efficiency_score = 0.5 * min(speed_improvement / 1.05, 2.0) + 0.5 * min(memory_improvement / 1.05, 2.0)
+        overall_score = 0.7 * convergence_score + 0.3 * efficiency_score
+        
+        return {
+            'baseline_avg': baseline_avg,
+            'evolved_avg': evolved_avg,
+            'loss_difference': loss_difference,
+            'loss_convergence_ok': loss_convergence_ok,
+            'speed_improvement': speed_improvement,
+            'time_improvement': time_improvement,
+            'memory_improvement': memory_improvement,
+            'convergence_score': convergence_score,
+            'efficiency_score': efficiency_score,
+            'overall_score': overall_score,
+            'successful_trials': {
+                'baseline': len(baseline_success),
+                'evolved': len(evolved_success)
+            }
+        }
 
 
 def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
     """
-    Evaluate MLX fusion-based fine-tuning kernels program.
+    Evaluate MLX-LM LoRA fine-tuning optimization program.
     
-    Tests fusion operations against both naive and standard MLX implementations.
-    Primary success metric: speedup vs standard MLX operations.
+    Performs real LoRA fine-tuning comparison using mlx-lm library between 
+    baseline and evolved implementations. Success metric: achieve same training 
+    loss with efficiency improvements.
     """
-    print(f"🚀 Evaluating MLX Fusion-Based Kernels: {program_path}")
+    print(f"🚀 Evaluating MLX-LM LoRA Fine-tuning Optimization: {program_path}")
+    
+    if not MLX_LM_AVAILABLE:
+        return {
+            "overall_score": 0.0,
+            "error": "MLX-LM not available for evaluation. Please install: pip install mlx-lm"
+        }
     
     try:
         # Load evolved program
@@ -419,102 +376,124 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
         evolved_program = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(evolved_program)
         
-        if not hasattr(evolved_program, "evolved_fine_tuning_kernels"):
+        if not hasattr(evolved_program, "evolved_lora_kernels"):
             return {
                 "overall_score": 0.0,
-                "error": "Missing evolved_fine_tuning_kernels function"
+                "error": "Missing evolved_lora_kernels function"
             }
         
-        # Get kernel implementations
-        evolved_kernels = evolved_program.evolved_fine_tuning_kernels()
-        naive_kernels = evolved_program.naive_baseline_kernels()
-        standard_kernels = create_standard_mlx_baselines()
+        if not hasattr(evolved_program, "baseline_lora_kernels"):
+            return {
+                "overall_score": 0.0,
+                "error": "Missing baseline_lora_kernels function"
+            }
         
-        print(f"Testing {len(evolved_kernels)} fusion operations...")
+        # Get LoRA implementations
+        evolved_kernels = evolved_program.evolved_lora_kernels()
+        baseline_kernels = evolved_program.baseline_lora_kernels()
         
-        # Run fusion benchmarks (main evaluation)
-        fusion_score, fusion_results = evaluate_fusion_benchmarks(
-            evolved_kernels, naive_kernels, standard_kernels
+        # Check required kernels
+        required_key = 'optimized_lora_fine_tuning'
+        if required_key not in evolved_kernels or required_key not in baseline_kernels:
+            return {
+                "overall_score": 0.0,
+                "error": f"Missing kernel: {required_key}"
+            }
+        
+        print(f"✅ LoRA implementations loaded successfully")
+        
+        # Setup benchmark
+        benchmark = MLXLoRABenchmark()
+        
+        # Run comparison
+        comparison_results = benchmark.compare_implementations(
+            baseline_kernels=baseline_kernels,
+            evolved_kernels=evolved_kernels,
+            num_trials=1
         )
         
-        # Try real model evaluation if available
-        macro_score = 0.0
-        macro_results = {}
+        if 'error' in comparison_results:
+            return {
+                "overall_score": 0.0,
+                "error": comparison_results['error']
+            }
         
-        try:
-            from extended_evaluation import extended_evaluation_with_real_finetuning
-            macro_results = extended_evaluation_with_real_finetuning(
-                evolved_kernels, naive_kernels, program_path
-            )
-            
-            if 'error' not in macro_results:
-                macro_score = macro_results.get('extended_score', 0.0)
-                print(f"\n🔬 REAL MODEL EVALUATION:")
-                print(f"  Real Model Score: {macro_score:.3f}")
-                print(f"  Real Fine-tuning Speedup: {macro_results.get('real_finetuning_speedup', 0):.2f}x")
-            else:
-                print(f"\n⚠️ Real model evaluation failed: {macro_results['error']}")
-                
-        except ImportError:
-            print("\n📝 Real model evaluation not available")
-        except Exception as e:
-            print(f"\n⚠️ Real model evaluation error: {e}")
+        # Extract results
+        overall_score = comparison_results['overall_score']
+        convergence_score = comparison_results['convergence_score']
+        efficiency_score = comparison_results['efficiency_score']
         
-        # Calculate overall score with emphasis on standard MLX comparison
-        if macro_score > 0:
-            overall_score = 0.6 * fusion_score + 0.4 * macro_score
-        else:
-            overall_score = fusion_score
+        loss_difference = comparison_results['loss_difference']
+        loss_convergence_ok = comparison_results['loss_convergence_ok']
+        speed_improvement = comparison_results['speed_improvement']
+        memory_improvement = comparison_results['memory_improvement']
+        time_improvement = comparison_results['time_improvement']
         
-        # Key metrics
-        avg_speedup_naive = fusion_results.get('avg_speedup_vs_naive', 0.0)
-        avg_speedup_standard = fusion_results.get('avg_speedup_vs_standard', 0.0)  # KEY METRIC
-        correctness_rate = fusion_results.get('correctness_rate', 0.0)
+        baseline_avg = comparison_results['baseline_avg']
+        evolved_avg = comparison_results['evolved_avg']
         
-        print(f"\n🏆 FINAL EVALUATION:")
+        print(f"\n📊 MLX-LM LORA FINE-TUNING OPTIMIZATION RESULTS:")
+        print(f"  Loss Convergence: {'✅' if loss_convergence_ok else '❌'} (diff: {loss_difference:.4f})")
+        print(f"  Speed Improvement: {speed_improvement:.2f}x")
+        print(f"  Memory Improvement: {memory_improvement:.2f}x")
+        print(f"  Time Improvement: {time_improvement:.2f}x")
+        print(f"  Convergence Score: {convergence_score:.3f}")
+        print(f"  Efficiency Score: {efficiency_score:.3f}")
         print(f"  Overall Score: {overall_score:.3f}")
-        print(f"  Fusion Score: {fusion_score:.3f}")
-        print(f"  Fusion Correctness: {correctness_rate:.1%}")
-        print(f"  Average Speedup vs Naive: {avg_speedup_naive:.2f}x")
-        print(f"  Average Speedup vs Standard MLX: {avg_speedup_standard:.2f}x ⭐")
         
-        # Success interpretation focused on standard MLX
-        if avg_speedup_standard >= 1.2:
-            print("  🥇 EXCELLENT: Significant speedup over standard MLX!")
-        elif avg_speedup_standard >= 1.1:
-            print("  🥈 VERY GOOD: Beating standard MLX operations!")
-        elif avg_speedup_standard >= 1.0:
-            print("  🥉 GOOD: Matching standard MLX performance!")
-        elif avg_speedup_standard >= 0.9:
-            print("  📈 PROGRESS: Close to standard MLX performance!")
+        print(f"\n🔍 DETAILED METRICS:")
+        print(f"  Baseline - Loss: {baseline_avg['final_loss']:.4f}, Time: {baseline_avg['training_time']:.1f}s, Memory: {baseline_avg['memory_delta']:.1f} MB")
+        print(f"  Evolved  - Loss: {evolved_avg['final_loss']:.4f}, Time: {evolved_avg['training_time']:.1f}s, Memory: {evolved_avg['memory_delta']:.1f} MB")
+        
+        # Success interpretation
+        if overall_score >= 0.8:
+            print("  🥇 EXCELLENT: Strong improvements while maintaining convergence!")
+        elif overall_score >= 0.6:
+            print("  🥈 VERY GOOD: Good improvements with convergence!")
+        elif overall_score >= 0.4:
+            print("  🥉 GOOD: Some improvements achieved!")
+        elif convergence_score > 0.5:
+            print("  📈 PROGRESS: Reasonable convergence, efficiency needs work!")
         else:
-            print("  🔄 DEVELOPING: Need more optimization vs standard MLX")
+            print("  🔄 DEVELOPING: Convergence issues need to be addressed!")
         
         # Prepare results
         results = {
             "overall_score": float(overall_score),
             "combined_score": float(overall_score),  # Primary metric for OpenEvolve
             
-            # Fusion-specific metrics  
-            "fusion_score": float(fusion_score),
-            "correctness_rate": float(correctness_rate),
-            "avg_speedup_vs_naive": float(avg_speedup_naive),
-            "avg_speedup_vs_standard": float(avg_speedup_standard),  # KEY SUCCESS METRIC
-            "avg_memory_ratio": float(fusion_results.get('avg_memory_ratio', 1.0)),
+            # Core metrics
+            "convergence_score": float(convergence_score),
+            "efficiency_score": float(efficiency_score),
+            "loss_convergence_ok": bool(loss_convergence_ok),
+            "loss_difference": float(loss_difference),
             
-            # Real model metrics
-            "macro_score": float(macro_score),
-            "real_finetuning_speedup": float(macro_results.get('real_finetuning_speedup', 0)),
-            "convergence_quality": float(macro_results.get('convergence_quality', 0)),
+            # Performance improvements
+            "speed_improvement": float(speed_improvement),
+            "memory_improvement": float(memory_improvement),
+            "time_improvement": float(time_improvement),
             
-            # Counts
-            "total_fusion_tests": len(fusion_results.get('all_results', [])),
-            "passed_correctness": len([r for r in fusion_results.get('all_results', []) if r.get('correctness', False)]),
+            # Baseline metrics
+            "baseline_final_loss": float(baseline_avg['final_loss']),
+            "baseline_training_time": float(baseline_avg['training_time']),
+            "baseline_memory_delta": float(baseline_avg['memory_delta']),
+            "baseline_tokens_per_second": float(baseline_avg['tokens_per_second']),
+            
+            # Evolved metrics
+            "evolved_final_loss": float(evolved_avg['final_loss']),
+            "evolved_training_time": float(evolved_avg['training_time']),
+            "evolved_memory_delta": float(evolved_avg['memory_delta']),
+            "evolved_tokens_per_second": float(evolved_avg['tokens_per_second']),
+            
+            # Trial information
+            "successful_baseline_trials": comparison_results['successful_trials']['baseline'],
+            "successful_evolved_trials": comparison_results['successful_trials']['evolved'],
             
             # Metadata
-            "evaluation_type": "mlx_fusion_kernels",
-            "beats_standard_mlx": bool(avg_speedup_standard >= 1.0),
-            "target_achieved": bool(avg_speedup_standard >= 1.1),  # Success threshold
+            "evaluation_type": "mlx_lm_lora_finetuning",
+            "achieves_convergence": bool(loss_convergence_ok),
+            "has_efficiency_improvements": bool(speed_improvement > 1.05 or memory_improvement > 1.05),
+            "target_achieved": bool(loss_convergence_ok and (speed_improvement > 1.1 or memory_improvement > 1.1)),
         }
         
         return results
@@ -530,18 +509,17 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
 
 
 if __name__ == "__main__":
-    print("Testing MLX Fusion-Based Kernels Evaluator...")
+    print("Testing MLX-LM LoRA Fine-tuning Optimization Evaluator...")
     
-    import os
-    initial_program_path = os.path.join(os.path.dirname(__file__),  "fusion_based_initial_program.py")
+    initial_program_path = os.path.join(os.path.dirname(__file__), "initial_program.py")
     
     if os.path.exists(initial_program_path):
         results = evaluate(initial_program_path)
-        print("\nEvaluation Results:")
+        print("\n=== Final Evaluation Results ===")
         for k, v in results.items():
             if isinstance(v, float):
                 print(f"  {k}: {v:.4f}")
             else:
                 print(f"  {k}: {v}")
     else:
-        print(f"Fusion program not found at {initial_program_path}")
+        print(f"Initial program not found at {initial_program_path}")
