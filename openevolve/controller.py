@@ -414,7 +414,7 @@ class OpenEvolve:
             )
 
             # Save the best program (using our tracked best program)
-            self._save_best_program()
+            self._save_best_program(best_program)
 
             return best_program
         else:
