@@ -18,7 +18,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import traceback
 
 from openevolve.config import EvaluatorConfig
+from openevolve.database import ProgramDatabase
 from openevolve.evaluation_result import EvaluationResult
+from openevolve.database import ProgramDatabase
 from openevolve.llm.ensemble import LLMEnsemble
 from openevolve.utils.async_utils import TaskPool, run_in_executor
 from openevolve.prompt.sampler import PromptSampler
@@ -41,11 +43,13 @@ class Evaluator:
         evaluation_file: str,
         llm_ensemble: Optional[LLMEnsemble] = None,
         prompt_sampler: Optional[PromptSampler] = None,
+        database: Optional[ProgramDatabase] = None,
     ):
         self.config = config
         self.evaluation_file = evaluation_file
         self.llm_ensemble = llm_ensemble
         self.prompt_sampler = prompt_sampler
+        self.database = database
 
         # Create a task pool for parallel evaluation
         self.task_pool = TaskPool(max_concurrency=config.parallel_evaluations)
@@ -127,7 +131,7 @@ class Evaluator:
                 # Add LLM feedback if configured
                 llm_eval_result = None
                 if self.config.use_llm_feedback and self.llm_ensemble:
-                    llm_result = await self._llm_evaluate(program_code)
+                    llm_result = await self._llm_evaluate(program_code, program_id=program_id)
                     llm_eval_result = self._process_evaluation_result(llm_result)
 
                     # Combine metrics
@@ -148,9 +152,17 @@ class Evaluator:
                     # Merge eval_result artifacts with llm artifacts if they exist
                     if eval_result.has_artifacts():
                         self._pending_artifacts[program_id].update(eval_result.artifacts)
+                        logger.debug(
+                            f"Program{program_id_str} returned artifacts: "
+                            f"{eval_result.artifacts}"
+                        )
 
                     if llm_eval_result and llm_eval_result.has_artifacts():
                         self._pending_artifacts[program_id].update(llm_eval_result.artifacts)
+                        logger.debug(
+                            f"Program{program_id_str} returned LLM artifacts: "
+                            f"{llm_eval_result.artifacts}"
+                        )
 
                 elapsed = time.time() - start_time
                 logger.info(
@@ -166,6 +178,7 @@ class Evaluator:
                 logger.warning(
                     f"Evaluation attempt {attempt + 1}/{self.config.max_retries + 1} failed for program{program_id_str}: {str(e)}"
                 )
+                traceback.print_exc()
 
                 # Capture failure artifacts if enabled
                 if artifacts_enabled and program_id:
@@ -382,12 +395,13 @@ class Evaluator:
                 },
             )
 
-    async def _llm_evaluate(self, program_code: str) -> Dict[str, float]:
+    async def _llm_evaluate(self, program_code: str, program_id: str = "") -> Dict[str, float]:
         """
         Use LLM to evaluate code quality
 
         Args:
             program_code: Code to evaluate
+            program_id: Optional ID for logging
 
         Returns:
             Dictionary of metric name to score
@@ -405,6 +419,15 @@ class Evaluator:
             responses = await self.llm_ensemble.generate_all_with_context(
                 prompt["system"], [{"role": "user", "content": prompt["user"]}]
             )
+
+            # Log prompt and response to database
+            if self.database and program_id:
+                self.database.log_prompt(
+                    program_id=program_id,
+                    template_key="evaluation",
+                    prompt=prompt,
+                    responses=responses,
+                )
 
             # Extract JSON from response
             try:
