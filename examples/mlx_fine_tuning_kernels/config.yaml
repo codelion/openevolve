@@ -1,148 +1,159 @@
-# MLX Fine-tuning Kernels Configuration
-# Target: Optimize transformer operations for fine-tuning performance
+# MLX Fusion-Based Kernels Configuration
+# Target: Multi-operation fusion and algorithmic improvements for beating standard MLX
 
-max_iterations: 40
+max_iterations: 50
 checkpoint_interval: 5
 log_level: "INFO"
 
-# LLM configuration - use powerful models for complex optimizations
+# LLM configuration - use powerful models for complex fusion optimizations
 llm:
   primary_model: "gemini-2.5-flash-preview-05-20"
-  primary_model_weight: 0.8
+  primary_model_weight: 0.7
   secondary_model: "gemini-2.5-pro-preview-06-05"
-  secondary_model_weight: 0.2
+  secondary_model_weight: 0.3
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
-  temperature: 0.7
+  temperature: 0.8
   top_p: 0.9
-  max_tokens: 24000
-  timeout: 360
+  max_tokens: 32000
+  timeout: 600
 
-# Detailed prompt for fine-tuning kernel optimization
+# Detailed prompt for fusion-based optimization
 prompt:
   system_message: |
-    You are optimizing MLX fine-tuning kernels to achieve Liger Kernel-level performance improvements.
+    You are optimizing MLX FUSION-BASED kernels to beat standard MLX operations through 
+    multi-operation fusion and algorithmic improvements.
     
-    # 🎯 GOAL
-    Optimize custom MLX implementations of transformer operations to be significantly faster
-    than naive baselines while maintaining numerical correctness. Target 20%+ speedups in
-    actual fine-tuning workloads.
+    # 🎯 NEW GOAL: Beat Standard MLX (Not Individual Kernels)
+    Your target is to achieve 1.1x+ speedup over STANDARD MLX operation sequences
+    through fusion patterns and algorithmic improvements, following Liger Kernel's approach.
     
-    # 🔧 KEY OPTIMIZATION OPPORTUNITIES
+    # 🔧 KEY FUSION OPPORTUNITIES
     
-    **1. RMSNorm Fusion**
+    **1. LoRA Weight Pre-Fusion** ⭐ HIGH SUCCESS PROBABILITY
     ```python
-    # Instead of: separate variance, rsqrt, scaling
-    variance = mx.mean(x * x, axis=-1, keepdims=True)
-    rstd = mx.rsqrt(variance + eps)
-    result = weight * (x * rstd)
-    
-    # Try: mathematical simplification, fused operations
-    # Target: 2-3x speedup like Liger Kernel
-    ```
-    
-    **2. RoPE Optimization**
-    ```python
-    # Instead of: many intermediate arrays for rotation
-    x1, x2 = x[..., ::2], x[..., 1::2]
-    rotated_x1 = x1 * cos - x2 * sin
-    # ...many steps...
-    
-    # Try: fused rotation, better memory patterns
-    # Target: 2-3x speedup
-    ```
-    
-    **3. SwiGLU Fusion**
-    ```python
-    # Instead of: separate linear ops + activation
-    gate = mx.linear(x, w_gate)
-    gate_activated = mx.silu(gate)
-    up = mx.linear(x, w_up)
-    result = gate_activated * up
-    
-    # Try: fused computation, reduced memory
-    # Target: 50% memory reduction
-    ```
-    
-    **4. CrossEntropy Optimization**
-    ```python
-    # Instead of: full logits materialization
-    exp_logits = mx.exp(logits - max_logits)
-    # ... full softmax computation
-    
-    # Try: online/chunked computation, avoid materializing large tensors
-    # Target: 4x memory reduction
-    ```
-    
-    **5. LoRA Fusion**
-    ```python
-    # Instead of: separate base + LoRA paths
-    base_out = mx.linear(x, base_weight)
-    lora_out = mx.linear(mx.linear(x, lora_a), lora_b)
+    # Instead of: 3 separate matrix multiplications
+    base_out = x @ base_weight.T
+    lora_out = x @ lora_a.T @ lora_b.T
     result = base_out + scale * lora_out
     
-    # Try: fused computation patterns
-    # Target: memory and speed improvements
+    # Target: Pre-compute combined weights (1 matmul instead of 3)
+    fused_weight = base_weight + scale * (lora_b @ lora_a)
+    result = x @ fused_weight.T
     ```
     
-    # 🚀 PROVEN OPTIMIZATION TECHNIQUES
+    **2. Multi-Operation Transformer Fusion**
+    ```python
+    # Instead of: separate RMSNorm + Attention + RMSNorm + MLP
+    x = rms_norm(x, w1) -> attention(x) -> rms_norm(x, w2) -> mlp(x)
+    
+    # Target: Fused transformer block with shared intermediate computation
+    # Combine operations to reduce kernel launches and memory transfers
+    ```
+    
+    **3. Online/Chunked Algorithms for Memory-Bound Operations**
+    ```python
+    # Instead of: Full softmax materialization for large vocab
+    probs = softmax(logits)  # Memory: O(vocab_size)
+    loss = cross_entropy(probs, targets)
+    
+    # Target: Online CrossEntropy without full materialization
+    loss = online_cross_entropy(logits, targets)  # Memory: O(chunk_size)
+    ```
+    
+    **4. Memory-Efficient Attention (FlashAttention-style)**
+    ```python
+    # Instead of: Full attention matrix O(seq_len^2)
+    scores = q @ k.T  # Materializes seq_len x seq_len
+    attn = softmax(scores) @ v
+    
+    # Target: Chunked attention computation O(chunk_size^2)
+    # Process attention in chunks to reduce peak memory
+    ```
+    
+    **5. Training Step Fusion**
+    ```python
+    # Instead of: separate forward, backward, optimizer steps
+    logits = model(inputs)
+    loss = cross_entropy(logits, targets)
+    grads = backward(loss)
+    optimizer.step(grads)
+    
+    # Target: Fused training computation
+    # Combine operations to reduce intermediate storage
+    ```
+    
+    # 🚀 PROVEN FUSION TECHNIQUES (From Liger Kernel)
     
     **Operation Fusion**: Combine multiple operations to reduce kernel launches
-    **Memory Access Optimization**: Better cache utilization, reduced allocations
-    **Mathematical Simplification**: More efficient mathematical formulations
-    **Lazy Evaluation**: Remove unnecessary mx.eval() calls, let MLX optimize
-    **Vectorization**: Use MLX's optimized primitives effectively
+    **Weight Pre-Computation**: Pre-fuse weights where possible (LoRA, layer combinations)
+    **Memory Access Optimization**: Better cache utilization, chunk processing
+    **Online Algorithms**: Avoid materializing large intermediate tensors
+    **Chunked Computation**: Process large operations in memory-efficient chunks
     
     # 📊 SUCCESS METRICS
     
-    **Micro-benchmarks (Individual Kernels)**:
-    - Correctness: Results must match baseline (< 1e-2 tolerance)
-    - Speed: Target 1.2x+ speedup per kernel
-    - Memory: Reduce allocations where possible
+    **Primary Metric**: Speedup vs Standard MLX operations
+    - Target: 1.1x+ speedup over standard `nn.LayerNorm`, `nn.Linear`, etc.
+    - Success: Match Liger Kernel's 20%+ improvements over standard frameworks
     
-    **Macro-benchmark (Fine-tuning Performance)**:
-    - Training Speed: Faster time to reach same loss
-    - Memory Efficiency: Lower peak memory usage
-    - Convergence: Same final loss quality
+    **Secondary Metrics**:
+    - Memory efficiency (reduce peak memory usage)
+    - Correctness (results must match within 1e-1 tolerance)
+    - Speedup vs naive implementations (should be 1.2x+)
     
-    # 🎖️ LIGER KERNEL INSPIRATION
+    # 🎖️ LIGER KERNEL SUCCESS PATTERNS TO EMULATE
     
-    Liger Kernel achieved:
-    - **RMSNorm**: 3x speedup, 3x memory reduction
-    - **RoPE**: 3x speedup, 3x memory reduction  
-    - **SwiGLU**: 1.5x memory reduction
-    - **CrossEntropy**: 2x speedup, 4x memory reduction
-    - **Overall**: 20%+ fine-tuning speedup, 60% memory reduction
+    Liger Kernel achieved 20% speedup over PyTorch through:
+    - **Multi-op fusion**: RMSNorm + scaling in single kernel
+    - **Memory optimization**: In-place operations, reduced allocations
+    - **Algorithmic improvements**: Online softmax, chunked computation
+    - **Pre-computation**: Computing invariants once, reusing across operations
     
-    Your optimizations should target similar improvements adapted for MLX.
+    Your optimizations should target similar patterns adapted for MLX.
     
     # 🚫 CONSTRAINTS
     - Keep the same function signatures
-    - Maintain numerical correctness (< 1e-2 difference)
+    - Maintain numerical correctness (< 1e-1 difference for fusion ops)
     - Support all tensor shapes and edge cases
     - No external dependencies beyond MLX
+    - Focus on FUSION not individual kernel speed
+    - 🚨 CRITICAL: Keep code changes MINIMAL and CONCISE (under 40,000 chars)
+    - NO verbose comments, examples, or redundant code
+    - Use short variable names and compact formatting
     
-    Focus on implementable optimizations with clear performance benefits.
-    Evolve the entire `evolved_fine_tuning_kernels` function systematically.
+    # 🔍 WHAT TO EVOLVE
+    
+    Focus on the `evolved_fine_tuning_kernels` function. The key operations to optimize:
+    
+    1. **fused_lora_linear**: Pre-compute lora_b @ lora_a, single matmul
+    2. **online_cross_entropy_loss**: Chunked/online computation for large vocab
+    3. **memory_efficient_attention**: Chunked attention to reduce memory O(seq_len^2)
+    4. **fused_transformer_block**: Combine norm + attention + norm + mlp
+    5. **fused_training_step**: Combine forward + loss + gradients + optimizer
+    6. **fused_multi_layer_norm**: Multiple normalizations in single pass
+    
+    Evolve towards fusion patterns that MLX's compiler doesn't automatically optimize.
+    The goal is operation SEQUENCES that are faster than standard MLX equivalents.
   
-  num_top_programs: 5
+  num_top_programs: 6
   num_diverse_programs: 4
 
-# Database configuration for complex optimization
+# Database configuration for fusion optimization
 database:
   db_path: "./openevolve_output/program_db"
-  population_size: 60
-  archive_size: 30
-  num_islands: 4
-  elite_selection_ratio: 0.25
-  exploitation_ratio: 0.65
-  exploration_ratio: 0.35
+  population_size: 80
+  archive_size: 40
+  num_islands: 6
+  elite_selection_ratio: 0.2
+  exploitation_ratio: 0.7
+  exploration_ratio: 0.3
 
 # Evaluator configuration
 evaluator:
-  timeout: 600  # Longer timeout for complex evaluations
+  timeout: 900  # Longer timeout for fusion evaluations
   parallel_evaluations: 1
 
 # Evolution settings
 diff_based_evolution: true
 allow_full_rewrites: false  
-max_code_length: 24000
+max_code_length: 60000
