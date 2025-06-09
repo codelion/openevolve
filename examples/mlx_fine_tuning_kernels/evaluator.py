@@ -134,6 +134,7 @@ class MLXLoRABenchmark:
         print(f"  Model: {self.model_name}")
         print(f"  Trials per implementation: {num_trials}")
         print(f"  Evaluation strategy: Sequential (baseline first, then evolved)")
+        print(f"  Evolved kernels available: {list(evolved_kernels.keys()) if evolved_kernels else 'None'}")
 
         baseline_results = []
         evolved_results = []
@@ -184,6 +185,15 @@ class MLXLoRABenchmark:
         # PHASE 2: Run ALL evolved trials
         # ========================================
         print(f"\n🚀 PHASE 2: Running {num_trials} EVOLVED trials (MLX-LM + evolved kernels)")
+        
+        # Verify evolved kernels are valid before running trials
+        if evolved_kernels:
+            print(f"  ✅ Testing evolved kernels: {list(evolved_kernels.keys())}")
+            for kernel_name, kernel_func in evolved_kernels.items():
+                if kernel_func is None:
+                    print(f"  ⚠️ Warning: {kernel_name} is None")
+                else:
+                    print(f"  ✅ {kernel_name}: {type(kernel_func)}")
 
         for trial in range(num_trials):
             print(f"\n--- Evolved Trial {trial + 1}/{num_trials} ---")
@@ -729,6 +739,10 @@ class MLXLoRABenchmark:
         """Run a single LoRA fine-tuning trial."""
 
         print(f"  🧪 Running {trial_name}...")
+        if evolved_kernels:
+            print(f"    📦 Using evolved kernels: {list(evolved_kernels.keys())}")
+        else:
+            print(f"    📋 Using standard MLX-LM (no kernels)")
 
         try:
             # Memory before
@@ -762,6 +776,13 @@ class MLXLoRABenchmark:
 
             # Extract additional metrics
             training_time = metrics.get("training_time", total_time)
+            
+            # Check if kernels were actually used
+            kernels_used = metrics.get("used_evolved_kernels", False)
+            if evolved_kernels and not kernels_used:
+                print(f"    ⚠️ Warning: Evolved kernels provided but not used")
+            elif evolved_kernels and kernels_used:
+                print(f"    ✅ Evolved kernels successfully applied")
 
             # Calculate approximate tokens/second
             estimated_tokens = config["iters"] * config["batch_size"] * config["max_seq_length"]
@@ -770,7 +791,8 @@ class MLXLoRABenchmark:
             print(f"    Final loss: {final_loss:.4f}")
             print(f"    Training time: {training_time:.2f}s")
             print(f"    Memory delta: {memory_delta:.1f} MB")
-            print(f"    Evolved kernels: {evolved_kernels is not None}")
+            print(f"    Tokens/sec: {tokens_per_second:.1f}")
+            print(f"    Kernels used: {kernels_used}")
 
             return {
                 "final_loss": float(final_loss),
@@ -780,10 +802,13 @@ class MLXLoRABenchmark:
                 "tokens_per_second": float(tokens_per_second),
                 "lora_rank": config["lora_parameters"]["rank"],
                 "num_layers": config["num_layers"],
+                "kernels_used": bool(kernels_used),
             }
 
         except Exception as e:
             print(f"    ❌ Failed: {e}")
+            import traceback
+            traceback.print_exc()
             return {"error": str(e)}
 
     def _analyze_results(self, results: Dict[str, List[Dict]]) -> Dict[str, Any]:
@@ -897,18 +922,32 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
             return {"overall_score": 0.0, "error": "Missing baseline_lora_kernels function"}
 
         # Get evolved kernels
-        evolved_kernels = evolved_program.evolved_lora_kernels()
-        baseline_kernels = evolved_program.baseline_lora_kernels()  # Returns None
-
-        print(f"✅ Evolved kernels loaded: {list(evolved_kernels.keys())}")
-        print(f"✅ Baseline: Standard MLX-LM (no custom kernels)")
+        print("📦 Loading evolved kernels...")
+        try:
+            evolved_kernels = evolved_program.evolved_lora_kernels()
+            baseline_kernels = evolved_program.baseline_lora_kernels()  # Returns None
+            
+            print(f"✅ Evolved kernels loaded: {list(evolved_kernels.keys()) if evolved_kernels else 'None'}")
+            print(f"✅ Baseline: Standard MLX-LM (no custom kernels)")
+            
+            # Validate evolved kernels
+            if evolved_kernels:
+                for kernel_name, kernel_func in evolved_kernels.items():
+                    if kernel_func is None:
+                        print(f"  ⚠️ Warning: {kernel_name} is None")
+                    else:
+                        print(f"  ✅ {kernel_name}: {type(kernel_func)}")
+            
+        except Exception as e:
+            print(f"❌ Failed to load evolved kernels: {e}")
+            return {"overall_score": 0.0, "error": f"Failed to load evolved kernels: {e}"}
 
         # Setup benchmark
         benchmark = MLXLoRABenchmark()
 
         # Run sequential comparison (baseline first, then evolved)
         comparison_results = benchmark.compare_implementations(
-            evolved_kernels=evolved_kernels, num_trials=5
+            evolved_kernels=evolved_kernels, num_trials=3  # Reduced for faster testing
         )
 
         if "error" in comparison_results:
@@ -946,6 +985,16 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
         print(
             f"  Evolved  - Loss: {evolved_avg['final_loss']:.4f}, Time: {evolved_avg['training_time']:.1f}s, Memory: {evolved_avg['memory_delta']:.1f} MB"
         )
+
+        # Check if kernels were actually used in evolved trials
+        evolved_success = [r for r in comparison_results.get("evolved", []) if "error" not in r]
+        if evolved_success:
+            kernels_actually_used = any(r.get("kernels_used", False) for r in evolved_success)
+            if evolved_kernels and not kernels_actually_used:
+                print(f"  ⚠️ WARNING: Evolved kernels were provided but not used in trials")
+                print(f"  🔍 This suggests the kernel injection mechanism may not be working")
+            elif evolved_kernels and kernels_actually_used:
+                print(f"  ✅ Evolved kernels were successfully used in trials")
 
         # Success interpretation
         if overall_score >= 0.8:
@@ -994,6 +1043,7 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
             "target_achieved": bool(
                 loss_convergence_ok and (speed_improvement > 1.1 or memory_improvement > 1.1)
             ),
+            "kernels_actually_used": bool(evolved_success and any(r.get("kernels_used", False) for r in evolved_success)) if evolved_success else False,
         }
 
         return results
