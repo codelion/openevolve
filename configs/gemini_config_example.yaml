@@ -1,0 +1,101 @@
+# Example configuration for using Google Gemini models with OpenEvolve
+
+# General settings
+max_iterations: 100
+checkpoint_interval: 10
+log_level: INFO
+log_dir: ./logs
+random_seed: 42
+
+# LLM configuration
+llm:
+  # Default values (can be overridden per model)
+  temperature: 0.7
+  top_p: 0.95
+  max_tokens: 4096
+  timeout: 60
+  retries: 3
+  retry_delay: 5
+  
+  # Model ensemble configuration
+  models:
+    # Primary model - Gemini 2.0 Flash
+    - name: "gemini-2.0-flash"
+      provider: "gemini"
+      weight: 0.6
+      # API key can be set here or via GEMINI_API_KEY environment variable
+      # api_key: "YOUR_GEMINI_API_KEY"
+      
+    # Secondary model - Gemini 1.5 Pro
+    - name: "gemini-1.5-pro"
+      provider: "gemini"
+      weight: 0.4
+      # api_key: "YOUR_GEMINI_API_KEY"
+  
+  # Evaluator models (if not specified, uses same as models)
+  evaluator_models:
+    - name: "gemini-2.0-flash"
+      provider: "gemini"
+      weight: 1.0
+      # api_key: "YOUR_GEMINI_API_KEY"
+
+# Prompt configuration
+prompt:
+  system_message: |
+    You are an expert programmer tasked with evolving code to improve its performance.
+    Focus on optimizing the algorithm while maintaining correctness.
+  evaluator_system_message: |
+    You are an expert code evaluator. Analyze the provided metrics and determine
+    if the evolved program is an improvement over the original.
+  num_top_programs: 3
+  num_diverse_programs: 2
+  use_template_stochasticity: true
+
+# Database configuration
+database:
+  in_memory: true
+  population_size: 1000
+  archive_size: 100
+  num_islands: 5
+  elite_selection_ratio: 0.1
+  exploration_ratio: 0.2
+  exploitation_ratio: 0.7
+  feature_dimensions: ["fitness", "complexity"]
+  feature_bins: 10
+  migration_interval: 10
+  migration_rate: 0.1
+  random_seed: 42
+
+# Evaluator configuration
+evaluator:
+  timeout: 30
+  max_retries: 3
+  cascade_evaluation: true
+  cascade_thresholds: [0.5, 0.8]
+  parallel_evaluations: 4
+  use_llm_feedback: true
+  llm_feedback_weight: 0.2
+
+# Evolution settings
+diff_based_evolution: false
+allow_full_rewrites: true
+max_code_length: 10000
+
+# Usage notes:
+# 1. Set your Gemini API key either in this config or via environment variable:
+#    export GEMINI_API_KEY="your-api-key-here"
+#
+# 2. You can mix OpenAI and Gemini models in the same ensemble:
+#    models:
+#      - name: "gpt-4"
+#        provider: "openai"
+#        weight: 0.3
+#      - name: "gemini-2.0-flash"
+#        provider: "gemini"
+#        weight: 0.7
+#
+# 3. Available Gemini models include:
+#    - gemini-2.0-flash (fastest, most cost-effective)
+#    - gemini-2.0-flash-lite (lighter version)
+#    - gemini-1.5-pro (more capable, slower)
+#    - gemini-1.5-flash (balanced performance)

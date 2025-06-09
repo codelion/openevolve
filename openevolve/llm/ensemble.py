@@ -8,6 +8,7 @@ import random
 from typing import Dict, List, Optional, Tuple
 
 from openevolve.llm.base import LLMInterface
+from openevolve.llm.gemini import GeminiLLM
 from openevolve.llm.openai import OpenAILLM
 from openevolve.config import LLMModelConfig
 
@@ -21,7 +22,16 @@ class LLMEnsemble:
         self.models_cfg = models_cfg
 
         # Initialize models from the configuration
-        self.models = [OpenAILLM(model_cfg) for model_cfg in models_cfg]
+        self.models = []
+        for model_cfg in models_cfg:
+            # Determine model type based on provider or model name
+            if hasattr(model_cfg, 'provider') and model_cfg.provider == 'gemini':
+                self.models.append(GeminiLLM(model_cfg))
+            elif model_cfg.name.startswith('gemini'):
+                self.models.append(GeminiLLM(model_cfg))
+            else:
+                # Default to OpenAI for backward compatibility
+                self.models.append(OpenAILLM(model_cfg))
 
         # Extract and normalize model weights
         self.weights = [model.weight for model in models_cfg]

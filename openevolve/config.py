@@ -18,6 +18,7 @@ class LLMModelConfig:
     api_base: str = None
     api_key: Optional[str] = None
     name: str = None
+    provider: Optional[str] = None  # 'openai' or 'gemini'
 
     # Weight for model in ensemble
     weight: float = 1.0
@@ -331,8 +332,20 @@ def load_config(config_path: Optional[Union[str, Path]] = None) -> Config:
         # Use environment variables if available
         api_key = os.environ.get("OPENAI_API_KEY")
         api_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
+        gemini_api_key = os.environ.get("GEMINI_API_KEY")
 
-        config.llm.update_model_params({"api_key": api_key, "api_base": api_base})
+        # Update model params based on provider
+        for model in config.llm.models + config.llm.evaluator_models:
+            if model.name and model.name.startswith("gemini"):
+                model.provider = "gemini"
+                if gemini_api_key and not model.api_key:
+                    model.api_key = gemini_api_key
+            else:
+                model.provider = "openai"
+                if api_key and not model.api_key:
+                    model.api_key = api_key
+                if api_base and not model.api_base:
+                    model.api_base = api_base
 
     # Make the system message available to the individual models, in case it is not provided from the prompt sampler
     config.llm.update_model_params({"system_message": config.prompt.system_message})
