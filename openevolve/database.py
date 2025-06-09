@@ -6,10 +6,13 @@ import base64
 import json
 import logging
 import os
+import shutil
 import random
 import time
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
+from Levenshtein import ratio
+from filelock import FileLock, Timeout
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
@@ -164,9 +167,6 @@ class ProgramDatabase:
 
         self.programs[program.id] = program
 
-        # Enforce population size limit
-        self._enforce_population_limit()
-
         # Calculate feature coordinates for MAP-Elites
         feature_coords = self._calculate_feature_coords(program)
 
@@ -209,6 +209,10 @@ class ProgramDatabase:
             self._save_program(program)
 
         logger.debug(f"Added program {program.id} to island {island_idx}")
+
+        # Enforce population size limit
+        self._enforce_population_limit()
+
         return program.id
 
     def get(self, program_id: str) -> Optional[Program]:
@@ -350,19 +354,28 @@ class ProgramDatabase:
             logger.warning("No database path specified, skipping save")
             return
 
-        # Create directory if it doesn't exist
-        os.makedirs(save_path, exist_ok=True)
+        lock_name = os.path.basename(save_path) + ".lock"
+        lock_path = os.path.join("tmp/locks", lock_name)
+        try:
+            with FileLock(lock_path, timeout=10):
+                # Create directory and remove old path if it exists
+                if os.path.exists(save_path):
+                    shutil.rmtree(save_path)
+                os.makedirs(save_path)
 
-        # Save each program
-        for program in self.programs.values():
-            prompts = None
-            if (
-                self.config.log_prompts
-                and self.prompts_by_program
-                and program.id in self.prompts_by_program
-            ):
-                prompts = self.prompts_by_program[program.id]
-            self._save_program(program, save_path, prompts=prompts)
+                # Save each program
+                for program in self.programs.values():
+                    prompts = None
+                    if (
+                        self.config.log_prompts
+                        and self.prompts_by_program
+                        and program.id in self.prompts_by_program
+                    ):
+                        prompts = self.prompts_by_program[program.id]
+                    self._save_program(program, save_path, prompts=prompts)
+                    
+        except Timeout:
+            logger.exception("Could not acquire the lock within 10 seconds")
 
         # Save metadata
         metadata = {
@@ -411,19 +424,25 @@ class ProgramDatabase:
             logger.info(f"Loaded database metadata with last_iteration={self.last_iteration}")
 
         # Load programs
+        lock_name = os.path.basename(path) + ".lock"
+        lock_path = os.path.join("tmp/locks", lock_name)
         programs_dir = os.path.join(path, "programs")
-        if os.path.exists(programs_dir):
-            for program_file in os.listdir(programs_dir):
-                if program_file.endswith(".json"):
-                    program_path = os.path.join(programs_dir, program_file)
-                    try:
-                        with open(program_path, "r") as f:
-                            program_data = json.load(f)
+        try:
+            with FileLock(lock_path, timeout=10):
+                if os.path.exists(programs_dir):
+                    for program_file in os.listdir(programs_dir):
+                        if program_file.endswith(".json"):
+                            program_path = os.path.join(programs_dir, program_file)
+                            try:
+                                with open(program_path, "r") as f:
+                                    program_data = json.load(f)
 
-                        program = Program.from_dict(program_data)
-                        self.programs[program.id] = program
-                    except Exception as e:
-                        logger.warning(f"Error loading program {program_file}: {str(e)}")
+                                program = Program.from_dict(program_data)
+                                self.programs[program.id] = program
+                            except Exception as e:
+                                logger.warning(f"Error loading program {program_file}: {str(e)}")
+        except Timeout:
+            logger.exception("Could not acquire the lock within 10 seconds")
 
         # Reconstruct island assignments from metadata
         self._reconstruct_islands(saved_islands)
@@ -570,7 +589,7 @@ class ProgramDatabase:
             if dim == "complexity":
                 # Use code length as complexity measure
                 complexity = len(program.code)
-                bin_idx = min(int(complexity / 1000 * self.feature_bins), self.feature_bins - 1)
+                bin_idx = min(int(complexity / 1000), self.feature_bins - 1)
                 coords.append(bin_idx)
             elif dim == "diversity":
                 # Use average edit distance to other programs
@@ -580,13 +599,10 @@ class ProgramDatabase:
                     sample_programs = random.sample(
                         list(self.programs.values()), min(5, len(self.programs))
                     )
-                    avg_distance = sum(
-                        calculate_edit_distance(program.code, other.code)
-                        for other in sample_programs
+                    avg_distance_ratio = sum(
+                        1 - calculate_edit_distance(program.code, other.code) for other in sample_programs
                     ) / len(sample_programs)
-                    bin_idx = min(
-                        int(avg_distance / 1000 * self.feature_bins), self.feature_bins - 1
-                    )
+                    bin_idx = min(int(avg_distance_ratio * 20), self.feature_bins - 1)
                 coords.append(bin_idx)
             elif dim == "score":
                 # Use average of numeric metrics
@@ -594,7 +610,7 @@ class ProgramDatabase:
                     bin_idx = 0
                 else:
                     avg_score = safe_numeric_average(program.metrics)
-                    bin_idx = min(int(avg_score * self.feature_bins), self.feature_bins - 1)
+                    bin_idx = max(0, min(int(avg_score * self.feature_bins), self.feature_bins - 1))
                 coords.append(bin_idx)
             elif dim in program.metrics:
                 # Use specific metric
@@ -604,7 +620,10 @@ class ProgramDatabase:
             else:
                 # Default to middle bin if feature not found
                 coords.append(self.feature_bins // 2)
-
+        logging.info(
+            "MAP-Elites coords: %s",
+            str({self.config.feature_dimensions[i]: coords[i] for i in range(len(coords))}),
+        )
         return coords
 
     def _feature_coords_to_key(self, coords: List[int]) -> str:
@@ -940,7 +959,10 @@ class ProgramDatabase:
         """
         Enforce the population size limit by removing worst programs if needed
         """
-        if len(self.programs) <= self.config.population_size:
+        if (
+            len(self.programs)
+            <= self.config.population_size + self.config.allowed_population_overflow
+        ):
             return
 
         # Calculate how many programs to remove
@@ -1125,7 +1147,7 @@ class ProgramDatabase:
         if len(programs) < 2:
             return 0.0
 
-        total_diversity = 0
+        total_diversity_ratio = 0
         comparisons = 0
 
         # Use deterministic sampling instead of random.sample() to ensure consistent results
@@ -1142,46 +1164,12 @@ class ProgramDatabase:
 
         for i, prog1 in enumerate(sample_programs):
             for prog2 in sample_programs[i + 1 :]:
-                if comparisons >= max_comparisons:
-                    break
-
-                # Use fast approximation instead of expensive edit distance
-                diversity = self._fast_code_diversity(prog1.code, prog2.code)
-                total_diversity += diversity
+                total_diversity_ratio += 1 - ratio(
+                    prog1.code, prog2.code
+                )  # ratio measures similarity
                 comparisons += 1
 
-            if comparisons >= max_comparisons:
-                break
-
-        return total_diversity / max(1, comparisons)
-
-    def _fast_code_diversity(self, code1: str, code2: str) -> float:
-        """
-        Fast approximation of code diversity using simple metrics
-
-        Returns diversity score (higher = more diverse)
-        """
-        if code1 == code2:
-            return 0.0
-
-        # Length difference (scaled to reasonable range)
-        len1, len2 = len(code1), len(code2)
-        length_diff = abs(len1 - len2)
-
-        # Line count difference
-        lines1 = code1.count("\n")
-        lines2 = code2.count("\n")
-        line_diff = abs(lines1 - lines2)
-
-        # Simple character set difference
-        chars1 = set(code1)
-        chars2 = set(code2)
-        char_diff = len(chars1.symmetric_difference(chars2))
-
-        # Combine metrics (scaled to match original edit distance range)
-        diversity = length_diff * 0.1 + line_diff * 10 + char_diff * 0.5
-
-        return diversity
+        return total_diversity_ratio / max(1, comparisons)
 
     def log_island_status(self) -> None:
         """Log current status of all islands"""

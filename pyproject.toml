@@ -18,6 +18,8 @@ dependencies = [
     "numpy>=1.22.0",
     "tqdm>=4.64.0",
     "flask",
+    "levenshtein>=0.27.1",
+    "filelock>=3.18.0",
 ]
 
 [project.optional-dependencies]

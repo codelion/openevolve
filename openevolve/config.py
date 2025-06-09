@@ -151,6 +151,7 @@ class DatabaseConfig:
 
     # Evolutionary parameters
     population_size: int = 1000
+    allowed_population_overflow: int = 50
     archive_size: int = 100
     num_islands: int = 5
 
@@ -217,6 +218,7 @@ class Config:
     log_level: str = "INFO"
     log_dir: Optional[str] = None
     random_seed: Optional[int] = 42
+    language: str = None
 
     # Component configurations
     llm: LLMConfig = field(default_factory=LLMConfig)
