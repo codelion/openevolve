@@ -52,6 +52,7 @@ export function updateGraphNodeSelection() {
         .attr('stroke', d => selectedProgramId === d.id ? 'red' : '#333')
         .attr('stroke-width', d => selectedProgramId === d.id ? 3 : 1.5)
         .classed('node-selected', d => selectedProgramId === d.id);
+    updateGraphEdgeSelection(); // update edge highlight when node selection changes
 }
 
 export function getNodeColor(d) {
@@ -104,6 +105,9 @@ export function selectProgram(programId) {
         }
         nodeElem.classed("node-hovered", false);
     });
+    // Dispatch event for list view sync
+    window.dispatchEvent(new CustomEvent('node-selected', { detail: { id: programId } }));
+    updateGraphEdgeSelection(); // update edge highlight on selection
 }
 
 let svg = null;
@@ -252,6 +256,7 @@ function renderGraph(data, options = {}) {
         node
             .attr("cx", d => d.x)
             .attr("cy", d => d.y);
+        updateGraphEdgeSelection(); // update edge highlight on tick
     });
 
     // Intelligent zoom/pan
@@ -309,6 +314,7 @@ function renderGraph(data, options = {}) {
     }
 
     selectProgram(selectedProgramId);
+    updateGraphEdgeSelection(); // update edge highlight after render
     applyDragHandlersToAllNodes();
 
     svg.on("click", function(event) {
@@ -385,6 +391,14 @@ export function centerAndHighlightNodeInGraph(nodeId) {
     }
 }
 
+export function updateGraphEdgeSelection() {
+    if (!g) return;
+    g.selectAll('line')
+        .attr('stroke', d => (selectedProgramId && (d.source.id === selectedProgramId || d.target.id === selectedProgramId)) ? 'red' : '#999')
+        .attr('stroke-width', d => (selectedProgramId && (d.source.id === selectedProgramId || d.target.id === selectedProgramId)) ? 4 : 2)
+        .attr('stroke-opacity', d => (selectedProgramId && (d.source.id === selectedProgramId || d.target.id === selectedProgramId)) ? 0.95 : 0.6);
+}
+
 function dragstarted(event, d) {
     if (!event.active && simulation) simulation.alphaTarget(0.3).restart(); // Keep simulation alive
     d.fx = d.x;
@@ -399,5 +413,10 @@ function dragended(event, d) {
     d.fx = null;
     d.fy = null;
 }
+
+window.addEventListener('node-selected', function(e) {
+    // When node selection changes (e.g., from list view), update graph node selection
+    updateGraphNodeSelection();
+});
 
 export { renderGraph, g };

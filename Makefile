@@ -50,7 +50,7 @@ docker-build:
 docker-run:
 	docker run --rm -v $(PROJECT_DIR):/app --network="host" $(DOCKER_IMAGE) examples/function_minimization/initial_program.py examples/function_minimization/evaluator.py --config examples/function_minimization/config.yaml --iterations 1000
 
-# Run the lm-eval benchmark
-.PHONY: lm-eval
-lm-eval:
-	$(PYTHON) scripts/lm_eval/lm-eval.py
+# Run the visualization script
+.PHONY: visualizer
+visualizer:
+	$(PYTHON) scripts/visualizer.py --path examples/

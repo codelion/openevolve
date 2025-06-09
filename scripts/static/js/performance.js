@@ -82,7 +82,7 @@ import { selectListNodeById } from './list.js';
             g.selectAll('circle')
                 .filter(function(d) { return undefinedNodes.includes(d); })
                 .transition().duration(400)
-                .attr('cx', margin.left + undefinedBoxWidth/2)
+                .attr('cx', d => d._nanX || (margin.left + undefinedBoxWidth/2))
                 .attr('cy', d => yScales[showIslands ? d.island : null](d.generation))
                 .attr('r', d => getNodeRadius(d))
                 .attr('fill', d => getNodeColor(d))
@@ -132,21 +132,24 @@ import { selectListNodeById } from './list.js';
                     const island = showIslands ? d.target.island : null;
                     return yScales[island](d.target.generation);
                 })
-                .attr('stroke', '#888')
-                .attr('stroke-width', 1.5)
+                .attr('stroke', d => (selectedProgramId && (d.source.id === selectedProgramId || d.target.id === selectedProgramId)) ? 'red' : '#888')
+                .attr('stroke-width', d => (selectedProgramId && (d.source.id === selectedProgramId || d.target.id === selectedProgramId)) ? 3 : 1.5)
                 .attr('opacity', 0.5);
         }
         const metricSelect = document.getElementById('metric-select');
         metricSelect.addEventListener('change', function() {
             updatePerformanceGraph(allNodeData);
+            setTimeout(updateEdgeHighlighting, 0); // ensure edges update after node positions change
         });
         const highlightSelect = document.getElementById('highlight-select');
         highlightSelect.addEventListener('change', function() {
             animatePerformanceGraphAttributes();
+            setTimeout(updateEdgeHighlighting, 0); // ensure edges update after animation
         });
         document.getElementById('tab-performance').addEventListener('click', function() {
             if (typeof allNodeData !== 'undefined' && allNodeData.length) {
-                updatePerformanceGraph(allNodeData);
+                updatePerformanceGraph(allNodeData, {autoZoom: true});
+                setTimeout(() => { zoomPerformanceGraphToFit(); }, 0);
             }
         });
         // Show islands yes/no toggle event
@@ -163,7 +166,11 @@ import { selectListNodeById } from './list.js';
 
         // Initial render
         if (typeof allNodeData !== 'undefined' && allNodeData.length) {
-            updatePerformanceGraph(allNodeData);
+            updatePerformanceGraph(allNodeData, {autoZoom: true});
+            // --- Zoom to fit after initial render ---
+            setTimeout(() => {
+                zoomPerformanceGraphToFit();
+            }, 0);
         }
     });
 })();
@@ -172,6 +179,8 @@ import { selectListNodeById } from './list.js';
 export function selectPerformanceNodeById(id, opts = {}) {
     setSelectedProgramId(id);
     setSidebarSticky(true);
+    // Dispatch event for list view sync
+    window.dispatchEvent(new CustomEvent('node-selected', { detail: { id } }));
     if (typeof allNodeData !== 'undefined' && allNodeData.length) {
         updatePerformanceGraph(allNodeData, opts);
         const node = allNodeData.find(n => n.id == id);
@@ -224,6 +233,40 @@ let g = null;
 let zoomBehavior = null;
 let lastTransform = null;
 
+function autoZoomPerformanceGraph(nodes, x, yScales, islands, graphHeight, margin, undefinedBoxWidth, width, svg, g) {
+    // Compute bounding box for all nodes (including NaN box)
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    // Valid nodes
+    nodes.forEach(n => {
+        let cx, cy;
+        if (n.metrics && typeof n.metrics[getSelectedMetric()] === 'number') {
+            cx = x(n.metrics[getSelectedMetric()]);
+            cy = yScales[document.getElementById('show-islands-toggle')?.checked ? n.island : null](n.generation);
+        } else if (typeof n._nanX === 'number') {
+            cx = n._nanX;
+            cy = yScales[document.getElementById('show-islands-toggle')?.checked ? n.island : null](n.generation);
+        }
+        if (typeof cx === 'number' && typeof cy === 'number') {
+            minX = Math.min(minX, cx);
+            maxX = Math.max(maxX, cx);
+            minY = Math.min(minY, cy);
+            maxY = Math.max(maxY, cy);
+        }
+    });
+    // Include NaN box
+    minX = Math.min(minX, margin.left);
+    // Add some padding
+    const padX = 60, padY = 60;
+    minX -= padX; maxX += padX; minY -= padY; maxY += padY;
+    const svgW = +svg.attr('width');
+    const svgH = +svg.attr('height');
+    const scale = Math.min(svgW / (maxX - minX), svgH / (maxY - minY), 1.5);
+    const tx = svgW/2 - scale * (minX + (maxX-minX)/2);
+    const ty = svgH/2 - scale * (minY + (maxY-minY)/2);
+    const t = d3.zoomIdentity.translate(tx, ty).scale(scale);
+    svg.transition().duration(500).call(zoomBehavior.transform, t);
+}
+
 function updatePerformanceGraph(nodes, options = {}) {
     // Get or create SVG
     if (!svg) {
@@ -272,6 +315,7 @@ function updatePerformanceGraph(nodes, options = {}) {
                 })
                 .attr('stroke-width', 1.5);
             selectListNodeById(null);
+            setTimeout(updateEdgeHighlighting, 0); // ensure edges update after selectedProgramId is null
         }
     });
     // Sizing
@@ -317,11 +361,11 @@ function updatePerformanceGraph(nodes, options = {}) {
             .attr('class', 'axis')
             .attr('transform', `translate(${margin.left+graphXOffset},0)`)
             .call(d3.axisLeft(yScales[island]).ticks(Math.min(12, genCount)));
-        // Y axis label
+        // Y axis label (always at start of main graph)
         g.append('text')
             .attr('class', 'axis-label')
             .attr('transform', `rotate(-90)`) // vertical
-            .attr('y', margin.left + 8)
+            .attr('y', margin.left + graphXOffset + 8)
             .attr('x', -(margin.top + i*graphHeight + (graphHeight - margin.top - margin.bottom)/2))
             .attr('dy', '-2.2em')
             .attr('text-anchor', 'middle')
@@ -365,11 +409,27 @@ function updatePerformanceGraph(nodes, options = {}) {
         .text(metric);
     // NaN box
     if (undefinedNodes.length) {
+        // Group NaN nodes by (generation, island)
+        const nanGroups = {};
+        undefinedNodes.forEach(n => {
+            const key = `${n.generation}|${showIslands ? n.island : ''}`;
+            if (!nanGroups[key]) nanGroups[key] = [];
+            nanGroups[key].push(n);
+        });
+        // Find max group size
+        const maxGroupSize = Math.max(...Object.values(nanGroups).map(g => g.length));
+        // Box width should be based on the full intended spread, not the reduced spread
+        const spreadWidth = Math.max(38, 24 * maxGroupSize);
+        undefinedBoxWidth = spreadWidth/2 + 32; // 16px padding on each side
+        // Add a fixed offset so the NaN box is further left of the main graph
+        const nanBoxGap = 64; // px gap between NaN box and main graph
+        const nanBoxRight = margin.left + graphXOffset - nanBoxGap;
+        const nanBoxLeft = nanBoxRight - undefinedBoxWidth;
         const boxTop = margin.top;
         const boxBottom = showIslands ? (margin.top + islands.length*graphHeight - margin.bottom) : (margin.top + graphHeight - margin.bottom);
         g.append('text')
             .attr('class', 'nan-label')
-            .attr('x', margin.left + undefinedBoxWidth/2)
+            .attr('x', nanBoxLeft + undefinedBoxWidth/2)
             .attr('y', boxTop - 10)
             .attr('text-anchor', 'middle')
             .attr('font-size', '0.92em')
@@ -377,7 +437,7 @@ function updatePerformanceGraph(nodes, options = {}) {
             .text('NaN');
         g.append('rect')
             .attr('class', 'nan-box')
-            .attr('x', margin.left)
+            .attr('x', nanBoxLeft)
             .attr('y', boxTop)
             .attr('width', undefinedBoxWidth)
             .attr('height', boxBottom - boxTop)
@@ -385,29 +445,70 @@ function updatePerformanceGraph(nodes, options = {}) {
             .attr('stroke', '#bbb')
             .attr('stroke-width', 1.5)
             .attr('rx', 12);
+        // Assign x offset for each NaN node (spread only in the center half of the box)
+        undefinedNodes.forEach(n => {
+            const key = `${n.generation}|${showIslands ? n.island : ''}`;
+            const group = nanGroups[key];
+            if (!group) return;
+            if (group.length === 1) {
+                n._nanX = nanBoxLeft + undefinedBoxWidth/2;
+            } else {
+                const idx = group.indexOf(n);
+                const innerSpread = spreadWidth / 2; // only use half the box for node spread
+                const innerStart = nanBoxLeft + (undefinedBoxWidth - innerSpread) / 2;
+                n._nanX = innerStart + innerSpread * (idx + 0.5) / group.length;
+            }
+        });
     }
     // Data join for edges
     const nodeById = Object.fromEntries(nodes.map(n => [n.id, n]));
     const edges = nodes.filter(n => n.parent_id && nodeById[n.parent_id]).map(n => ({ source: nodeById[n.parent_id], target: n }));
-    const edgeSel = g.selectAll('line.performance-edge')
-        .data(edges, d => d.target.id);
-    edgeSel.enter()
+    // Remove all old edges before re-adding (fixes missing/incorrect edges after metric change)
+    g.selectAll('line.performance-edge').remove();
+    // Helper to get x/y for a node (handles NaN and valid nodes)
+    function getNodeXY(node, x, yScales, showIslands, metric) {
+        // Returns [x, y] for a node, handling both valid and NaN nodes
+        if (!node) return [null, null];
+        const y = yScales[showIslands ? node.island : null](node.generation);
+        if (node.metrics && typeof node.metrics[metric] === 'number') {
+            return [x(node.metrics[metric]), y];
+        } else if (typeof node._nanX === 'number') {
+            return [node._nanX, y];
+        } else {
+            // fallback: center of NaN box if _nanX not set
+            // This should not happen, but fallback for safety
+            return [x.range()[0] - 100, y];
+        }
+    }
+    g.selectAll('line.performance-edge')
+        .data(edges, d => d.target.id)
+        .enter()
         .append('line')
         .attr('class', 'performance-edge')
         .attr('stroke', '#888')
         .attr('stroke-width', 1.5)
         .attr('opacity', 0.5)
-        .attr('x1', d => x(d.source.metrics && typeof d.source.metrics[metric] === 'number' ? d.source.metrics[metric] : null) || (margin.left + undefinedBoxWidth/2))
-        .attr('y1', d => yScales[showIslands ? d.source.island : null](d.source.generation))
-        .attr('x2', d => x(d.target.metrics && typeof d.target.metrics[metric] === 'number' ? d.target.metrics[metric] : null) || (margin.left + undefinedBoxWidth/2))
-        .attr('y2', d => yScales[showIslands ? d.target.island : null](d.target.generation))
-        .merge(edgeSel)
-        .transition().duration(500)
-        .attr('x1', d => x(d.source.metrics && typeof d.source.metrics[metric] === 'number' ? d.source.metrics[metric] : null) || (margin.left + undefinedBoxWidth/2))
-        .attr('y1', d => yScales[showIslands ? d.source.island : null](d.source.generation))
-        .attr('x2', d => x(d.target.metrics && typeof d.target.metrics[metric] === 'number' ? d.target.metrics[metric] : null) || (margin.left + undefinedBoxWidth/2))
-        .attr('y2', d => yScales[showIslands ? d.target.island : null](d.target.generation));
-    edgeSel.exit().transition().duration(300).attr('opacity', 0).remove();
+        .attr('x1', d => getNodeXY(d.source, x, yScales, showIslands, metric)[0])
+        .attr('y1', d => getNodeXY(d.source, x, yScales, showIslands, metric)[1])
+        .attr('x2', d => getNodeXY(d.target, x, yScales, showIslands, metric)[0])
+        .attr('y2', d => getNodeXY(d.target, x, yScales, showIslands, metric)[1])
+        .attr('stroke', d => {
+            if (selectedProgramId && (d.source.id === selectedProgramId || d.target.id === selectedProgramId)) {
+                return 'red';
+            }
+            return '#888';
+        })
+        .attr('stroke-width', d => (selectedProgramId && (d.source.id === selectedProgramId || d.target.id === selectedProgramId)) ? 3 : 1.5)
+        .attr('opacity', d => (selectedProgramId && (d.source.id === selectedProgramId || d.target.id === selectedProgramId)) ? 0.9 : 0.5);
+    // --- Ensure edge highlighting updates after node selection ---
+    function updateEdgeHighlighting() {
+        g.selectAll('line.performance-edge')
+            .attr('stroke', d => (selectedProgramId && (d.source.id === selectedProgramId || d.target.id === selectedProgramId)) ? 'red' : '#888')
+            .attr('stroke-width', d => (selectedProgramId && (d.source.id === selectedProgramId || d.target.id === selectedProgramId)) ? 3 : 1.5)
+            .attr('opacity', d => (selectedProgramId && (d.source.id === selectedProgramId || d.target.id === selectedProgramId)) ? 0.9 : 0.5);
+    }
+    updateEdgeHighlighting();
+
     // Data join for nodes
     const highlightFilter = document.getElementById('highlight-select').value;
     const highlightNodes = getHighlightNodes(nodes, highlightFilter, metric);
@@ -459,6 +560,7 @@ function updatePerformanceGraph(nodes, options = {}) {
             showSidebarContent(d, false);
             showSidebar();
             selectProgram(selectedProgramId);
+            updateEdgeHighlighting();
         })
         .merge(nodeSel)
         .transition().duration(500)
@@ -483,7 +585,7 @@ function updatePerformanceGraph(nodes, options = {}) {
     nanSel.enter()
         .append('circle')
         .attr('class', 'performance-nan')
-        .attr('cx', margin.left + undefinedBoxWidth/2)
+        .attr('cx', d => d._nanX)
         .attr('cy', d => yScales[showIslands ? d.island : null](d.generation))
         .attr('r', d => getNodeRadius(d))
         .attr('fill', d => getNodeColor(d))
@@ -525,10 +627,11 @@ function updatePerformanceGraph(nodes, options = {}) {
             showSidebarContent(d, false);
             showSidebar();
             selectProgram(selectedProgramId);
+            updateEdgeHighlighting();
         })
         .merge(nanSel)
         .transition().duration(500)
-        .attr('cx', margin.left + undefinedBoxWidth/2)
+        .attr('cx', d => d._nanX)
         .attr('cy', d => yScales[showIslands ? d.island : null](d.generation))
         .attr('r', d => getNodeRadius(d))
         .attr('fill', d => getNodeColor(d))
@@ -542,4 +645,44 @@ function updatePerformanceGraph(nodes, options = {}) {
                 .classed('node-selected', selectedProgramId === d.id);
         });
     nanSel.exit().transition().duration(300).attr('opacity', 0).remove();
+    // Auto-zoom to fit on initial render or when requested
+    if (options.autoZoom || (!lastTransform && nodes.length)) {
+        autoZoomPerformanceGraph(nodes, x, yScales, islands, graphHeight, margin, undefinedBoxWidth, width, svg, g);
+    }
+}
+
+// --- Zoom-to-fit helper ---
+function zoomPerformanceGraphToFit() {
+    if (!svg || !g) return;
+    // Get all node positions (valid and NaN)
+    const nodeCircles = g.selectAll('circle.performance-node, circle.performance-nan').nodes();
+    if (!nodeCircles.length) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    nodeCircles.forEach(node => {
+        const bbox = node.getBBox();
+        minX = Math.min(minX, bbox.x);
+        minY = Math.min(minY, bbox.y);
+        maxX = Math.max(maxX, bbox.x + bbox.width);
+        maxY = Math.max(maxY, bbox.y + bbox.height);
+    });
+    // Also include the NaN box if present
+    const nanBox = g.select('rect.nan-box').node();
+    if (nanBox) {
+        const bbox = nanBox.getBBox();
+        minX = Math.min(minX, bbox.x);
+        minY = Math.min(minY, bbox.y);
+        maxX = Math.max(maxX, bbox.x + bbox.width);
+        maxY = Math.max(maxY, bbox.y + bbox.height);
+    }
+    // Add some padding
+    const pad = 32;
+    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+    const graphW = svg.attr('width');
+    const graphH = svg.attr('height');
+    const scale = Math.min(graphW / (maxX - minX), graphH / (maxY - minY), 1.5);
+    const tx = graphW/2 - scale * (minX + (maxX-minX)/2);
+    const ty = graphH/2 - scale * (minY + (maxY-minY)/2);
+    const t = d3.zoomIdentity.translate(tx, ty).scale(scale);
+    svg.transition().duration(400).call(zoomBehavior.transform, t);
+    lastTransform = t;
 }
