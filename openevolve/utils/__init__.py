@@ -10,7 +10,6 @@ from openevolve.utils.async_utils import (
 )
 from openevolve.utils.code_utils import (
     apply_diff,
-    calculate_edit_distance,
     extract_code_language,
     extract_diffs,
     format_diff_summary,
@@ -32,7 +31,6 @@ __all__ = [
     "retry_async",
     "run_in_executor",
     "apply_diff",
-    "calculate_edit_distance",
     "extract_code_language",
     "extract_diffs",
     "format_diff_summary",

@@ -5,16 +5,18 @@ Program database for OpenEvolve
 import json
 import logging
 import os
+import shutil
 import random
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from Levenshtein import distance, ratio
+from filelock import FileLock, Timeout
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
 
 from openevolve.config import DatabaseConfig
-from openevolve.utils.code_utils import calculate_edit_distance
 from openevolve.utils.metrics_utils import safe_numeric_average
 
 logger = logging.getLogger(__name__)
@@ -131,9 +133,6 @@ class ProgramDatabase:
 
         self.programs[program.id] = program
 
-        # Enforce population size limit
-        self._enforce_population_limit()
-
         # Calculate feature coordinates for MAP-Elites
         feature_coords = self._calculate_feature_coords(program)
 
@@ -163,6 +162,10 @@ class ProgramDatabase:
             self._save_program(program)
 
         logger.debug(f"Added program {program.id} to island {island_idx}")
+
+        # Enforce population size limit
+        self._enforce_population_limit()
+
         return program.id
 
     def get(self, program_id: str) -> Optional[Program]:
@@ -304,12 +307,19 @@ class ProgramDatabase:
             logger.warning("No database path specified, skipping save")
             return
 
-        # Create directory if it doesn't exist
-        os.makedirs(save_path, exist_ok=True)
+        lock_path = save_path + ".lock"
+        try:
+            with FileLock(lock_path, timeout=10):
+                # Create directory and remove old path if it exists
+                if os.path.exists(save_path):
+                    shutil.rmtree(save_path)
+                os.makedirs(save_path)
 
-        # Save each program
-        for program in self.programs.values():
-            self._save_program(program, save_path)
+                # Save each program
+                for program in self.programs.values():
+                    self._save_program(program, save_path)
+        except Timeout:
+            logger.exception("Could not acquire the lock within 10 seconds")
 
         # Save metadata
         metadata = {
@@ -361,19 +371,24 @@ class ProgramDatabase:
             logger.info(f"Loaded database metadata with last_iteration={self.last_iteration}")
 
         # Load programs
+        lock_path = path + ".lock"
         programs_dir = os.path.join(path, "programs")
-        if os.path.exists(programs_dir):
-            for program_file in os.listdir(programs_dir):
-                if program_file.endswith(".json"):
-                    program_path = os.path.join(programs_dir, program_file)
-                    try:
-                        with open(program_path, "r") as f:
-                            program_data = json.load(f)
+        try:
+            with FileLock(lock_path, timeout=10):
+                if os.path.exists(programs_dir):
+                    for program_file in os.listdir(programs_dir):
+                        if program_file.endswith(".json"):
+                            program_path = os.path.join(programs_dir, program_file)
+                            try:
+                                with open(program_path, "r") as f:
+                                    program_data = json.load(f)
 
-                        program = Program.from_dict(program_data)
-                        self.programs[program.id] = program
-                    except Exception as e:
-                        logger.warning(f"Error loading program {program_file}: {str(e)}")
+                                program = Program.from_dict(program_data)
+                                self.programs[program.id] = program
+                            except Exception as e:
+                                logger.warning(f"Error loading program {program_file}: {str(e)}")
+        except Timeout:
+            logger.exception("Could not acquire the lock within 10 seconds")
 
         logger.info(f"Loaded database with {len(self.programs)} programs from {path}")
 
@@ -414,7 +429,7 @@ class ProgramDatabase:
             if dim == "complexity":
                 # Use code length as complexity measure
                 complexity = len(program.code)
-                bin_idx = min(int(complexity / 1000 * self.feature_bins), self.feature_bins - 1)
+                bin_idx = min(int(complexity / 1000), self.feature_bins - 1)
                 coords.append(bin_idx)
             elif dim == "diversity":
                 # Use average edit distance to other programs
@@ -424,13 +439,10 @@ class ProgramDatabase:
                     sample_programs = random.sample(
                         list(self.programs.values()), min(5, len(self.programs))
                     )
-                    avg_distance = sum(
-                        calculate_edit_distance(program.code, other.code)
-                        for other in sample_programs
+                    avg_distance_ratio = sum(
+                        1 - ratio(program.code, other.code) for other in sample_programs
                     ) / len(sample_programs)
-                    bin_idx = min(
-                        int(avg_distance / 1000 * self.feature_bins), self.feature_bins - 1
-                    )
+                    bin_idx = min(int(avg_distance_ratio * 20), self.feature_bins - 1)
                 coords.append(bin_idx)
             elif dim == "score":
                 # Use average of metrics
@@ -448,7 +460,10 @@ class ProgramDatabase:
             else:
                 # Default to middle bin if feature not found
                 coords.append(self.feature_bins // 2)
-
+        logging.info(
+            "MAP-Elites coords: %s",
+            str({self.config.feature_dimensions[i]: coords[i] for i in range(len(coords))}),
+        )
         return coords
 
     def _feature_coords_to_key(self, coords: List[int]) -> str:
@@ -699,7 +714,10 @@ class ProgramDatabase:
         """
         Enforce the population size limit by removing worst programs if needed
         """
-        if len(self.programs) <= self.config.population_size:
+        if (
+            len(self.programs)
+            <= self.config.population_size + self.config.allowed_population_overflow
+        ):
             return
 
         # Calculate how many programs to remove
@@ -884,7 +902,7 @@ class ProgramDatabase:
         if len(programs) < 2:
             return 0.0
 
-        total_distance = 0
+        total_diversity_ratio = 0
         comparisons = 0
 
         # Sample up to 10 programs for efficiency
@@ -895,10 +913,12 @@ class ProgramDatabase:
 
         for i, prog1 in enumerate(sample_programs):
             for prog2 in sample_programs[i + 1 :]:
-                total_distance += calculate_edit_distance(prog1.code, prog2.code)
+                total_diversity_ratio += 1 - ratio(
+                    prog1.code, prog2.code
+                )  # ratio measures similarity
                 comparisons += 1
 
-        return total_distance / max(1, comparisons)
+        return total_diversity_ratio / max(1, comparisons)
 
     def log_island_status(self) -> None:
         """Log current status of all islands"""

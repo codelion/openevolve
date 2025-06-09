@@ -10,19 +10,16 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+import concurrent.futures
 
 from openevolve.config import Config, load_config
 from openevolve.database import Program, ProgramDatabase
 from openevolve.evaluator import Evaluator
 from openevolve.llm.ensemble import LLMEnsemble
 from openevolve.prompt.sampler import PromptSampler
+from openevolve.iteration import run_iteration_sync, Result
 from openevolve.utils.code_utils import (
-    apply_diff,
     extract_code_language,
-    extract_diffs,
-    format_diff_summary,
-    parse_evolve_blocks,
-    parse_full_rewrite,
 )
 from openevolve.utils.format_utils import (
     format_metrics_safe,
@@ -83,7 +80,8 @@ class OpenEvolve:
         # Load initial program
         self.initial_program_path = initial_program_path
         self.initial_program_code = self._load_initial_program()
-        self.language = extract_code_language(self.initial_program_code)
+        if not self.config.language:
+            self.config.language = extract_code_language(self.initial_program_code)
 
         # Extract file extension from initial program
         self.file_extension = os.path.splitext(initial_program_path)[1]
@@ -115,8 +113,9 @@ class OpenEvolve:
             self.llm_evaluator_ensemble,
             self.evaluator_prompt_sampler,
         )
+        self.evaluation_file = evaluation_file
 
-        logger.info(f"Initialized OpenEvolve with {initial_program_path} " f"and {evaluation_file}")
+        logger.info(f"Initialized OpenEvolve with {initial_program_path}")
 
     def _setup_logging(self) -> None:
         """Set up logging"""
@@ -189,7 +188,7 @@ class OpenEvolve:
             initial_program = Program(
                 id=initial_program_id,
                 code=self.initial_program_code,
-                language=self.language,
+                language=self.config.language,
                 metrics=initial_metrics,
                 iteration_found=start_iteration,
             )
@@ -216,127 +215,85 @@ class OpenEvolve:
         logger.info(f"Using island-based evolution with {self.config.database.num_islands} islands")
         self.database.log_island_status()
 
-        for i in range(start_iteration, total_iterations):
-            iteration_start = time.time()
+        # create temp file to save database snapshots to for process workers to load from
+        temp_db_path = "temp/" + str(uuid.uuid4())
+        self.database.save(temp_db_path, start_iteration)
 
-            # Manage island evolution - switch islands periodically
-            if i > start_iteration and current_island_counter >= programs_per_island:
-                self.database.next_island()
-                current_island_counter = 0
-                logger.debug(f"Switched to island {self.database.current_island}")
-
-            current_island_counter += 1
-
-            # Sample parent and inspirations from current island
-            parent, inspirations = self.database.sample()
-
-            # Build prompt
-            prompt = self.prompt_sampler.build_prompt(
-                current_program=parent.code,
-                parent_program=parent.code,  # We don't have the parent's code, use the same
-                program_metrics=parent.metrics,
-                previous_programs=[p.to_dict() for p in self.database.get_top_programs(3)],
-                top_programs=[p.to_dict() for p in inspirations],
-                language=self.language,
-                evolution_round=i,
-                allow_full_rewrite=self.config.allow_full_rewrites,
-            )
-
-            # Generate code modification
-            try:
-                llm_response = await self.llm_ensemble.generate_with_context(
-                    system_message=prompt["system"],
-                    messages=[{"role": "user", "content": prompt["user"]}],
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=self.config.evaluator.parallel_evaluations
+        ) as executor:
+            futures = []
+            for i in range(start_iteration, total_iterations):
+                futures.append(
+                    executor.submit(
+                        run_iteration_sync, i, self.config, self.evaluation_file, temp_db_path
+                    )
                 )
 
-                # Parse the response
-                if self.config.diff_based_evolution:
-                    diff_blocks = extract_diffs(llm_response)
+            iteration = start_iteration + 1
+            for future in concurrent.futures.as_completed(futures):
+                logger.info(f"Completed iteration {iteration}")
+                try:
+                    result: Result = future.result()
+                    # Manage island evolution - switch islands periodically
+                    if (
+                        iteration - 1 > start_iteration
+                        and current_island_counter >= programs_per_island
+                    ):
+                        self.database.next_island()
+                        current_island_counter = 0
+                        logger.debug(f"Switched to island {self.database.current_island}")
 
-                    if not diff_blocks:
-                        logger.warning(f"Iteration {i+1}: No valid diffs found in response")
-                        continue
+                    current_island_counter += 1
 
-                    # Apply the diffs
-                    child_code = apply_diff(parent.code, llm_response)
-                    changes_summary = format_diff_summary(diff_blocks)
-                else:
-                    # Parse full rewrite
-                    new_code = parse_full_rewrite(llm_response, self.language)
+                    # Add to database (will be added to current island)
+                    self.database.add(result.child_program, iteration=iteration)
 
-                    if not new_code:
-                        logger.warning(f"Iteration {i+1}: No valid code found in response")
-                        continue
+                    # Increment generation for current island
+                    self.database.increment_island_generation()
 
-                    child_code = new_code
-                    changes_summary = "Full rewrite"
+                    # Check if migration should occur
+                    if self.database.should_migrate():
+                        logger.info(f"Performing migration at iteration {iteration}")
+                        self.database.migrate_programs()
+                        self.database.log_island_status()
 
-                # Check code length
-                if len(child_code) > self.config.max_code_length:
-                    logger.warning(
-                        f"Iteration {i+1}: Generated code exceeds maximum length "
-                        f"({len(child_code)} > {self.config.max_code_length})"
+                    # Log progress
+                    self._log_iteration(
+                        iteration, result.parent, result.child_program, result.iteration_time
                     )
+
+                    # Specifically check if this is the new best program
+                    if self.database.best_program_id == result.child_program.id:
+                        logger.info(
+                            f"🌟 New best solution found at iteration {iteration}: {result.child_program.id}"
+                        )
+                        logger.info(f"Metrics: {format_metrics_safe(result.child_program.metrics)}")
+
+                    # Save checkpoint
+                    if (iteration) % self.config.checkpoint_interval == 0:
+                        self._save_checkpoint(iteration)
+                        # Also log island status at checkpoints
+                        logger.info(f"Island status at checkpoint {iteration}:")
+                        self.database.log_island_status()
+
+                    # Check if target score reached
+                    if target_score is not None:
+                        avg_score = sum(result["child_metrics"].values()) / max(
+                            1, len(result.child_metrics)
+                        )
+                        if avg_score >= target_score:
+                            logger.info(
+                                f"Target score {target_score} reached after {iteration} iterations"
+                            )
+                            break
+
+                    self.database.save(temp_db_path, iteration)
+                    iteration += 1
+                except Exception:
+                    logger.exception(f"Error in iteration {iteration}:")
                     continue
-
-                # Evaluate the child program
-                child_id = str(uuid.uuid4())
-                child_metrics = await self.evaluator.evaluate_program(child_code, child_id)
-
-                # Create a child program
-                child_program = Program(
-                    id=child_id,
-                    code=child_code,
-                    language=self.language,
-                    parent_id=parent.id,
-                    generation=parent.generation + 1,
-                    metrics=child_metrics,
-                    metadata={
-                        "changes": changes_summary,
-                        "parent_metrics": parent.metrics,
-                    },
-                )
-
-                # Add to database (will be added to current island)
-                self.database.add(child_program, iteration=i + 1)
-
-                # Increment generation for current island
-                self.database.increment_island_generation()
-
-                # Check if migration should occur
-                if self.database.should_migrate():
-                    logger.info(f"Performing migration at iteration {i+1}")
-                    self.database.migrate_programs()
-                    self.database.log_island_status()
-
-                # Log progress
-                iteration_time = time.time() - iteration_start
-                self._log_iteration(i, parent, child_program, iteration_time)
-
-                # Specifically check if this is the new best program
-                if self.database.best_program_id == child_program.id:
-                    logger.info(
-                        f"🌟 New best solution found at iteration {i+1}: {child_program.id}"
-                    )
-                    logger.info(f"Metrics: {format_metrics_safe(child_program.metrics)}")
-
-                # Save checkpoint
-                if (i + 1) % self.config.checkpoint_interval == 0:
-                    self._save_checkpoint(i + 1)
-                    # Also log island status at checkpoints
-                    logger.info(f"Island status at checkpoint {i+1}:")
-                    self.database.log_island_status()
-
-                # Check if target score reached
-                if target_score is not None:
-                    avg_score = sum(child_metrics.values()) / max(1, len(child_metrics))
-                    if avg_score >= target_score:
-                        logger.info(f"Target score {target_score} reached after {i+1} iterations")
-                        break
-
-            except Exception as e:
-                logger.error(f"Error in iteration {i+1}: {str(e)}")
-                continue
+        os.rmdir(temp_db_path)
 
         # Get the best program using our tracking mechanism
         best_program = None
