@@ -128,6 +128,32 @@ diff -u checkpoints/checkpoint_10/best_program.py checkpoints/checkpoint_20/best
 # Compare metrics
 cat checkpoints/checkpoint_*/best_program_info.json | grep -A 10 metrics
 ```
+
+### Visualizing the evolution tree
+
+The script in `scripts/visualize.py` allows you to visualize the evolution tree and display it in your webbrowser. The script watches live for the newest checkpoint directory in the examples/ folder structure and updates the graph. Alternatively, you can also provide a specific checkpoint folder with the `--path` parameter.
+
+```bash
+# Install requirements
+pip install -r scripts/requirements.txt
+
+# Start the visualization web server and have it watch the examples/ folder
+python scripts/visualizer.py
+
+# Start the visualization web server with a specific checkpoint
+python scripts/visualizer.py --path examples/function_minimization/openevolve_output/checkpoints/checkpoint_100/
+```
+
+In the visualization UI, you can
+- see the branching of your program evolution in a network visualization, with node radius chosen by the program fitness (= the currently selected metric),
+- see the parent-child relationship of nodes and click through them in the sidebar (use the yellow locator icon in the sidebar to center the node in the graph),
+- select the metric of interest (with the available metric choices depending on your data set),
+- highlight nodes, for example the top score (for the chosen metric) or the MAP-elites members,
+- click nodes to see their code and prompts (if available from the checkpoint data) in a sidebar,
+- in the "Performance" tab, see their selected metric score vs generation in a graph
+
+![OpenEvolve Visualizer](openevolve-visualizer.png)
+
 ### Docker
 
 You can also install and execute via Docker:
