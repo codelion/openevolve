@@ -171,6 +171,10 @@ class MLXLoRABenchmark:
             except Exception as e:
                 print(f"  ❌ Baseline trial failed: {e}")
                 results['baseline'].append({"error": str(e)})
+                # FAIL FAST: If first trial fails, don't continue
+                if trial == 0:
+                    print("  🚨 First trial failed - stopping evaluation early")
+                    return {"error": f"First trial failed: {e}"}
             
             # Test evolved implementation  
             try:
@@ -191,6 +195,10 @@ class MLXLoRABenchmark:
             except Exception as e:
                 print(f"  ❌ Evolved trial failed: {e}")
                 results['evolved'].append({"error": str(e)})
+                # FAIL FAST: If first trial fails, don't continue
+                if trial == 0:
+                    print("  🚨 First trial failed - stopping evaluation early")
+                    return {"error": f"First trial failed: {e}"}
         
         # Cleanup after all trials
         self.cleanup()
@@ -574,7 +582,7 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
         comparison_results = benchmark.compare_implementations(
             baseline_kernels=baseline_kernels,
             evolved_kernels=evolved_kernels,
-            num_trials=5
+            num_trials=5  
         )
         
         if 'error' in comparison_results:
