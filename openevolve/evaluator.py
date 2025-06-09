@@ -125,16 +125,32 @@ class Evaluator:
                 eval_result = self._process_evaluation_result(result)
 
                 # Add LLM feedback if configured
+                llm_eval_result = None
                 if self.config.use_llm_feedback and self.llm_ensemble:
-                    feedback_metrics = await self._llm_evaluate(program_code)
+                    llm_result = await self._llm_evaluate(program_code)
+                    llm_eval_result = self._process_evaluation_result(llm_result)
 
                     # Combine metrics
-                    for name, value in feedback_metrics.items():
+                    for name, value in llm_result.metrics.items():
                         eval_result.metrics[f"llm_{name}"] = value * self.config.llm_feedback_weight
 
                 # Store artifacts if enabled and present
-                if artifacts_enabled and eval_result.has_artifacts() and program_id:
-                    self._pending_artifacts[program_id] = eval_result.artifacts
+                if (
+                    artifacts_enabled
+                    and (
+                        eval_result.has_artifacts()
+                        or (llm_eval_result and llm_eval_result.has_artifacts())
+                    )
+                    and program_id
+                ):
+                    self._pending_artifacts[program_id] = {}
+
+                    # Merge eval_result artifacts with llm artifacts if they exist
+                    if eval_result.has_artifacts():
+                        self._pending_artifacts[program_id].update(eval_result.artifacts)
+
+                    if llm_eval_result and llm_eval_result.has_artifacts():
+                        self._pending_artifacts[program_id].update(llm_eval_result.artifacts)
 
                 elapsed = time.time() - start_time
                 logger.info(
@@ -150,6 +166,7 @@ class Evaluator:
                 logger.warning(
                     f"Evaluation attempt {attempt + 1}/{self.config.max_retries + 1} failed for program{program_id_str}: {str(e)}"
                 )
+                traceback.print_exc()
 
                 # Capture failure artifacts if enabled
                 if artifacts_enabled and program_id:
@@ -396,6 +413,7 @@ class Evaluator:
                 json_pattern = r"```json\n(.*?)\n```"
                 import re
 
+                artifacts = {}
                 avg_metrics = {}
                 for i, response in enumerate(responses):
                     json_match = re.search(json_pattern, response, re.DOTALL)
@@ -414,12 +432,13 @@ class Evaluator:
                     # Parse JSON
                     result = json.loads(json_str)
 
-                    # Filter all non-numeric values
-                    metrics = {
-                        name: float(value)
-                        for name, value in result.items()
-                        if isinstance(value, (int, float))
-                    }
+                    # All non-numeric values are artifacts, all numeric values are metrics
+                    metrics = {}
+                    for key, value in result.items():
+                        if not isinstance(value, (int, float)):
+                            artifacts[key] = value
+                        else:
+                            metrics[key] = float(value)
 
                     # Weight of the model in the ensemble
                     weight = self.llm_ensemble.weights[i] if self.llm_ensemble.weights else 1.0
@@ -431,7 +450,10 @@ class Evaluator:
                         else:
                             avg_metrics[name] = value * weight
 
-                return avg_metrics
+                return EvaluationResult(
+                    metrics=avg_metrics,
+                    artifacts=artifacts,
+                )
 
             except Exception as e:
                 logger.warning(f"Error parsing LLM response: {str(e)}")
