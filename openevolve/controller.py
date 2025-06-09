@@ -5,6 +5,7 @@ Main controller for OpenEvolve
 import asyncio
 import logging
 import os
+import shutil
 import re
 import time
 import uuid
@@ -216,7 +217,7 @@ class OpenEvolve:
         self.database.log_island_status()
 
         # create temp file to save database snapshots to for process workers to load from
-        temp_db_path = "temp/" + str(uuid.uuid4())
+        temp_db_path = "tmp/" + str(uuid.uuid4())
         self.database.save(temp_db_path, start_iteration)
 
         with concurrent.futures.ProcessPoolExecutor(
@@ -293,7 +294,7 @@ class OpenEvolve:
                 except Exception:
                     logger.exception(f"Error in iteration {iteration}:")
                     continue
-        os.rmdir(temp_db_path)
+        shutil.rmtree(temp_db_path)
 
         # Get the best program using our tracking mechanism
         best_program = None
