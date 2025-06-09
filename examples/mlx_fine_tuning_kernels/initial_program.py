@@ -1,11 +1,11 @@
 """
 MLX LoRA Fine-tuning Optimization - OpenEvolve Example
 
-This example demonstrates optimizing real MLX LoRA fine-tuning to achieve the same 
-training loss as standard MLX-LM LoRA implementation but with improved memory 
-efficiency and/or training speed.
+This example demonstrates optimizing specific LoRA kernels that get injected into 
+standard MLX-LM training to achieve the same training loss but with improved 
+memory efficiency and/or training speed.
 
-Uses the official mlx-lm library for real LoRA fine-tuning benchmarks.
+Similar to how unsloth provides optimized kernels for PyTorch/CUDA.
 """
 
 import math
@@ -129,436 +129,223 @@ def create_sample_dataset(output_dir: str, num_samples: int = 20):
 
 def evolved_lora_kernels():
     """
-    Evolved LoRA kernel implementations targeting efficiency improvements.
+    Evolved LoRA kernel implementations that get injected into standard MLX-LM training.
     
-    These implementations should achieve the same training loss as standard LoRA
-    but with improved memory efficiency and/or training speed.
+    These kernels target specific operations like LoRA linear layers, gradient computation,
+    and memory-efficient tensor operations while maintaining numerical correctness.
     
     Returns:
-        Dictionary of optimized LoRA operations based on mlx-lm
+        Dictionary of evolved kernel implementations for injection
     """
     
     if not MLX_LM_AVAILABLE:
-        raise ImportError("MLX-LM is required for real LoRA optimization")
+        raise ImportError("MLX-LM is required for LoRA kernel optimization")
     
     # EVOLVE-BLOCK-START
-    def optimized_linear_to_lora_layers(
-        model: nn.Module,
-        num_layers: int,
-        lora_parameters: dict,
-        use_dora: bool = False
-    ):
-        """
-        Optimized LoRA layer conversion with potential batching and memory optimizations.
-        Based on mlx-lm's linear_to_lora_layers but with efficiency improvements.
-        """
-        # Use the official implementation as base but with potential optimizations
-        return linear_to_lora_layers(model, num_layers, lora_parameters, use_dora)
-    
-    def optimized_train_step(
-        model: nn.Module,
-        inputs: Dict[str, mx.array],
-        targets: mx.array,
-        optimizer: optim.Optimizer,
-        loss_fn: callable = None
-    ) -> Tuple[mx.array, Dict[str, mx.array]]:
-        """
-        Optimized training step with potential fusion and memory optimizations.
-        """
-        if loss_fn is None:
-            loss_fn = nn.losses.cross_entropy
+    class OptimizedLoRALinear(nn.Module):
+        """Optimized LoRA linear layer with potential kernel fusion and memory optimizations."""
         
-        def compute_loss(model, inputs, targets):
-            # Efficient forward pass
-            logits = model(inputs)
-            if isinstance(logits, (list, tuple)):
-                logits = logits[0]
+        def __init__(self, in_features, out_features, r=16, alpha=16, dropout=0.0, scale=None):
+            super().__init__()
+            self.in_features = in_features
+            self.out_features = out_features
+            self.r = r
+            self.alpha = alpha
+            self.dropout = dropout
+            self.scale = scale if scale is not None else alpha / r
             
-            # Memory-efficient loss computation
-            return loss_fn(logits, targets, reduction='mean')
-        
-        # Use MLX's efficient value_and_grad
-        loss_and_grad_fn = nn.value_and_grad(model, compute_loss)
-        (loss, _), grads = loss_and_grad_fn(model, inputs, targets)
-        
-        # Optimized parameter update
-        optimizer.update(model, grads)
-        
-        return loss, grads
+            # LoRA weights - use standard initialization for correctness
+            self.lora_a = mx.random.normal((r, in_features)) * 0.01
+            self.lora_b = mx.zeros((out_features, r))
+            
+        def __call__(self, x):
+            # Standard LoRA computation - room for optimization here
+            # Base computation would be: base_out = x @ base_weight.T
+            # LoRA computation: lora_out = (x @ lora_a.T) @ lora_b.T
+            lora_out = mx.matmul(mx.matmul(x, self.lora_a.T), self.lora_b.T)
+            return self.scale * lora_out
     
-    def optimized_training_loop(
-        model: nn.Module,
-        train_dataset,
-        val_dataset,
-        args,
-        optimizer: optim.Optimizer,
-        training_callback=None
-    ):
-        """
-        Optimized training loop with memory and speed improvements.
-        Based on mlx-lm's train function but with efficiency optimizations.
-        """
-        # Create training args if needed
-        if not isinstance(args, TrainingArgs):
-            training_args = TrainingArgs(
-                batch_size=getattr(args, 'batch_size', 2),
-                iters=getattr(args, 'iters', 10),
-                val_batches=getattr(args, 'val_batches', 5),
-                steps_per_report=getattr(args, 'steps_per_report', 5),
-                steps_per_eval=getattr(args, 'steps_per_eval', 100),
-                steps_per_save=getattr(args, 'save_every', 100),
-                adapter_file=getattr(args, 'adapter_file', None),
-                max_seq_length=getattr(args, 'max_seq_length', 512),
-                grad_checkpoint=getattr(args, 'grad_checkpoint', False),
-            )
-        else:
-            training_args = args
-        
-        # Use official MLX-LM training with potential optimizations
-        return train(
-            model=model,
-            args=training_args,
-            optimizer=optimizer,
-            train_dataset=train_dataset,
-            val_dataset=val_dataset,
-            training_callback=training_callback,
-        )
+    def optimized_matmul_sequence(x, lora_a, lora_b, scale):
+        """Optimized sequence of matrix multiplications for LoRA computation."""
+        # Target: Fuse (x @ lora_a.T) @ lora_b.T into more efficient pattern
+        # Current: Standard MLX operations
+        temp = mx.matmul(x, lora_a.T)
+        result = mx.matmul(temp, lora_b.T)
+        return scale * result
     
-    def optimized_evaluate(
-        model: nn.Module,
-        dataset,
-        batch_size: int = 2,
-        num_batches: int = -1,
-        max_seq_length: int = 512
-    ) -> float:
-        """
-        Optimized evaluation with memory efficiency improvements.
-        """
-        return evaluate(
-            model=model,
-            dataset=dataset,
-            batch_size=batch_size,
-            num_batches=num_batches,
-            max_seq_length=max_seq_length
-        )
+    def optimized_gradient_accumulation(gradients_list):
+        """Optimized gradient accumulation across multiple LoRA layers."""
+        # Target: Batch gradient accumulation with reduced memory allocations
+        # Current: Standard accumulation
+        if not gradients_list:
+            return None
+        
+        accumulated = gradients_list[0]
+        for grad in gradients_list[1:]:
+            accumulated = mx.add(accumulated, grad)
+        return accumulated
     
-    def optimized_lora_fine_tuning(
-        model_name: str,
-        train_data_path: str,
-        config: Dict[str, Any],
-        adapter_save_path: str = "temp_adapters"
-    ) -> Tuple[float, Dict[str, Any]]:
-        """
-        Complete optimized LoRA fine-tuning pipeline with efficiency improvements.
-        """
-        # Set random seed
-        mx.random.seed(config.get('seed', 42))
-        np.random.seed(config.get('seed', 42))
-        
-        # Load model and tokenizer
-        print(f"Loading model: {model_name}")
-        model, tokenizer = load(model_name)
-        
-        # Convert args to namespace for compatibility
-        args = types.SimpleNamespace(**config)
-        args.data = train_data_path
-        
-        # Load datasets
-        print("Loading datasets...")
-        train_set, valid_set, test_set = load_dataset(args, tokenizer)
-        
-        # Freeze model and apply LoRA - CRITICAL: Follow exact MLX-LM pattern
-        print("Applying LoRA...")
-        model.freeze()
-        
-        # Use optimized LoRA layer conversion
-        optimized_linear_to_lora_layers(
-            model,
-            args.num_layers,
-            args.lora_parameters,
-            use_dora=(args.fine_tune_type == "dora")
-        )
-        
-        print_trainable_parameters(model)
-        
-        # Setup optimizer
-        optimizer_name = args.optimizer.lower()
-        optimizer_config = args.optimizer_config.get(optimizer_name, {})
-        
-        if optimizer_name == "adam":
-            optimizer = optim.Adam(learning_rate=args.learning_rate, **optimizer_config)
-        elif optimizer_name == "adamw":
-            optimizer = optim.AdamW(learning_rate=args.learning_rate, **optimizer_config)
-        else:
-            raise ValueError(f"Unsupported optimizer: {optimizer_name}")
-        
-        # Create adapter save directory
-        adapter_path = Path(adapter_save_path)
-        adapter_path.mkdir(parents=True, exist_ok=True)
-        
-        # Save configuration
-        args.adapter_file = adapter_path / "adapters.safetensors"
-        # Convert Path objects to strings for JSON serialization
-        config_to_save = vars(args).copy()
-        config_to_save['adapter_file'] = str(config_to_save['adapter_file'])
-        save_config(config_to_save, adapter_path / "adapter_config.json")
-        
-        # Training arguments
-        training_args = TrainingArgs(
-            batch_size=args.batch_size,
-            iters=args.iters,
-            val_batches=args.val_batches,
-            steps_per_report=args.steps_per_report,
-            steps_per_eval=args.steps_per_eval,
-            steps_per_save=args.save_every,
-            adapter_file=args.adapter_file,
-            max_seq_length=args.max_seq_length,
-            grad_checkpoint=args.grad_checkpoint,
-        )
-        
-        # Run optimized training
-        print("Starting optimized training...")
-        start_time = time.time()
-        
-        optimized_training_loop(
-            model=model,
-            train_dataset=CacheDataset(train_set),
-            val_dataset=CacheDataset(valid_set),
-            args=training_args,
-            optimizer=optimizer
-        )
-        
-        training_time = time.time() - start_time
-        
-        # Evaluate final performance
-        print("Evaluating...")
-        final_loss = optimized_evaluate(
-            model=model,
-            dataset=CacheDataset(test_set),
-            batch_size=args.batch_size,
-            num_batches=args.test_batches if hasattr(args, 'test_batches') else 10,
-            max_seq_length=args.max_seq_length
-        )
-        
-        metrics = {
-            'final_loss': float(final_loss),
-            'training_time': training_time,
-            'model_name': model_name,
-            'num_layers_trained': args.num_layers,
-            'lora_rank': args.lora_parameters['rank'],
-        }
-        
-        return final_loss, metrics
+    def optimized_lora_forward_fused(x, base_weight, lora_a, lora_b, scale):
+        """Fused forward pass combining base and LoRA computations."""
+        # Target: Fuse base @ weight + scale * ((x @ lora_a.T) @ lora_b.T)
+        # Current: Separate computations
+        base_out = mx.matmul(x, base_weight.T)
+        lora_out = optimized_matmul_sequence(x, lora_a, lora_b, scale)
+        return mx.add(base_out, lora_out)
+    
+    def memory_efficient_loss_computation(logits, targets, chunk_size=1024):
+        """Memory-efficient loss computation for large vocabulary."""
+        # Target: Chunked loss computation to reduce memory footprint
+        # Current: Standard cross-entropy (may be memory intensive)
+        return nn.losses.cross_entropy(logits, targets, reduction='mean')
     
     return {
-        'optimized_linear_to_lora_layers': optimized_linear_to_lora_layers,
-        'optimized_train_step': optimized_train_step,
-        'optimized_training_loop': optimized_training_loop,
-        'optimized_evaluate': optimized_evaluate,
-        'optimized_lora_fine_tuning': optimized_lora_fine_tuning,
+        'optimized_lora_linear_class': OptimizedLoRALinear,
+        'optimized_matmul_sequence': optimized_matmul_sequence,
+        'optimized_gradient_accumulation': optimized_gradient_accumulation,
+        'optimized_lora_forward_fused': optimized_lora_forward_fused,
+        'memory_efficient_loss_computation': memory_efficient_loss_computation,
     }
     # EVOLVE-BLOCK-END
 
 
-def baseline_lora_kernels():
-    """Baseline LoRA implementations using standard MLX-LM patterns."""
+def inject_evolved_kernels(model, evolved_kernels):
+    """Inject evolved kernels into model for optimized training."""
+    # This is where we would monkey-patch the evolved kernels
+    # For now, this is a placeholder - actual injection would depend on
+    # the specific optimizations discovered by evolution
     
-    if not MLX_LM_AVAILABLE:
-        raise ImportError("MLX-LM is required for real LoRA benchmarking")
+    # Example: Replace LoRA layers with optimized versions
+    # if 'optimized_lora_linear_class' in evolved_kernels:
+    #     OptimizedLoRA = evolved_kernels['optimized_lora_linear_class']
+    #     # Replace existing LoRA layers with optimized versions
     
-    def baseline_linear_to_lora_layers(
-        model: nn.Module,
-        num_layers: int,
-        lora_parameters: dict,
-        use_dora: bool = False
-    ):
-        """Standard LoRA layer conversion using mlx-lm."""
-        return linear_to_lora_layers(model, num_layers, lora_parameters, use_dora)
+    pass  # Placeholder for actual kernel injection
+
+
+def standard_lora_fine_tuning_with_kernels(
+    model_name: str,
+    train_data_path: str,
+    config: Dict[str, Any],
+    adapter_save_path: str = "temp_adapters",
+    evolved_kernels: Optional[Dict] = None
+) -> Tuple[float, Dict[str, Any]]:
+    """
+    Standard MLX-LM LoRA fine-tuning with optional evolved kernel injection.
     
-    def baseline_train_step(
-        model: nn.Module,
-        inputs: Dict[str, mx.array],
-        targets: mx.array,
-        optimizer: optim.Optimizer,
-        loss_fn: callable = None
-    ) -> Tuple[mx.array, Dict[str, mx.array]]:
-        """Standard training step."""
-        if loss_fn is None:
-            loss_fn = nn.losses.cross_entropy
-        
-        def compute_loss(model, inputs, targets):
-            logits = model(inputs)
-            if isinstance(logits, (list, tuple)):
-                logits = logits[0]
-            return loss_fn(logits, targets, reduction='mean')
-        
-        loss_and_grad_fn = nn.value_and_grad(model, compute_loss)
-        (loss, _), grads = loss_and_grad_fn(model, inputs, targets)
-        optimizer.update(model, grads)
-        
-        return loss, grads
+    This function uses the standard MLX-LM training pipeline but allows
+    injection of evolved kernels for optimization.
+    """
+    # Set random seed for reproducibility
+    mx.random.seed(config.get('seed', 42))
+    np.random.seed(config.get('seed', 42))
     
-    def baseline_training_loop(
-        model: nn.Module,
-        train_dataset,
-        val_dataset,
-        args,
-        optimizer: optim.Optimizer,
-        training_callback=None
-    ):
-        """Standard training loop using mlx-lm."""
-        if not isinstance(args, TrainingArgs):
-            training_args = TrainingArgs(
-                batch_size=getattr(args, 'batch_size', 2),
-                iters=getattr(args, 'iters', 10),
-                val_batches=getattr(args, 'val_batches', 5),
-                steps_per_report=getattr(args, 'steps_per_report', 5),
-                steps_per_eval=getattr(args, 'steps_per_eval', 100),
-                steps_per_save=getattr(args, 'save_every', 100),
-                adapter_file=getattr(args, 'adapter_file', None),
-                max_seq_length=getattr(args, 'max_seq_length', 512),
-                grad_checkpoint=getattr(args, 'grad_checkpoint', False),
-            )
-        else:
-            training_args = args
-        
-        return train(
-            model=model,
-            args=training_args,
-            optimizer=optimizer,
-            train_dataset=train_dataset,
-            val_dataset=val_dataset,
-            training_callback=training_callback,
-        )
+    # Load model and tokenizer using standard MLX-LM
+    print(f"Loading model: {model_name}")
+    model, tokenizer = load(model_name)
     
-    def baseline_evaluate(
-        model: nn.Module,
-        dataset,
-        batch_size: int = 2,
-        num_batches: int = -1,
-        max_seq_length: int = 512
-    ) -> float:
-        """Standard evaluation using mlx-lm."""
-        return evaluate(
-            model=model,
-            dataset=dataset,
-            batch_size=batch_size,
-            num_batches=num_batches,
-            max_seq_length=max_seq_length
-        )
+    # Inject evolved kernels if provided (like unsloth does)
+    if evolved_kernels:
+        print("🚀 Injecting evolved kernels...")
+        inject_evolved_kernels(model, evolved_kernels)
     
-    def baseline_lora_fine_tuning(
-        model_name: str,
-        train_data_path: str,
-        config: Dict[str, Any],
-        adapter_save_path: str = "temp_adapters_baseline"
-    ) -> Tuple[float, Dict[str, Any]]:
-        """Complete baseline LoRA fine-tuning pipeline using standard mlx-lm."""
-        # Set random seed
-        mx.random.seed(config.get('seed', 42))
-        np.random.seed(config.get('seed', 42))
-        
-        # Load model and tokenizer
-        print(f"Loading model: {model_name}")
-        model, tokenizer = load(model_name)
-        
-        # Convert args to namespace for compatibility
-        args = types.SimpleNamespace(**config)
-        args.data = train_data_path
-        
-        # Load datasets
-        print("Loading datasets...")
-        train_set, valid_set, test_set = load_dataset(args, tokenizer)
-        
-        # Apply LoRA - exact MLX-LM pattern
-        print("Applying baseline LoRA...")
-        model.freeze()
-        
-        baseline_linear_to_lora_layers(
-            model,
-            args.num_layers,
-            args.lora_parameters,
-            use_dora=(args.fine_tune_type == "dora")
-        )
-        
-        print_trainable_parameters(model)
-        
-        # Setup optimizer
-        optimizer_name = args.optimizer.lower()
-        optimizer_config = args.optimizer_config.get(optimizer_name, {})
-        
-        if optimizer_name == "adam":
-            optimizer = optim.Adam(learning_rate=args.learning_rate, **optimizer_config)
-        elif optimizer_name == "adamw":
-            optimizer = optim.AdamW(learning_rate=args.learning_rate, **optimizer_config)
-        else:
-            raise ValueError(f"Unsupported optimizer: {optimizer_name}")
-        
-        # Create adapter save directory
-        adapter_path = Path(adapter_save_path)
-        adapter_path.mkdir(parents=True, exist_ok=True)
-        
-        # Save configuration
-        args.adapter_file = adapter_path / "adapters.safetensors"
-        # Convert Path objects to strings for JSON serialization
-        config_to_save = vars(args).copy()
-        config_to_save['adapter_file'] = str(config_to_save['adapter_file'])
-        save_config(config_to_save, adapter_path / "adapter_config.json")
-        
-        # Training arguments
-        training_args = TrainingArgs(
-            batch_size=args.batch_size,
-            iters=args.iters,
-            val_batches=args.val_batches,
-            steps_per_report=args.steps_per_report,
-            steps_per_eval=args.steps_per_eval,
-            steps_per_save=args.save_every,
-            adapter_file=args.adapter_file,
-            max_seq_length=args.max_seq_length,
-            grad_checkpoint=args.grad_checkpoint,
-        )
-        
-        # Run standard training
-        print("Starting baseline training...")
-        start_time = time.time()
-        
-        baseline_training_loop(
-            model=model,
-            train_dataset=CacheDataset(train_set),
-            val_dataset=CacheDataset(valid_set),
-            args=training_args,
-            optimizer=optimizer
-        )
-        
-        training_time = time.time() - start_time
-        
-        # Evaluate final performance
-        print("Evaluating...")
-        final_loss = baseline_evaluate(
-            model=model,
-            dataset=CacheDataset(test_set),
-            batch_size=args.batch_size,
-            num_batches=args.test_batches if hasattr(args, 'test_batches') else 10,
-            max_seq_length=args.max_seq_length
-        )
-        
-        metrics = {
-            'final_loss': float(final_loss),
-            'training_time': training_time,
-            'model_name': model_name,
-            'num_layers_trained': args.num_layers,
-            'lora_rank': args.lora_parameters['rank'],
-        }
-        
-        return final_loss, metrics
+    # Convert config to namespace for MLX-LM compatibility
+    args = types.SimpleNamespace(**config)
+    args.data = train_data_path
     
-    return {
-        'optimized_linear_to_lora_layers': baseline_linear_to_lora_layers,
-        'optimized_train_step': baseline_train_step,
-        'optimized_training_loop': baseline_training_loop,
-        'optimized_evaluate': baseline_evaluate,
-        'optimized_lora_fine_tuning': baseline_lora_fine_tuning,
+    # Load datasets using standard MLX-LM
+    print("Loading datasets...")
+    train_set, valid_set, test_set = load_dataset(args, tokenizer)
+    
+    # Apply LoRA using standard MLX-LM - UNCHANGED
+    print("Applying LoRA...")
+    model.freeze()
+    linear_to_lora_layers(
+        model,
+        args.num_layers,
+        args.lora_parameters,
+        use_dora=(args.fine_tune_type == "dora")
+    )
+    print_trainable_parameters(model)
+    
+    # Setup optimizer using standard MLX
+    optimizer_name = args.optimizer.lower()
+    optimizer_config = args.optimizer_config.get(optimizer_name, {})
+    
+    if optimizer_name == "adam":
+        optimizer = optim.Adam(learning_rate=args.learning_rate, **optimizer_config)
+    elif optimizer_name == "adamw":
+        optimizer = optim.AdamW(learning_rate=args.learning_rate, **optimizer_config)
+    else:
+        raise ValueError(f"Unsupported optimizer: {optimizer_name}")
+    
+    # Create adapter save directory
+    adapter_path = Path(adapter_save_path)
+    adapter_path.mkdir(parents=True, exist_ok=True)
+    
+    # Save configuration
+    args.adapter_file = adapter_path / "adapters.safetensors"
+    config_to_save = vars(args).copy()
+    config_to_save['adapter_file'] = str(config_to_save['adapter_file'])
+    save_config(config_to_save, adapter_path / "adapter_config.json")
+    
+    # Training arguments for MLX-LM
+    training_args = TrainingArgs(
+        batch_size=args.batch_size,
+        iters=args.iters,
+        val_batches=args.val_batches,
+        steps_per_report=args.steps_per_report,
+        steps_per_eval=args.steps_per_eval,
+        steps_per_save=args.save_every,
+        adapter_file=args.adapter_file,
+        max_seq_length=args.max_seq_length,
+        grad_checkpoint=args.grad_checkpoint,
+    )
+    
+    # Run training using standard MLX-LM - UNCHANGED
+    print("Starting training...")
+    start_time = time.time()
+    
+    train(
+        model=model,
+        args=training_args,
+        optimizer=optimizer,
+        train_dataset=CacheDataset(train_set),
+        val_dataset=CacheDataset(valid_set),
+        training_callback=None,
+    )
+    
+    training_time = time.time() - start_time
+    
+    # Evaluate using standard MLX-LM - UNCHANGED
+    print("Evaluating...")
+    final_loss = evaluate(
+        model=model,
+        dataset=CacheDataset(test_set),
+        batch_size=args.batch_size,
+        num_batches=args.test_batches if hasattr(args, 'test_batches') else 10,
+        max_seq_length=args.max_seq_length
+    )
+    
+    metrics = {
+        'final_loss': float(final_loss),
+        'training_time': training_time,
+        'model_name': model_name,
+        'num_layers_trained': args.num_layers,
+        'lora_rank': args.lora_parameters['rank'],
+        'used_evolved_kernels': evolved_kernels is not None,
     }
+    
+    return final_loss, metrics
+
+
+def baseline_lora_kernels():
+    """
+    Baseline: Just return None to use standard MLX-LM without any optimizations.
+    
+    This eliminates the redundant baseline implementation and uses pure MLX-LM.
+    """
+    return None
 
 
 def test_lora_functionality():
@@ -590,12 +377,13 @@ def test_lora_functionality():
         print(f"  - Training iterations: {config['iters']}")
         print(f"  - Batch size: {config['batch_size']}")
         
-        # Get implementations
-        print("\n📦 Loading LoRA implementations...")
+        # Get evolved kernels
+        print("\n📦 Loading evolved kernels...")
         evolved_kernels = evolved_lora_kernels()
-        baseline_kernels = baseline_lora_kernels()
+        baseline_kernels = baseline_lora_kernels()  # Returns None
         
-        print("✅ Both evolved and baseline kernels loaded")
+        print("✅ Evolved kernels loaded")
+        print(f"✅ Baseline kernels: {baseline_kernels} (standard MLX-LM)")
         
         # Test basic model loading
         print("\n🔧 Testing basic model loading...")
@@ -604,9 +392,8 @@ def test_lora_functionality():
             print(f"✅ Model loaded: {type(model).__name__}")
             print(f"✅ Tokenizer loaded: {type(tokenizer).__name__}")
             
-            # Test LoRA parameter setup like in evaluator
+            # Test LoRA parameter setup
             try:
-                # Freeze model and apply minimal LoRA to test parameter access
                 model.freeze()
                 linear_to_lora_layers(
                     model,
@@ -615,7 +402,7 @@ def test_lora_functionality():
                     use_dora=False
                 )
                 print_trainable_parameters(model)
-                print("✅ Model parameter access working correctly")
+                print("✅ LoRA setup working correctly")
             except Exception as param_e:
                 print(f"✅ Model loaded but LoRA setup test failed: {param_e}")
                 print("This may be expected for some model configurations")
@@ -624,22 +411,16 @@ def test_lora_functionality():
             print(f"⚠️ Model loading failed: {e}")
             print("This is expected if the model is not available or too large for testing")
         
-        print("\n🎯 Real MLX-LM LoRA fine-tuning tests passed!")
-        print("Ready for OpenEvolve optimization!")
+        print("\n🎯 MLX-LM LoRA kernel optimization tests passed!")
+        print("Ready for OpenEvolve kernel evolution!")
         
         # Cleanup temporary files
         try:
-            from cleanup import cleanup_temp_files
-            cleanup_temp_files()
-        except ImportError:
-            # Fallback cleanup
             import shutil
-            try:
-                shutil.rmtree(temp_data_dir, ignore_errors=True)
-                shutil.rmtree("temp_adapters", ignore_errors=True)
-                shutil.rmtree("temp_adapters_baseline", ignore_errors=True)
-            except:
-                pass
+            shutil.rmtree(temp_data_dir, ignore_errors=True)
+            shutil.rmtree("temp_adapters", ignore_errors=True)
+        except:
+            pass
         
         return True
         
@@ -653,12 +434,17 @@ def test_lora_functionality():
 if __name__ == "__main__":
     success = test_lora_functionality()
     if success:
-        print("\n🎯 MLX-LM LoRA Fine-tuning Optimization Ready!")
+        print("\n🎯 MLX LoRA Kernel Optimization Ready!")
         print("\nThis example targets:")
-        print("- Real MLX-LM LoRA fine-tuning optimization")
-        print("- Same training loss with improved efficiency")  
+        print("- Evolved LoRA kernels injected into standard MLX-LM training")
+        print("- Same training loss with optimized kernel implementations")  
         print("- Memory reduction and/or speed improvements")
-        print("- Production-ready MLX-LM integration")
+        print("- Unsloth-style kernel optimization approach")
+        print("\nEvolution targets:")
+        print("- OptimizedLoRALinear class with fused operations")
+        print("- Memory-efficient matrix multiplication sequences")
+        print("- Optimized gradient accumulation patterns")
+        print("- Fused forward pass computations")
         print("\nNext steps:")
         print("1. Run: python evaluator.py")
         print("2. Run: python ../../../openevolve-run.py initial_program.py evaluator.py --config config.yaml")

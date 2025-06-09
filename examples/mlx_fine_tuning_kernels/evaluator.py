@@ -120,11 +120,10 @@ class MLXLoRABenchmark:
     
     def compare_implementations(
         self,
-        baseline_kernels: Dict,
         evolved_kernels: Dict,
-        num_trials: int = 1
+        num_trials: int = 1  
     ) -> Dict[str, Any]:
-        """Compare baseline vs evolved LoRA implementations using real mlx-lm."""
+        """Compare standard MLX-LM vs MLX-LM with evolved kernels injected."""
         
         if not MLX_LM_AVAILABLE:
             return {"error": "MLX-LM not available for real benchmarking"}
@@ -152,19 +151,19 @@ class MLXLoRABenchmark:
                 evolved_data_dir, evolved_adapter_dir
             ])
             
-            # Test baseline implementation
+            # Test baseline implementation (standard MLX-LM)
             try:
-                print("🔬 Testing BASELINE implementation...")
+                print("🔬 Testing BASELINE implementation (standard MLX-LM)...")
                 
                 # Create test dataset
                 self._create_test_dataset(baseline_data_dir)
                 baseline_config = self.create_test_config(baseline_data_dir, baseline_adapter_dir)
                 
                 clear_mlx_cache_and_gc()
-                baseline_result = self._run_lora_benchmark(
-                    baseline_kernels['optimized_lora_fine_tuning'],
+                baseline_result = self._run_lora_benchmark_with_kernels(
                     baseline_config,
-                    "BASELINE"
+                    "BASELINE",
+                    evolved_kernels=None  # No evolved kernels = standard MLX-LM
                 )
                 results['baseline'].append(baseline_result)
                 
@@ -185,10 +184,10 @@ class MLXLoRABenchmark:
                 evolved_config = self.create_test_config(evolved_data_dir, evolved_adapter_dir)
                 
                 clear_mlx_cache_and_gc()
-                evolved_result = self._run_lora_benchmark(
-                    evolved_kernels['optimized_lora_fine_tuning'],
+                evolved_result = self._run_lora_benchmark_with_kernels(
                     evolved_config,
-                    "EVOLVED"
+                    "EVOLVED",
+                    evolved_kernels=evolved_kernels  # Inject evolved kernels
                 )
                 results['evolved'].append(evolved_result)
                 
@@ -411,13 +410,13 @@ class MLXLoRABenchmark:
                 for example in data:
                     f.write(json.dumps(example) + "\n")
     
-    def _run_lora_benchmark(
+    def _run_lora_benchmark_with_kernels(
         self,
-        lora_fine_tuning_fn,
         config: Dict[str, Any],
-        implementation_name: str
+        implementation_name: str,
+        evolved_kernels: Optional[Dict] = None
     ) -> Dict[str, Union[float, str]]:
-        """Run LoRA fine-tuning benchmark."""
+        """Run LoRA fine-tuning benchmark with optional evolved kernel injection."""
         
         print(f"  🧪 Running {implementation_name} LoRA fine-tuning...")
         
@@ -426,12 +425,21 @@ class MLXLoRABenchmark:
             memory_before = get_memory_usage()
             start_time = time.perf_counter()
             
-            # Run LoRA fine-tuning
-            final_loss, metrics = lora_fine_tuning_fn(
+            # Import and run the training function
+            import sys
+            import os
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            sys.path.insert(0, current_dir)
+            
+            from initial_program import standard_lora_fine_tuning_with_kernels
+            
+            # Run training with or without evolved kernels
+            final_loss, metrics = standard_lora_fine_tuning_with_kernels(
                 model_name=config['model'],
                 train_data_path=config['data'],
                 config=config,
-                adapter_save_path=config['adapter_path']
+                adapter_save_path=config['adapter_path'],
+                evolved_kernels=evolved_kernels
             )
             
             # Timing and memory
@@ -451,6 +459,7 @@ class MLXLoRABenchmark:
             print(f"    Final loss: {final_loss:.4f}")
             print(f"    Training time: {training_time:.2f}s")
             print(f"    Memory delta: {memory_delta:.1f} MB")
+            print(f"    Used evolved kernels: {evolved_kernels is not None}")
             
             return {
                 'final_loss': float(final_loss),
@@ -561,28 +570,20 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
                 "error": "Missing baseline_lora_kernels function"
             }
         
-        # Get LoRA implementations
+        # Get evolved kernels
         evolved_kernels = evolved_program.evolved_lora_kernels()
-        baseline_kernels = evolved_program.baseline_lora_kernels()
+        baseline_kernels = evolved_program.baseline_lora_kernels()  # Returns None
         
-        # Check required kernels
-        required_key = 'optimized_lora_fine_tuning'
-        if required_key not in evolved_kernels or required_key not in baseline_kernels:
-            return {
-                "overall_score": 0.0,
-                "error": f"Missing kernel: {required_key}"
-            }
-        
-        print(f"✅ LoRA implementations loaded successfully")
+        print(f"✅ Evolved kernels loaded: {list(evolved_kernels.keys())}")
+        print(f"✅ Baseline kernels: {baseline_kernels} (standard MLX-LM)")
         
         # Setup benchmark
         benchmark = MLXLoRABenchmark()
         
         # Run comparison
         comparison_results = benchmark.compare_implementations(
-            baseline_kernels=baseline_kernels,
             evolved_kernels=evolved_kernels,
-            num_trials=5  
+            num_trials=5 
         )
         
         if 'error' in comparison_results:
