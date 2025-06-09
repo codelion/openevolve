@@ -3,6 +3,7 @@ import { scrollAndSelectNodeById } from './graph.js';
 
 const sidebar = document.getElementById('sidebar');
 export let sidebarSticky = false;
+let lastSidebarTab = null;
 
 export function showSidebar() {
     sidebar.style.transform = 'translateX(0)';
@@ -24,7 +25,6 @@ export function showSidebarContent(d, fromHover = false) {
     if (archiveProgramIds && archiveProgramIds.includes(d.id)) {
         starHtml = '<span style="position:relative;top:0.05em;left:0.15em;font-size:1.6em;color:#FFD600;z-index:10;" title="MAP-elites member" aria-label="MAP-elites member">★</span>';
     }
-    // Locator icon button (left of close X)
     let locatorBtn = '<button id="sidebar-locator-btn" title="Locate selected node" aria-label="Locate selected node" style="position:absolute;top:0.05em;right:2.5em;font-size:1.5em;background:none;border:none;color:#FFD600;cursor:pointer;z-index:10;line-height:1;filter:drop-shadow(0 0 2px #FFD600);">⦿</button>';
     let closeBtn = '<button id="sidebar-close-btn" style="position:absolute;top:0.05em;right:0.15em;font-size:1.6em;background:none;border:none;color:#888;cursor:pointer;z-index:10;line-height:1;">&times;</button>';
     let openLink = '<div style="text-align:center;margin:-1em 0 1.2em 0;"><a href="/program/' + d.id + '" target="_blank" class="open-in-new" style="font-size:0.95em;">[open in new window]</a></div>';
@@ -33,17 +33,45 @@ export function showSidebarContent(d, fromHover = false) {
     let tabNames = [];
     if (d.code && typeof d.code === 'string' && d.code.trim() !== '') tabNames.push('Code');
     if (d.prompts && typeof d.prompts === 'object' && Object.keys(d.prompts).length > 0) tabNames.push('Prompts');
+    const children = allNodeData.filter(n => n.parent_id === d.id);
+    if (children.length > 0) tabNames.push('Children');
+    let activeTab = lastSidebarTab && tabNames.includes(lastSidebarTab) ? lastSidebarTab : tabNames[0];
+
+    // Helper to render tab content
+    function renderSidebarTabContent(tabName, d, children) {
+        if (tabName === 'Code') {
+            return `<pre class="sidebar-code-pre">${d.code}</pre>`;
+        }
+        if (tabName === 'Prompts') {
+            let html = '';
+            for (const [k, v] of Object.entries(d.prompts)) {
+                html += `<div style="margin-bottom:0.7em;"><b>${k}:</b><pre class="sidebar-pre">${v}</pre></div>`;
+            }
+            return html;
+        }
+        if (tabName === 'Children') {
+            const metric = (document.getElementById('metric-select') && document.getElementById('metric-select').value) || 'combined_score';
+            let min = 0, max = 1;
+            const vals = children.map(child => (child.metrics && typeof child.metrics[metric] === 'number') ? child.metrics[metric] : null).filter(x => x !== null);
+            if (vals.length > 0) {
+                min = Math.min(...vals);
+                max = Math.max(...vals);
+            }
+            return `<div><ul style='margin:0.5em 0 0 1em;padding:0;'>` +
+                children.map(child => {
+                    let val = (child.metrics && typeof child.metrics[metric] === 'number') ? child.metrics[metric].toFixed(4) : '(no value)';
+                    let bar = (child.metrics && typeof child.metrics[metric] === 'number') ? renderMetricBar(child.metrics[metric], min, max) : '';
+                    return `<li style='margin-bottom:0.3em;'><a href="#" class="child-link" data-child="${child.id}">${child.id}</a><br /><br /> <span style='margin-left:0.5em;'>${val}</span> ${bar}</li>`;
+                }).join('') +
+                `</ul></div>`;
+        }
+        return '';
+    }
+
     if (tabNames.length > 0) {
         tabHtml = '<div id="sidebar-tab-bar" style="display:flex;gap:0.7em;margin-bottom:0.7em;">' +
-            tabNames.map((name, i) => `<span class="sidebar-tab${i===0?' active':''}" data-tab="${name}">${name}</span>`).join('') + '</div>';
-        tabContentHtml = '<div id="sidebar-tab-content">';
-        if (tabNames[0] === 'Code') tabContentHtml += `<pre class="sidebar-code-pre">${d.code}</pre>`;
-        if (tabNames[0] === 'Prompts') {
-            for (const [k, v] of Object.entries(d.prompts)) {
-                tabContentHtml += `<div style="margin-bottom:0.7em;"><b>${k}:</b><pre class="sidebar-pre">${v}</pre></div>`;
-            }
-        }
-        tabContentHtml += '</div>';
+            tabNames.map((name) => `<span class="sidebar-tab${name===activeTab?' active':''}" data-tab="${name}">${name}</span>`).join('') + '</div>';
+        tabContentHtml = `<div id="sidebar-tab-content">${renderSidebarTabContent(activeTab, d, children)}</div>`;
     }
     let parentIslandHtml = '';
     if (d.parent_id && d.parent_id !== 'None') {
@@ -72,18 +100,55 @@ export function showSidebarContent(d, fromHover = false) {
                 Array.from(tabBar.children).forEach(e => e.classList.remove('active'));
                 tabEl.classList.add('active');
                 const tabName = tabEl.dataset.tab;
+                lastSidebarTab = tabName;
                 const tabContent = document.getElementById('sidebar-tab-content');
-                if (tabName === 'Code') tabContent.innerHTML = `<pre class="sidebar-code-pre">${d.code}</pre>`;
-                if (tabName === 'Prompts') {
-                    let html = '';
-                    for (const [k, v] of Object.entries(d.prompts)) {
-                        html += `<div style="margin-bottom:0.7em;"><b>${k}:</b><pre class="sidebar-pre">${v}</pre></div>`;
-                    }
-                    tabContent.innerHTML = html;
-                }
+                tabContent.innerHTML = renderSidebarTabContent(tabName, d, children);
+                setTimeout(() => {
+                    document.querySelectorAll('.child-link').forEach(link => {
+                        link.onclick = function(e) {
+                            e.preventDefault();
+                            const childNode = allNodeData.find(n => n.id == link.dataset.child);
+                            if (childNode) {
+                                window._lastSelectedNodeData = childNode;
+                                const perfTabBtn = document.getElementById('tab-performance');
+                                const perfTabView = document.getElementById('view-performance');
+                                if ((perfTabBtn && perfTabBtn.classList.contains('active')) || (perfTabView && perfTabView.classList.contains('active'))) {
+                                    import('./performance.js').then(mod => {
+                                        mod.selectPerformanceNodeById(childNode.id);
+                                        showSidebar();
+                                    });
+                                } else {
+                                    scrollAndSelectNodeById(childNode.id);
+                                }
+                            }
+                        };
+                    });
+                }, 0);
             };
         });
     }
+    setTimeout(() => {
+        document.querySelectorAll('.child-link').forEach(link => {
+            link.onclick = function(e) {
+                e.preventDefault();
+                const childNode = allNodeData.find(n => n.id == link.dataset.child);
+                if (childNode) {
+                    window._lastSelectedNodeData = childNode;
+                    // Check if performance tab is active
+                    const perfTabBtn = document.getElementById('tab-performance');
+                    const perfTabView = document.getElementById('view-performance');
+                    if ((perfTabBtn && perfTabBtn.classList.contains('active')) || (perfTabView && perfTabView.classList.contains('active'))) {
+                        import('./performance.js').then(mod => {
+                            mod.selectPerformanceNodeById(childNode.id);
+                            showSidebar();
+                        });
+                    } else {
+                        scrollAndSelectNodeById(childNode.id);
+                    }
+                }
+            };
+        });
+    }, 0);
     const closeBtnEl = document.getElementById('sidebar-close-btn');
     if (closeBtnEl) closeBtnEl.onclick = function() {
         setSelectedProgramId(null);

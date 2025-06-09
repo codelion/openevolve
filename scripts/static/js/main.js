@@ -5,6 +5,7 @@ import { updateListSidebarLayout, renderNodeList } from './list.js';
 import { renderGraph, g, getNodeRadius, animateGraphNodeAttributes } from './graph.js';
 
 export let allNodeData = [];
+let metricMinMax = {};
 
 let archiveProgramIds = [];
 
@@ -13,15 +14,55 @@ const sidebarEl = document.getElementById('sidebar');
 let lastDataStr = null;
 let selectedProgramId = null;
 
+function computeMetricMinMax(nodes) {
+    metricMinMax = {};
+    if (!nodes) return;
+    nodes.forEach(n => {
+        if (n.metrics && typeof n.metrics === 'object') {
+            for (const [k, v] of Object.entries(n.metrics)) {
+                if (typeof v === 'number' && isFinite(v)) {
+                    if (!(k in metricMinMax)) {
+                        metricMinMax[k] = {min: v, max: v};
+                    } else {
+                        metricMinMax[k].min = Math.min(metricMinMax[k].min, v);
+                        metricMinMax[k].max = Math.max(metricMinMax[k].max, v);
+                    }
+                }
+            }
+        }
+    });
+    // Avoid min==max
+    for (const k in metricMinMax) {
+        if (metricMinMax[k].min === metricMinMax[k].max) {
+            metricMinMax[k].min = 0;
+            metricMinMax[k].max = 1;
+        }
+    }
+}
+
 function formatMetrics(metrics) {
-    return Object.entries(metrics).map(([k, v]) => `<b>${k}</b>: ${v}`).join('<br>');
+    if (!metrics || typeof metrics !== 'object') return '';
+    let rows = Object.entries(metrics).map(([k, v]) => {
+        let min = 0, max = 1;
+        if (metricMinMax[k]) {
+            min = metricMinMax[k].min;
+            max = metricMinMax[k].max;
+        }
+        let valStr = (typeof v === 'number' && isFinite(v)) ? v.toFixed(4) : v;
+        return `<tr><td style='padding-right:0.7em;'><b>${k}</b></td><td style='padding-right:0.7em;'>${valStr}</td><td style='min-width:90px;'>${typeof v === 'number' ? renderMetricBar(v, min, max) : ''}</td></tr>`;
+    }).join('');
+    return `<table class='metrics-table'><tbody>${rows}</tbody></table>`;
 }
 
 function renderMetricBar(value, min, max, opts={}) {
     let percent = 0;
-    if (typeof value === 'number' && isFinite(value) && max > min) {
-        percent = (value - min) / (max - min);
-        percent = Math.max(0, Math.min(1, percent));
+    if (typeof value === 'number' && isFinite(value)) {
+        if (max > min) {
+            percent = (value - min) / (max - min);
+            percent = Math.max(0, Math.min(1, percent));
+        } else if (max === min) {
+            percent = 1; // Show as filled if min==max
+        }
     }
     let minLabel = `<span class="metric-bar-min">${min.toFixed(2)}</span>`;
     let maxLabel = `<span class="metric-bar-max">${max.toFixed(2)}</span>`;
@@ -201,10 +242,11 @@ document.getElementById('tab-branching').addEventListener('click', function() {
 // Export all shared state and helpers for use in other modules
 export function setAllNodeData(nodes) {
     allNodeData = nodes;
+    computeMetricMinMax(nodes);
 }
 
 export function setSelectedProgramId(id) {
     selectedProgramId = id;
 }
 
-export { archiveProgramIds, lastDataStr, selectedProgramId, formatMetrics, renderMetricBar, getHighlightNodes, getSelectedMetric };
+export { archiveProgramIds, lastDataStr, selectedProgramId, formatMetrics, renderMetricBar, getHighlightNodes, getSelectedMetric, metricMinMax };

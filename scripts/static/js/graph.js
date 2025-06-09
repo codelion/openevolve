@@ -104,6 +104,8 @@ export function selectProgram(programId) {
         }
         nodeElem.classed("node-hovered", false);
     });
+    // Dispatch event for list view sync
+    window.dispatchEvent(new CustomEvent('node-selected', { detail: { id: programId } }));
 }
 
 let svg = null;

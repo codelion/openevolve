@@ -172,6 +172,8 @@ import { selectListNodeById } from './list.js';
 export function selectPerformanceNodeById(id, opts = {}) {
     setSelectedProgramId(id);
     setSidebarSticky(true);
+    // Dispatch event for list view sync
+    window.dispatchEvent(new CustomEvent('node-selected', { detail: { id } }));
     if (typeof allNodeData !== 'undefined' && allNodeData.length) {
         updatePerformanceGraph(allNodeData, opts);
         const node = allNodeData.find(n => n.id == id);

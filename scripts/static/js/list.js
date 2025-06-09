@@ -55,6 +55,9 @@ export function renderNodeList(nodes) {
         <span class="summary-label">Average</span>
         <span class="summary-value">${avgScore.toFixed(4)}</span>
         ${renderMetricBar(avgScore, minScore, maxScore)}
+        <span style="margin-left:1.2em;font-size:0.98em;color:#888;vertical-align:middle;">
+          <span title="Total programs, generations, islands">📦</span> Total: ${nodes.length} programs, ${new Set(nodes.map(n => n.generation)).size} generations, ${new Set(nodes.map(n => n.island)).size} islands
+        </span>
       </div>
     `;
     container.innerHTML = '';
@@ -151,6 +154,12 @@ export function renderNodeList(nodes) {
         }, 0);
         container.appendChild(row);
     });
+    container.focus();
+    // Scroll to selected node if present
+    const selected = container.querySelector('.node-list-item.selected');
+    if (selected) {
+        selected.scrollIntoView({behavior: 'smooth', block: 'center'});
+    }
 }
 export function selectListNodeById(id) {
     setSelectedProgramId(id);
@@ -201,3 +210,52 @@ function showSidebarListView() {
         showSidebar();
     }
 }
+
+// Sync selection when switching to list tab
+const tabListBtn = document.getElementById('tab-list');
+if (tabListBtn) {
+    tabListBtn.addEventListener('click', () => {
+        renderNodeList(allNodeData);
+    });
+}
+
+// Keyboard navigation for up/down in list view
+const nodeListContainer = document.getElementById('node-list-container');
+if (nodeListContainer) {
+    nodeListContainer.tabIndex = 0;
+    nodeListContainer.addEventListener('keydown', function(e) {
+        if (!['ArrowUp', 'ArrowDown'].includes(e.key)) return;
+        e.preventDefault(); // Always prevent default to avoid browser scroll
+        const items = Array.from(nodeListContainer.querySelectorAll('.node-list-item'));
+        if (!items.length) return;
+        let idx = items.findIndex(item => item.classList.contains('selected'));
+        if (idx === -1) idx = 0;
+        if (e.key === 'ArrowUp' && idx > 0) idx--;
+        if (e.key === 'ArrowDown' && idx < items.length - 1) idx++;
+        const nextItem = items[idx];
+        if (nextItem) {
+            const nodeId = nextItem.getAttribute('data-node-id');
+            selectListNodeById(nodeId);
+            nextItem.focus();
+            nextItem.scrollIntoView({behavior: 'smooth', block: 'center'});
+            // Also scroll the page if needed
+            const rect = nextItem.getBoundingClientRect();
+            if (rect.top < 0 || rect.bottom > window.innerHeight) {
+                window.scrollTo({top: window.scrollY + rect.top - 100, behavior: 'smooth'});
+            }
+        }
+    });
+    // Focus container on click to enable keyboard nav
+    nodeListContainer.addEventListener('click', function() {
+        nodeListContainer.focus();
+    });
+}
+
+// Listen for node selection events from other views and sync selection in the list view
+window.addEventListener('node-selected', function(e) {
+    // e.detail should contain the selected node id
+    if (e.detail && e.detail.id) {
+        setSelectedProgramId(e.detail.id);
+        renderNodeList(allNodeData);
+    }
+});
