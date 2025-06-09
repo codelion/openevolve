@@ -82,7 +82,7 @@ import { selectListNodeById } from './list.js';
             g.selectAll('circle')
                 .filter(function(d) { return undefinedNodes.includes(d); })
                 .transition().duration(400)
-                .attr('cx', margin.left + undefinedBoxWidth/2)
+                .attr('cx', d => d._nanX || (margin.left + undefinedBoxWidth/2))
                 .attr('cy', d => yScales[showIslands ? d.island : null](d.generation))
                 .attr('r', d => getNodeRadius(d))
                 .attr('fill', d => getNodeColor(d))
@@ -319,11 +319,11 @@ function updatePerformanceGraph(nodes, options = {}) {
             .attr('class', 'axis')
             .attr('transform', `translate(${margin.left+graphXOffset},0)`)
             .call(d3.axisLeft(yScales[island]).ticks(Math.min(12, genCount)));
-        // Y axis label
+        // Y axis label (always at start of main graph)
         g.append('text')
             .attr('class', 'axis-label')
             .attr('transform', `rotate(-90)`) // vertical
-            .attr('y', margin.left + 8)
+            .attr('y', margin.left + graphXOffset + 8)
             .attr('x', -(margin.top + i*graphHeight + (graphHeight - margin.top - margin.bottom)/2))
             .attr('dy', '-2.2em')
             .attr('text-anchor', 'middle')
@@ -367,11 +367,27 @@ function updatePerformanceGraph(nodes, options = {}) {
         .text(metric);
     // NaN box
     if (undefinedNodes.length) {
+        // Group NaN nodes by (generation, island)
+        const nanGroups = {};
+        undefinedNodes.forEach(n => {
+            const key = `${n.generation}|${showIslands ? n.island : ''}`;
+            if (!nanGroups[key]) nanGroups[key] = [];
+            nanGroups[key].push(n);
+        });
+        // Find max group size
+        const maxGroupSize = Math.max(...Object.values(nanGroups).map(g => g.length));
+        // Box width should be based on the full intended spread, not the reduced spread
+        const spreadWidth = Math.max(38, 24 * maxGroupSize);
+        undefinedBoxWidth = spreadWidth/2 + 32; // 16px padding on each side
+        // Add a fixed offset so the NaN box is further left of the main graph
+        const nanBoxGap = 64; // px gap between NaN box and main graph
+        const nanBoxRight = margin.left + graphXOffset - nanBoxGap;
+        const nanBoxLeft = nanBoxRight - undefinedBoxWidth;
         const boxTop = margin.top;
         const boxBottom = showIslands ? (margin.top + islands.length*graphHeight - margin.bottom) : (margin.top + graphHeight - margin.bottom);
         g.append('text')
             .attr('class', 'nan-label')
-            .attr('x', margin.left + undefinedBoxWidth/2)
+            .attr('x', nanBoxLeft + undefinedBoxWidth/2)
             .attr('y', boxTop - 10)
             .attr('text-anchor', 'middle')
             .attr('font-size', '0.92em')
@@ -379,7 +395,7 @@ function updatePerformanceGraph(nodes, options = {}) {
             .text('NaN');
         g.append('rect')
             .attr('class', 'nan-box')
-            .attr('x', margin.left)
+            .attr('x', nanBoxLeft)
             .attr('y', boxTop)
             .attr('width', undefinedBoxWidth)
             .attr('height', boxBottom - boxTop)
@@ -387,6 +403,20 @@ function updatePerformanceGraph(nodes, options = {}) {
             .attr('stroke', '#bbb')
             .attr('stroke-width', 1.5)
             .attr('rx', 12);
+        // Assign x offset for each NaN node (spread only in the center half of the box)
+        undefinedNodes.forEach(n => {
+            const key = `${n.generation}|${showIslands ? n.island : ''}`;
+            const group = nanGroups[key];
+            if (!group) return;
+            if (group.length === 1) {
+                n._nanX = nanBoxLeft + undefinedBoxWidth/2;
+            } else {
+                const idx = group.indexOf(n);
+                const innerSpread = spreadWidth / 2; // only use half the box for node spread
+                const innerStart = nanBoxLeft + (undefinedBoxWidth - innerSpread) / 2;
+                n._nanX = innerStart + innerSpread * (idx + 0.5) / group.length;
+            }
+        });
     }
     // Data join for edges
     const nodeById = Object.fromEntries(nodes.map(n => [n.id, n]));
@@ -399,15 +429,15 @@ function updatePerformanceGraph(nodes, options = {}) {
         .attr('stroke', '#888')
         .attr('stroke-width', 1.5)
         .attr('opacity', 0.5)
-        .attr('x1', d => x(d.source.metrics && typeof d.source.metrics[metric] === 'number' ? d.source.metrics[metric] : null) || (margin.left + undefinedBoxWidth/2))
+        .attr('x1', d => (typeof d.source._nanX === 'number') ? d.source._nanX : x(d.source.metrics && typeof d.source.metrics[metric] === 'number' ? d.source.metrics[metric] : null))
         .attr('y1', d => yScales[showIslands ? d.source.island : null](d.source.generation))
-        .attr('x2', d => x(d.target.metrics && typeof d.target.metrics[metric] === 'number' ? d.target.metrics[metric] : null) || (margin.left + undefinedBoxWidth/2))
+        .attr('x2', d => (typeof d.target._nanX === 'number') ? d.target._nanX : x(d.target.metrics && typeof d.target.metrics[metric] === 'number' ? d.target.metrics[metric] : null))
         .attr('y2', d => yScales[showIslands ? d.target.island : null](d.target.generation))
         .merge(edgeSel)
         .transition().duration(500)
-        .attr('x1', d => x(d.source.metrics && typeof d.source.metrics[metric] === 'number' ? d.source.metrics[metric] : null) || (margin.left + undefinedBoxWidth/2))
+        .attr('x1', d => (typeof d.source._nanX === 'number') ? d.source._nanX : x(d.source.metrics && typeof d.source.metrics[metric] === 'number' ? d.source.metrics[metric] : null))
         .attr('y1', d => yScales[showIslands ? d.source.island : null](d.source.generation))
-        .attr('x2', d => x(d.target.metrics && typeof d.target.metrics[metric] === 'number' ? d.target.metrics[metric] : null) || (margin.left + undefinedBoxWidth/2))
+        .attr('x2', d => (typeof d.target._nanX === 'number') ? d.target._nanX : x(d.target.metrics && typeof d.target.metrics[metric] === 'number' ? d.target.metrics[metric] : null))
         .attr('y2', d => yScales[showIslands ? d.target.island : null](d.target.generation));
     edgeSel.exit().transition().duration(300).attr('opacity', 0).remove();
     // Data join for nodes
@@ -485,7 +515,7 @@ function updatePerformanceGraph(nodes, options = {}) {
     nanSel.enter()
         .append('circle')
         .attr('class', 'performance-nan')
-        .attr('cx', margin.left + undefinedBoxWidth/2)
+        .attr('cx', d => d._nanX)
         .attr('cy', d => yScales[showIslands ? d.island : null](d.generation))
         .attr('r', d => getNodeRadius(d))
         .attr('fill', d => getNodeColor(d))
@@ -530,7 +560,7 @@ function updatePerformanceGraph(nodes, options = {}) {
         })
         .merge(nanSel)
         .transition().duration(500)
-        .attr('cx', margin.left + undefinedBoxWidth/2)
+        .attr('cx', d => d._nanX)
         .attr('cy', d => yScales[showIslands ? d.island : null](d.generation))
         .attr('r', d => getNodeRadius(d))
         .attr('fill', d => getNodeColor(d))

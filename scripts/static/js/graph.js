@@ -402,4 +402,9 @@ function dragended(event, d) {
     d.fy = null;
 }
 
+window.addEventListener('node-selected', function(e) {
+    // When node selection changes (e.g., from list view), update graph node selection
+    updateGraphNodeSelection();
+});
+
 export { renderGraph, g };
