@@ -260,12 +260,12 @@ class PromptSampler:
 
                 # Only compare if both values are numeric
                 if isinstance(prog_value, (int, float)) and isinstance(parent_value, (int, float)):
-                    if prog_value >= parent_value:
+                    if prog_value > parent_value:
                         numeric_comparisons_improved.append(True)
                     else:
                         numeric_comparisons_improved.append(False)
 
-                    if prog_value <= parent_value:
+                    if prog_value < parent_value:
                         numeric_comparisons_regressed.append(True)
                     else:
                         numeric_comparisons_regressed.append(False)
