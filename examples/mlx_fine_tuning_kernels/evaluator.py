@@ -2,7 +2,7 @@
 MLX LoRA Fine-tuning Optimization Evaluator
 
 This evaluator performs real LoRA fine-tuning benchmarks using the mlx-lm library,
-comparing evolved implementations against standard MLX-LM LoRA implementations. 
+comparing standard MLX-LM against MLX-LM with evolved kernels injected. 
 The goal is to achieve the same training loss with improved memory efficiency and/or speed.
 """
 
@@ -62,8 +62,8 @@ def clear_mlx_cache_and_gc():
 
 class MLXLoRABenchmark:
     """
-    Benchmark for comparing MLX-LM LoRA fine-tuning implementations.
-    Measures training loss convergence, speed, and memory usage using real mlx-lm.
+    Benchmark for comparing standard MLX-LM vs MLX-LM with evolved kernels.
+    Uses proper sequential evaluation to avoid monkey patching interference.
     """
     
     def __init__(self, model_name: str = "mlx-community/Qwen2.5-0.5B-Instruct-4bit"):
@@ -78,13 +78,6 @@ class MLXLoRABenchmark:
             except:
                 pass
         self.temp_dirs.clear()
-        
-        # Also run general cleanup
-        try:
-            from cleanup import cleanup_temp_files
-            cleanup_temp_files()
-        except ImportError:
-            pass
     
     def create_test_config(self, data_dir: str, adapter_dir: str) -> Dict[str, Any]:
         """Create test configuration for LoRA fine-tuning with all MLX-LM expected attributes."""
@@ -96,21 +89,21 @@ class MLXLoRABenchmark:
             "optimizer_config": {"adam": {}},
             "data": data_dir,
             "seed": 42,
-            "num_layers": 2,  # Small for fast testing
-            "batch_size": 1,  # Small for memory efficiency
-            "iters": 10,      # More iterations for larger dataset
-            "val_batches": 5,
+            "num_layers": 4,  # More layers for comprehensive evaluation
+            "batch_size": 2,  # Reasonable batch size for larger dataset
+            "iters": 25,      # More iterations for larger dataset
+            "val_batches": 10,
             "learning_rate": 1e-4,
-            "steps_per_report": 5,
-            "steps_per_eval": 20,
+            "steps_per_report": 10,
+            "steps_per_eval": 50,
             "adapter_path": adapter_dir,
             "save_every": 100,
-            "max_seq_length": 256,  # Shorter sequences
-            "lora_parameters": {"rank": 8, "dropout": 0.0, "scale": 16.0},  # Smaller rank
+            "max_seq_length": 512,  # Full sequence length
+            "lora_parameters": {"rank": 16, "dropout": 0.0, "scale": 16.0},  # Standard rank
             "mask_prompt": False,
             # Additional MLX-LM expected attributes
             "test": True,
-            "test_batches": 5,
+            "test_batches": 10,
             "resume_adapter_file": None,
             "config": None,
             "grad_checkpoint": False,
@@ -121,90 +114,130 @@ class MLXLoRABenchmark:
     def compare_implementations(
         self,
         evolved_kernels: Dict,
-        num_trials: int = 1  
+        num_trials: int = 3
     ) -> Dict[str, Any]:
-        """Compare standard MLX-LM vs MLX-LM with evolved kernels injected."""
+        """
+        Compare standard MLX-LM vs MLX-LM with evolved kernels.
+        
+        PROPER EVALUATION STRUCTURE:
+        1. Run ALL baseline trials first (no patching) 
+        2. Calculate baseline metrics
+        3. Apply evolved kernels patching ONCE
+        4. Run ALL evolved trials 
+        5. Calculate evolved metrics
+        6. Compare results
+        
+        This avoids monkey patching interference between trials.
+        """
         
         if not MLX_LM_AVAILABLE:
             return {"error": "MLX-LM not available for real benchmarking"}
         
-        print(f"\n📊 MLX-LM LORA FINE-TUNING COMPARISON")
+        print(f"\n📊 MLX-LM LORA KERNEL COMPARISON")
         print(f"  Model: {self.model_name}")
-        print(f"  Trials: {num_trials}")
+        print(f"  Trials per implementation: {num_trials}")
+        print(f"  Evaluation strategy: Sequential (baseline first, then evolved)")
         
-        results = {
-            'baseline': [],
-            'evolved': []
-        }
+        baseline_results = []
+        evolved_results = []
+        
+        # ========================================
+        # PHASE 1: Run ALL baseline trials first
+        # ========================================
+        print(f"\n🔬 PHASE 1: Running {num_trials} BASELINE trials (standard MLX-LM)")
         
         for trial in range(num_trials):
-            print(f"\n--- Trial {trial + 1}/{num_trials} ---")
+            print(f"\n--- Baseline Trial {trial + 1}/{num_trials} ---")
             
             # Create temporary directories for this trial
             baseline_data_dir = tempfile.mkdtemp(prefix="baseline_data_")
             baseline_adapter_dir = tempfile.mkdtemp(prefix="baseline_adapters_")
-            evolved_data_dir = tempfile.mkdtemp(prefix="evolved_data_")
-            evolved_adapter_dir = tempfile.mkdtemp(prefix="evolved_adapters_")
+            self.temp_dirs.extend([baseline_data_dir, baseline_adapter_dir])
             
-            self.temp_dirs.extend([
-                baseline_data_dir, baseline_adapter_dir,
-                evolved_data_dir, evolved_adapter_dir
-            ])
-            
-            # Test baseline implementation (standard MLX-LM)
             try:
-                print("🔬 Testing BASELINE implementation (standard MLX-LM)...")
-                
                 # Create test dataset
                 self._create_test_dataset(baseline_data_dir)
                 baseline_config = self.create_test_config(baseline_data_dir, baseline_adapter_dir)
                 
                 clear_mlx_cache_and_gc()
-                baseline_result = self._run_lora_benchmark_with_kernels(
+                
+                # Run baseline (standard MLX-LM)
+                baseline_result = self._run_single_trial(
                     baseline_config,
-                    "BASELINE",
-                    evolved_kernels=None  # No evolved kernels = standard MLX-LM
+                    f"BASELINE-{trial+1}",
+                    evolved_kernels=None  # No kernels = standard MLX-LM
                 )
-                results['baseline'].append(baseline_result)
+                baseline_results.append(baseline_result)
+                
+                # Early exit if first baseline trial fails
+                if trial == 0 and 'error' in baseline_result:
+                    print("  🚨 First baseline trial failed - stopping evaluation")
+                    return {"error": f"First baseline trial failed: {baseline_result['error']}"}
                 
             except Exception as e:
-                print(f"  ❌ Baseline trial failed: {e}")
-                results['baseline'].append({"error": str(e)})
-                # FAIL FAST: If first trial fails, don't continue
-                if trial == 0:
-                    print("  🚨 First trial failed - stopping evaluation early")
-                    return {"error": f"First trial failed: {e}"}
-            
-            # Test evolved implementation  
-            try:
-                print("🚀 Testing EVOLVED implementation...")
+                print(f"  ❌ Baseline trial {trial+1} failed: {e}")
+                baseline_results.append({"error": str(e)})
                 
+                # Early exit if first trial fails
+                if trial == 0:
+                    print("  🚨 First baseline trial failed - stopping evaluation")
+                    return {"error": f"First baseline trial failed: {e}"}
+        
+        # ========================================
+        # PHASE 2: Run ALL evolved trials 
+        # ========================================
+        print(f"\n🚀 PHASE 2: Running {num_trials} EVOLVED trials (MLX-LM + evolved kernels)")
+        
+        for trial in range(num_trials):
+            print(f"\n--- Evolved Trial {trial + 1}/{num_trials} ---")
+            
+            # Create temporary directories for this trial
+            evolved_data_dir = tempfile.mkdtemp(prefix="evolved_data_")
+            evolved_adapter_dir = tempfile.mkdtemp(prefix="evolved_adapters_")
+            self.temp_dirs.extend([evolved_data_dir, evolved_adapter_dir])
+            
+            try:
                 # Create test dataset (same as baseline)
                 self._create_test_dataset(evolved_data_dir)
                 evolved_config = self.create_test_config(evolved_data_dir, evolved_adapter_dir)
                 
                 clear_mlx_cache_and_gc()
-                evolved_result = self._run_lora_benchmark_with_kernels(
+                
+                # Run evolved (MLX-LM + evolved kernels)
+                evolved_result = self._run_single_trial(
                     evolved_config,
-                    "EVOLVED",
+                    f"EVOLVED-{trial+1}",
                     evolved_kernels=evolved_kernels  # Inject evolved kernels
                 )
-                results['evolved'].append(evolved_result)
+                evolved_results.append(evolved_result)
+                
+                # Early exit if first evolved trial fails
+                if trial == 0 and 'error' in evolved_result:
+                    print("  🚨 First evolved trial failed - stopping evaluation")
+                    return {"error": f"First evolved trial failed: {evolved_result['error']}"}
                 
             except Exception as e:
-                print(f"  ❌ Evolved trial failed: {e}")
-                results['evolved'].append({"error": str(e)})
-                # FAIL FAST: If first trial fails, don't continue
+                print(f"  ❌ Evolved trial {trial+1} failed: {e}")
+                evolved_results.append({"error": str(e)})
+                
+                # Early exit if first trial fails
                 if trial == 0:
-                    print("  🚨 First trial failed - stopping evaluation early")
-                    return {"error": f"First trial failed: {e}"}
+                    print("  🚨 First evolved trial failed - stopping evaluation")
+                    return {"error": f"First evolved trial failed: {e}"}
         
-        # Cleanup after all trials
+        # ========================================
+        # PHASE 3: Analyze and compare results
+        # ========================================
         self.cleanup()
+        
+        results = {
+            'baseline': baseline_results,
+            'evolved': evolved_results
+        }
         
         return self._analyze_results(results)
     
-    def _create_test_dataset(self, output_dir: str, num_samples: int = 300):
+    def _create_test_dataset(self, output_dir: str, num_samples: int = 500):
         """Create a comprehensive test dataset for LoRA fine-tuning with diverse examples."""
         examples = [
             # AI and Machine Learning
@@ -378,31 +411,26 @@ class MLXLoRABenchmark:
             {"text": "What is dietetics?\nDietetics applies nutrition science to promote health and treat disease through proper food and eating habits."},
         ]
         
-        # Ensure we have enough diverse examples
+        # Use smaller dataset for faster evaluation
         if num_samples > len(examples):
-            # Cycle through examples to reach desired number
             dataset = []
             for i in range(num_samples):
                 dataset.append(examples[i % len(examples)])
         else:
-            # Use subset if we have more examples than needed
             dataset = examples[:num_samples]
         
-        # Create balanced splits with sufficient validation data
+        # Create balanced splits with minimum sizes
         train_size = max(10, int(0.7 * num_samples))
         val_size = max(5, int(0.2 * num_samples))
-        test_size = num_samples - train_size - val_size
-        if test_size < 3:
-            test_size = 3
-            val_size = num_samples - train_size - test_size
+        test_size = max(3, num_samples - train_size - val_size)
         
         train_data = dataset[:train_size]
         val_data = dataset[train_size:train_size + val_size]
         test_data = dataset[train_size + val_size:train_size + val_size + test_size]
         
-        print(f"📊 Creating comprehensive dataset: {len(train_data)} train, {len(val_data)} valid, {len(test_data)} test examples")
+        print(f"📊 Dataset: {len(train_data)} train, {len(val_data)} valid, {len(test_data)} test examples")
         
-        # Write datasets - CRITICAL: Use "valid" not "val" for MLX-LM
+        # Write datasets - Use "valid" not "val" for MLX-LM
         os.makedirs(output_dir, exist_ok=True)
         for split, data in [("train", train_data), ("valid", val_data), ("test", test_data)]:
             file_path = os.path.join(output_dir, f"{split}.jsonl")
@@ -410,15 +438,15 @@ class MLXLoRABenchmark:
                 for example in data:
                     f.write(json.dumps(example) + "\n")
     
-    def _run_lora_benchmark_with_kernels(
+    def _run_single_trial(
         self,
         config: Dict[str, Any],
-        implementation_name: str,
+        trial_name: str,
         evolved_kernels: Optional[Dict] = None
     ) -> Dict[str, Union[float, str]]:
-        """Run LoRA fine-tuning benchmark with optional evolved kernel injection."""
+        """Run a single LoRA fine-tuning trial."""
         
-        print(f"  🧪 Running {implementation_name} LoRA fine-tuning...")
+        print(f"  🧪 Running {trial_name}...")
         
         try:
             # Memory before
@@ -452,14 +480,14 @@ class MLXLoRABenchmark:
             # Extract additional metrics
             training_time = metrics.get('training_time', total_time)
             
-            # Calculate approximate tokens/second (rough estimate)
+            # Calculate approximate tokens/second
             estimated_tokens = config['iters'] * config['batch_size'] * config['max_seq_length']
             tokens_per_second = estimated_tokens / training_time if training_time > 0 else 0
             
             print(f"    Final loss: {final_loss:.4f}")
             print(f"    Training time: {training_time:.2f}s")
             print(f"    Memory delta: {memory_delta:.1f} MB")
-            print(f"    Used evolved kernels: {evolved_kernels is not None}")
+            print(f"    Evolved kernels: {evolved_kernels is not None}")
             
             return {
                 'final_loss': float(final_loss),
@@ -538,13 +566,16 @@ class MLXLoRABenchmark:
 
 def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
     """
-    Evaluate MLX-LM LoRA fine-tuning optimization program.
+    Evaluate MLX-LM LoRA kernel optimization program.
     
-    Performs real LoRA fine-tuning comparison using mlx-lm library between 
-    baseline and evolved implementations. Success metric: achieve same training 
-    loss with efficiency improvements.
+    Uses sequential evaluation approach:
+    1. Run ALL baseline trials (standard MLX-LM)
+    2. Run ALL evolved trials (MLX-LM + evolved kernels)
+    3. Compare results
+    
+    This avoids monkey patching interference between trials.
     """
-    print(f"🚀 Evaluating MLX-LM LoRA Fine-tuning Optimization: {program_path}")
+    print(f"🚀 Evaluating MLX LoRA Kernel Optimization: {program_path}")
     
     if not MLX_LM_AVAILABLE:
         return {
@@ -575,15 +606,15 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
         baseline_kernels = evolved_program.baseline_lora_kernels()  # Returns None
         
         print(f"✅ Evolved kernels loaded: {list(evolved_kernels.keys())}")
-        print(f"✅ Baseline kernels: {baseline_kernels} (standard MLX-LM)")
+        print(f"✅ Baseline: Standard MLX-LM (no custom kernels)")
         
         # Setup benchmark
         benchmark = MLXLoRABenchmark()
         
-        # Run comparison
+        # Run sequential comparison (baseline first, then evolved)
         comparison_results = benchmark.compare_implementations(
             evolved_kernels=evolved_kernels,
-            num_trials=5 
+            num_trials=5  
         )
         
         if 'error' in comparison_results:
@@ -606,7 +637,7 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
         baseline_avg = comparison_results['baseline_avg']
         evolved_avg = comparison_results['evolved_avg']
         
-        print(f"\n📊 MLX-LM LORA FINE-TUNING OPTIMIZATION RESULTS:")
+        print(f"\n📊 MLX LORA KERNEL OPTIMIZATION RESULTS:")
         print(f"  Loss Convergence: {'✅' if loss_convergence_ok else '❌'} (diff: {loss_difference:.4f})")
         print(f"  Speed Improvement: {speed_improvement:.2f}x")
         print(f"  Memory Improvement: {memory_improvement:.2f}x")
@@ -664,7 +695,7 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
             "successful_evolved_trials": comparison_results['successful_trials']['evolved'],
             
             # Metadata
-            "evaluation_type": "mlx_lm_lora_finetuning",
+            "evaluation_type": "mlx_lora_kernel_optimization",
             "achieves_convergence": bool(loss_convergence_ok),
             "has_efficiency_improvements": bool(speed_improvement > 1.05 or memory_improvement > 1.05),
             "target_achieved": bool(loss_convergence_ok and (speed_improvement > 1.1 or memory_improvement > 1.1)),
@@ -683,7 +714,7 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
 
 
 if __name__ == "__main__":
-    print("Testing MLX-LM LoRA Fine-tuning Optimization Evaluator...")
+    print("Testing MLX LoRA Kernel Optimization Evaluator...")
     
     initial_program_path = os.path.join(os.path.dirname(__file__), "initial_program.py")
     
