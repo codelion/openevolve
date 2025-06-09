@@ -11,7 +11,7 @@ from openevolve.llm.base import LLMInterface
 from openevolve.llm.openai import OpenAILLM
 from openevolve.config import LLMModelConfig
 
-# logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class LLMEnsemble:
@@ -28,7 +28,7 @@ class LLMEnsemble:
         total = sum(self.weights)
         self.weights = [w / total for w in self.weights]
 
-        logging.info(
+        logger.info(
             f"Initialized LLM ensemble with models: "
             + ", ".join(
                 f"{model.name} (weight: {weight:.2f})"
