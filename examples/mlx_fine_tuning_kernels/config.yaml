@@ -1,7 +1,7 @@
 # MLX LoRA Fine-tuning Optimization Configuration
 # Target: Real LoRA fine-tuning efficiency improvements while maintaining convergence
 
-max_iterations: 50  # More iterations for breakthrough discoveries
+max_iterations: 50
 checkpoint_interval: 5
 log_level: "INFO"
 
@@ -12,7 +12,7 @@ llm:
   secondary_model: "gemini-2.5-pro-preview-06-05"
   secondary_model_weight: 0.3
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
-  temperature: 0.9  # Higher creativity for breakthrough optimizations
+  temperature: 0.9
   top_p: 0.95
   max_tokens: 32000
   timeout: 600
@@ -20,159 +20,201 @@ llm:
 # Detailed prompt for LoRA optimization
 prompt:
   system_message: |
-    You are optimizing MLX LoRA fine-tuning implementations to achieve the same training loss
-    as standard LoRA but with improved memory efficiency and/or training speed.
+    You are optimizing MLX LoRA fine-tuning kernels to achieve the same training loss
+    as standard MLX-LM but with improved memory efficiency and/or training speed.
     
     # 🎯 GOAL: Efficient LoRA Fine-tuning with Maintained Convergence
-    Your target is to achieve the SAME training loss as baseline LoRA implementations
+    Your target is to achieve the SAME training loss as baseline MLX-LM implementations
     while providing 10%+ improvements in memory usage and/or training speed.
     
-    # 🔧 KEY OPTIMIZATION OPPORTUNITIES
+    # 📋 CURRENT IMPLEMENTATION STRUCTURE
     
-    **1. LoRA Weight Pre-computation** ⭐ HIGH SUCCESS PROBABILITY
+    The code has an `evolved_lora_kernels()` function that returns a dictionary with these kernels:
     ```python
-    # Standard: 3 separate matrix multiplications per forward pass
-    base_out = x @ base_weight.T
-    lora_a_out = x @ lora_a.T  
-    lora_b_out = lora_a_out @ lora_b.T
-    result = base_out + scale * lora_b_out
-    
-    # Target: Pre-compute combined weights when beneficial
-    if not self.training:  # During inference
-        fused_weight = base_weight + scale * (lora_b @ lora_a)
-        result = x @ fused_weight.T
+    return {
+        "optimized_lora_linear_class": OptimizedLoRALinear,
+        "optimized_lora_matmul": optimized_lora_matmul,
+        "optimized_lora_forward_pass": optimized_lora_forward_pass,
+        "optimized_gradient_computation": optimized_gradient_computation,
+        "optimized_parameter_update": optimized_parameter_update,
+        "memory_efficient_loss_computation": memory_efficient_loss_computation,
+    }
     ```
     
-    **2. Memory-Efficient Gradient Computation**
-    ```python
-    # Standard: Separate gradient computations
-    grad_base = grad_output @ x.T
-    grad_lora_b = grad_output @ lora_a_out.T  
-    grad_lora_a = lora_b.T @ grad_output @ x.T
+    These kernels get injected via `patch_model_with_kernels()` and used during training.
     
-    # Target: Fused gradient computation to reduce memory allocations
-    # Reuse intermediate tensors, optimize memory access patterns
+    # 🔧 KEY OPTIMIZATION TARGETS IN EVOLVE-BLOCK
+    
+    **1. OptimizedLoRALinear Class** ⭐ HIGH IMPACT
+    ```python
+    class OptimizedLoRALinear(nn.Module):
+        def __call__(self, x):
+            base_out = self.base_layer(x)
+            # CURRENT: Standard LoRA computation
+            lora_out = mx.matmul(mx.matmul(x, self.lora_a.T), self.lora_b.T)
+            return base_out + self.scale * lora_out
+            
+        # EVOLUTION TARGETS:
+        # - Fuse base + LoRA computation
+        # - Pre-compute weights during inference
+        # - Optimize memory access patterns
+        # - Use mx.compile for hot paths
     ```
     
-    **3. Training Loop Optimization**
+    **2. optimized_lora_matmul Function** ⚡ SPEED TARGET
     ```python
-    # Standard: Separate forward, loss, backward, update steps
-    logits = model(inputs)
-    loss = loss_fn(logits, targets)
-    grads = compute_gradients(loss)
-    optimizer.update(model, grads)
-    
-    # Target: Reduce kernel launches and memory overhead
-    # Optimize for LoRA-specific gradient patterns
+    @mx.compile
+    def optimized_lora_matmul(x, lora_a, lora_b, scale):
+        # CURRENT: Basic compiled matrix multiplication
+        temp = mx.matmul(x, lora_a.T)
+        result = mx.matmul(temp, lora_b.T)
+        return scale * result
+        
+        # EVOLUTION TARGETS:
+        # - Fuse matrix operations
+        # - Optimize for specific tensor shapes
+        # - Reduce intermediate allocations
+        # - Vectorize computations
     ```
     
-    **4. Multi-Layer LoRA Batch Processing**
+    **3. optimized_lora_forward_pass Function** 🚀 INTEGRATION TARGET  
     ```python
-    # Standard: Apply LoRA to layers one by one
-    for layer in layers:
-        layer.q_proj = LoRALinear.from_linear(layer.q_proj)
-        layer.v_proj = LoRALinear.from_linear(layer.v_proj)
-    
-    # Target: Batch LoRA operations across layers
-    # Share computation, optimize memory utilization
+    def optimized_lora_forward_pass(model, x, use_kernels=True):
+        # CURRENT: Iterates through model layers
+        for name, layer in model.named_modules():
+            if hasattr(layer, 'lora_a') and hasattr(layer, 'lora_b'):
+                # Apply optimized LoRA computation
+                
+        # EVOLUTION TARGETS:
+        # - Batch multiple LoRA layers
+        # - Fuse activations with LoRA
+        # - Optimize layer traversal
+        # - Reduce function call overhead
     ```
     
-    **5. Memory-Efficient Loss Computation**
+    **4. memory_efficient_loss_computation Function** 💾 MEMORY TARGET
     ```python
-    # Standard: Full vocabulary materialization
-    loss = cross_entropy(logits, targets)  # Memory: O(batch * seq * vocab)
-    
-    # Target: Chunked or online loss computation for large vocabularies
-    # Reduce memory footprint during loss calculation
+    def memory_efficient_loss_computation(logits, targets, chunk_size=1024):
+        # CURRENT: Chunked loss for large vocabularies
+        if logits.shape[-1] <= chunk_size:
+            return nn.losses.cross_entropy(logits, targets, reduction="mean")
+        # Process in chunks...
+        
+        # EVOLUTION TARGETS:
+        # - Optimize chunk size dynamically
+        # - Reduce memory allocations
+        # - Parallelize chunk processing
+        # - Smart caching strategies
     ```
     
-    **6. UNSLOTH-STYLE MLX KERNEL FUSION** 🎯 PRIMARY SPEED TARGET
+    **5. optimized_gradient_computation Function** 🧠 GRADIENT TARGET
     ```python
-    # Standard: Separate operations
-    x = mx.add(input, lora_out)
-    x = activation_fn(x) 
-    x = mx.matmul(x, next_weight)
-    
-    # Target: Fused kernels using MLX primitives
-    # Combine LoRA, activation, and next operation
-    # Leverage mx.compile and mx.eval strategically
+    def optimized_gradient_computation(loss, model, use_kernels=True):
+        # CURRENT: Basic compiled gradient computation
+        compiled_grad_fn = mx.compile(mx.grad(grad_fn))
+        return compiled_grad_fn(model)
+        
+        # EVOLUTION TARGETS:
+        # - LoRA-specific gradient patterns
+        # - Accumulate gradients efficiently
+        # - Reduce gradient computation overhead
+        # - Smart gradient sharing
     ```
     
-    **7. Smart Gradient Accumulation** 
+    **6. optimized_parameter_update Function** 🔄 UPDATE TARGET
     ```python
-    # Standard: Individual gradient updates
-    for batch in batches:
-        loss = forward(batch)
-        grads = backward(loss)
-        optimizer.update(grads)
-    
-    # Target: Accumulated updates with reduced sync points
-    # Batch multiple LoRA layer updates together
+    @mx.compile
+    def optimized_parameter_update(params, grads, lr):
+        # CURRENT: Basic parameter update loop
+        for key in params:
+            if key in grads:
+                updated_params[key] = params[key] - lr * grads[key]
+                
+        # EVOLUTION TARGETS:
+        # - Batch parameter updates
+        # - Vectorize updates
+        # - Optimize for LoRA structure
+        # - Reduce synchronization points
     ```
     
-    # 🚀 UNSLOTH-INSPIRED OPTIMIZATION TECHNIQUES (Target 2x+ Speed Improvements)
+    # 🚀 PROVEN MLX OPTIMIZATION TECHNIQUES
     
-    **🔥 Flash Attention Equivalents for MLX**: Fused attention computation patterns
-    **⚡ Kernel Fusion**: Combine LoRA operations with activation functions
-    **🧠 Smart Gradient Accumulation**: Batch gradient updates efficiently  
-    **⭐ Optimized MLX Operations**: Leverage mx.fast for critical paths
-    **🚀 Parameter-Efficient Updates**: Minimize optimizer state overhead
-    **💾 Memory Mapping**: Efficient tensor reuse and allocation patterns
-    **🎯 Selective Computation**: Skip unnecessary ops based on LoRA rank/scale
-    **🔧 Mixed Precision**: Smart FP16/FP32 usage for speed without loss
-    
-    Current baseline shows 1.57x memory improvement but only 1.01x speed.
-    FOCUS: Discover speed optimizations like unsloth's 2-5x improvements!
+    **🔥 mx.compile Usage**: Leverage @mx.compile for hot computation paths
+    **⚡ Tensor Fusion**: Combine multiple operations into single kernels  
+    **🧠 Memory Reuse**: Optimize tensor allocation and reuse patterns
+    **⭐ Vectorization**: Use MLX's SIMD capabilities effectively
+    **🚀 Batch Operations**: Process multiple items simultaneously
+    **💾 Smart Caching**: Cache computed values when beneficial
+    **🎯 Shape Optimization**: Optimize for common tensor shapes
+    **🔧 Pipeline Efficiency**: Reduce data movement and sync points
     
     # 📊 SUCCESS METRICS
     
     **Primary Metric**: Training Loss Convergence (MUST MATCH BASELINE ±1%)
-    - Target: Same final loss as standard LoRA implementation
+    - Target: Same final loss as standard MLX-LM LoRA implementation
     - Critical: Maintain numerical stability and gradient flow
     
     **Secondary Metrics**: Efficiency Improvements
     - Memory efficiency: 10%+ reduction in peak memory usage
     - Training speed: 10%+ improvement in tokens/second
+    - Time efficiency: 10%+ reduction in training time
     - Ideal: Both memory AND speed improvements
     
-    # 🎖️ REAL-WORLD LORA OPTIMIZATION PATTERNS
+    # 🎖️ REALISTIC OPTIMIZATION EXPECTATIONS
     
     Successful LoRA optimizations typically achieve:
-    - **Memory reduction**: 15-30% through weight fusion and gradient optimization
-    - **Speed improvement**: 10-25% through reduced kernel launches and better memory access
-    - **Maintained convergence**: Critical for practical adoption
+    - **Memory reduction**: 10-30% through smart tensor management
+    - **Speed improvement**: 15-50% through kernel fusion and compilation
+    - **Maintained convergence**: Essential for practical adoption
     
-    Your optimizations should target similar patterns adapted for MLX.
+    Your optimizations should target these realistic improvements for MLX.
     
     # 🚫 CONSTRAINTS  
-    - Keep exact function signatures from initial_program.py
-    - Maintain numerical correctness (loss must match baseline within 0.01)
+    - Keep exact function signatures and return values
+    - Maintain numerical correctness (loss must match baseline within 1%)
     - Support all LoRA configs (ranks 8-64, any scale/dropout)
     - MLX-only dependencies (mx.core, mx.nn, mx.optimizers)
-    - 🚨 CRITICAL: Concise evolution changes (under 35,000 chars total)
-    - NO verbose comments - focus on algorithmic improvements
-    - Prioritize SPEED over memory (we already have 1.57x memory gain)
-    - Test mx.compile, mx.eval, kernel fusion, gradient accumulation patterns
+    - 🚨 CRITICAL: Concise evolution changes (under 30,000 chars total)
+    - Focus on algorithmic improvements, not verbose comments
+    - Ensure kernels can be properly patched into models
+    - Test optimizations work with real MLX-LM training
     
-    # 🔍 WHAT TO EVOLVE - TARGET UNSLOTH-STYLE 2x+ SPEED GAINS
+    # 🔍 WHAT TO EVOLVE - FOCUS ON EVOLVE-BLOCK
     
-    Focus on `evolved_lora_kernels` function. Prioritize SPEED optimizations:
+    **Primary Evolution Target: `evolved_lora_kernels()` function**
     
-    1. **optimized_lora_fine_tuning**: Main training pipeline with kernel fusion
-    2. **optimized_training_loop**: Batch gradient accumulation like unsloth  
-    3. **optimized_train_step**: Fused forward/backward with mx.compile
-    4. **optimized_linear_to_lora_layers**: Batched multi-layer LoRA application
-    5. **optimized_evaluate**: Fast inference with weight pre-computation
+    The EVOLVE-BLOCK contains 6 kernels that get injected into MLX-LM training:
     
-    🎯 PRIMARY TARGETS FOR SPEED BREAKTHROUGH:
-    - Leverage `mx.compile()` for hot paths (like unsloth's kernel compilation)
-    - Use `mx.eval()` strategically to minimize sync points  
-    - Batch operations across multiple LoRA layers simultaneously
-    - Pre-compute weights when beneficial (inference mode optimization)
-    - Implement gradient accumulation patterns that reduce memory allocations
+    1. **OptimizedLoRALinear**: The core LoRA layer implementation
+    2. **optimized_lora_matmul**: Compiled matrix multiplication kernel  
+    3. **optimized_lora_forward_pass**: Model forward pass optimization
+    4. **optimized_gradient_computation**: Gradient computation optimization
+    5. **optimized_parameter_update**: Parameter update optimization
+    6. **memory_efficient_loss_computation**: Loss computation optimization
     
-    Current Results: 1.57x memory ✅, 1.01x speed ❌
-    Target: Discover 2-5x speed improvements while maintaining perfect convergence!
+    🎯 **PRIMARY OPTIMIZATION STRATEGIES:**
+    - Add more @mx.compile decorators for hot paths
+    - Fuse multiple operations into single kernels
+    - Optimize memory access patterns and reuse
+    - Batch operations across multiple LoRA layers
+    - Pre-compute values when beneficial (inference optimization)
+    - Implement LoRA-specific optimizations based on mathematical properties
+    - Reduce intermediate tensor allocations
+    - Optimize for common LoRA configurations (rank 8-64)
+    
+    🔬 **CURRENT STATUS:** Starting from basic working implementations
+    **TARGET:** Achieve 15-25% efficiency improvements while maintaining convergence
+    
+    # ⚠️ CRITICAL EVOLUTION GUIDELINES
+    
+    1. **ALWAYS preserve function signatures** - the patching system depends on them
+    2. **Test numerical correctness** - loss must converge to same value as baseline  
+    3. **Use MLX primitives effectively** - leverage mx.compile, mx.eval, etc.
+    4. **Focus on realistic optimizations** - don't over-engineer
+    5. **Maintain code clarity** - optimizations should be understandable
+    6. **Ensure kernel injection works** - test that patches apply correctly
+    
+    **Evolution Success = Same Loss + Better Performance + Working Integration**
   
   num_top_programs: 6
   num_diverse_programs: 4
@@ -180,19 +222,19 @@ prompt:
 # Database configuration for LoRA optimization
 database:
   db_path: "./openevolve_output/program_db"
-  population_size: 80  # Larger population for more diverse explorations
+  population_size: 80
   archive_size: 40
   num_islands: 4
-  elite_selection_ratio: 0.20  # Less elite pressure, more exploration
-  exploitation_ratio: 0.6   # Balanced exploration for breakthroughs
+  elite_selection_ratio: 0.20
+  exploitation_ratio: 0.6
   exploration_ratio: 0.4
 
 # Evaluator configuration
 evaluator:
-  timeout: 1200  # Longer timeout for real LoRA training
+  timeout: 1200
   parallel_evaluations: 1
 
 # Evolution settings
 diff_based_evolution: true
 allow_full_rewrites: false  
-max_code_length: 45000  # Encourage concise, focused optimizations
+max_code_length: 45000

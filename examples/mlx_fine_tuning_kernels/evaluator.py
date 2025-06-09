@@ -134,7 +134,9 @@ class MLXLoRABenchmark:
         print(f"  Model: {self.model_name}")
         print(f"  Trials per implementation: {num_trials}")
         print(f"  Evaluation strategy: Sequential (baseline first, then evolved)")
-        print(f"  Evolved kernels available: {list(evolved_kernels.keys()) if evolved_kernels else 'None'}")
+        print(
+            f"  Evolved kernels available: {list(evolved_kernels.keys()) if evolved_kernels else 'None'}"
+        )
 
         baseline_results = []
         evolved_results = []
@@ -185,7 +187,7 @@ class MLXLoRABenchmark:
         # PHASE 2: Run ALL evolved trials
         # ========================================
         print(f"\n🚀 PHASE 2: Running {num_trials} EVOLVED trials (MLX-LM + evolved kernels)")
-        
+
         # Verify evolved kernels are valid before running trials
         if evolved_kernels:
             print(f"  ✅ Testing evolved kernels: {list(evolved_kernels.keys())}")
@@ -776,7 +778,7 @@ class MLXLoRABenchmark:
 
             # Extract additional metrics
             training_time = metrics.get("training_time", total_time)
-            
+
             # Check if kernels were actually used
             kernels_used = metrics.get("used_evolved_kernels", False)
             if evolved_kernels and not kernels_used:
@@ -808,6 +810,7 @@ class MLXLoRABenchmark:
         except Exception as e:
             print(f"    ❌ Failed: {e}")
             import traceback
+
             traceback.print_exc()
             return {"error": str(e)}
 
@@ -926,10 +929,12 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
         try:
             evolved_kernels = evolved_program.evolved_lora_kernels()
             baseline_kernels = evolved_program.baseline_lora_kernels()  # Returns None
-            
-            print(f"✅ Evolved kernels loaded: {list(evolved_kernels.keys()) if evolved_kernels else 'None'}")
+
+            print(
+                f"✅ Evolved kernels loaded: {list(evolved_kernels.keys()) if evolved_kernels else 'None'}"
+            )
             print(f"✅ Baseline: Standard MLX-LM (no custom kernels)")
-            
+
             # Validate evolved kernels
             if evolved_kernels:
                 for kernel_name, kernel_func in evolved_kernels.items():
@@ -937,7 +942,7 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
                         print(f"  ⚠️ Warning: {kernel_name} is None")
                     else:
                         print(f"  ✅ {kernel_name}: {type(kernel_func)}")
-            
+
         except Exception as e:
             print(f"❌ Failed to load evolved kernels: {e}")
             return {"overall_score": 0.0, "error": f"Failed to load evolved kernels: {e}"}
@@ -1043,7 +1048,11 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
             "target_achieved": bool(
                 loss_convergence_ok and (speed_improvement > 1.1 or memory_improvement > 1.1)
             ),
-            "kernels_actually_used": bool(evolved_success and any(r.get("kernels_used", False) for r in evolved_success)) if evolved_success else False,
+            "kernels_actually_used": (
+                bool(evolved_success and any(r.get("kernels_used", False) for r in evolved_success))
+                if evolved_success
+                else False
+            ),
         }
 
         return results
