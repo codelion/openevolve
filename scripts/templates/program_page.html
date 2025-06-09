@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Program {{ program_data.id }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        pre { background: #f0f0f0; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Program ID: {{ program_data.id }}</h1>
+    <ul>
+        <li><strong>Checkpoint:</strong> {{checkpoint_dir}}</li>
+        <li><strong>Island:</strong> {{ program_data.island }}</li>
+        <li><strong>Generation:</strong> {{ program_data.generation }}</li>
+        <li><strong>Parent ID:</strong> {{ program_data.parent_id or 'None' }}</li>
+        <li><strong>Metrics:</strong>
+            <ul>
+                {% for key, value in program_data.metrics.items() %}
+                    <li><strong>{{ key }}:</strong> {{ value }}</li>
+                {% endfor %}
+            </ul>
+        </li>
+        </ul>
+    <h2>Code:</h2>
+    <pre>{{ program_data.code }}</pre>
+    <h2>Prompts:</h2>
+    <ul>
+        {% for key, value in program_data.prompts.items() %}
+            <li><strong>{{ key }}:</strong> <pre style="white-space: pre-wrap; word-break: break-word;">{{ value }}</pre></li>
+        {% endfor %}
+    </ul>
+</body>
+</html>
