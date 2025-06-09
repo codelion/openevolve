@@ -23,13 +23,12 @@ class LLMEnsemble:
 
         # Initialize models from the configuration
         self.models = []
+        breakpoint()
         for model_cfg in models_cfg:
             # Determine model type based on provider or model name
             if hasattr(model_cfg, 'provider') and model_cfg.provider == 'gemini':
                 self.models.append(GeminiLLM(model_cfg))
-            elif model_cfg.name.startswith('gemini'):
-                self.models.append(GeminiLLM(model_cfg))
-            else:
+            else: # default fallback to openai
                 # Default to OpenAI for backward compatibility
                 self.models.append(OpenAILLM(model_cfg))
 

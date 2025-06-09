@@ -18,7 +18,7 @@ class LLMModelConfig:
     api_base: str = None
     api_key: Optional[str] = None
     name: str = None
-    provider: Optional[str] = None  # 'openai' or 'gemini'
+    provider: Optional[str] = 'openai'  # 'openai' or 'gemini'
 
     # Weight for model in ensemble
     weight: float = 1.0
