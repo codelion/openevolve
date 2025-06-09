@@ -17,6 +17,7 @@ dependencies = [
     "pyyaml>=6.0",
     "numpy>=1.22.0",
     "tqdm>=4.64.0",
+    "flask",
 ]
 
 [project.optional-dependencies]
