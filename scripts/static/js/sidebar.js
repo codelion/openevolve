@@ -43,11 +43,36 @@ export function showSidebarContent(d, fromHover = false) {
             return `<pre class="sidebar-code-pre">${d.code}</pre>`;
         }
         if (tabName === 'Prompts') {
-            let html = '';
+            // --- Prompt select logic ---
+            let promptOptions = [];
+            let promptMap = {};
             for (const [k, v] of Object.entries(d.prompts)) {
-                html += `<div style="margin-bottom:0.7em;"><b>${k}:</b><pre class="sidebar-pre">${v}</pre></div>`;
+                if (v && typeof v === 'object' && !Array.isArray(v)) {
+                    for (const [subKey, subVal] of Object.entries(v)) {
+                        const optLabel = `${k} - ${subKey}`;
+                        promptOptions.push(optLabel);
+                        promptMap[optLabel] = subVal;
+                    }
+                } else {
+                    const optLabel = `${k}`;
+                    promptOptions.push(optLabel);
+                    promptMap[optLabel] = v;
+                }
             }
-            return html;
+            // Get last selected prompt from localStorage, or default to first
+            let lastPromptKey = localStorage.getItem('sidebarPromptSelect') || promptOptions[0] || '';
+            if (!promptMap[lastPromptKey]) lastPromptKey = promptOptions[0] || '';
+            // Build select box
+            let selectHtml = '';
+            if (promptOptions.length > 1) {
+                selectHtml = `<select id="sidebar-prompt-select" style="margin-bottom:0.7em;max-width:100%;font-size:1em;">
+                    ${promptOptions.map(opt => `<option value="${opt}"${opt===lastPromptKey?' selected':''}>${opt}</option>`).join('')}
+                </select>`;
+            }
+            // Show only the selected prompt
+            let promptVal = promptMap[lastPromptKey];
+            let promptHtml = `<pre class="sidebar-pre">${promptVal ?? ''}</pre>`;
+            return selectHtml + promptHtml;
         }
         if (tabName === 'Children') {
             const metric = (document.getElementById('metric-select') && document.getElementById('metric-select').value) || 'combined_score';
@@ -103,6 +128,20 @@ export function showSidebarContent(d, fromHover = false) {
                 lastSidebarTab = tabName;
                 const tabContent = document.getElementById('sidebar-tab-content');
                 tabContent.innerHTML = renderSidebarTabContent(tabName, d, children);
+                // Add prompt select event if Prompts tab
+                if (tabName === 'Prompts') {
+                    const promptSelect = document.getElementById('sidebar-prompt-select');
+                    if (promptSelect) {
+                        promptSelect.onchange = function() {
+                            localStorage.setItem('sidebarPromptSelect', promptSelect.value);
+                            // Re-render Prompts tab with new selection
+                            tabContent.innerHTML = renderSidebarTabContent('Prompts', d, children);
+                            // Re-attach event
+                            const newPromptSelect = document.getElementById('sidebar-prompt-select');
+                            if (newPromptSelect) newPromptSelect.onchange = promptSelect.onchange;
+                        };
+                    }
+                }
                 setTimeout(() => {
                     document.querySelectorAll('.child-link').forEach(link => {
                         link.onclick = function(e) {
@@ -128,6 +167,18 @@ export function showSidebarContent(d, fromHover = false) {
         });
     }
     setTimeout(() => {
+        const promptSelect = document.getElementById('sidebar-prompt-select');
+        if (promptSelect) {
+            promptSelect.onchange = function() {
+                localStorage.setItem('sidebarPromptSelect', promptSelect.value);
+                // Re-render Prompts tab with new selection
+                const tabContent = document.getElementById('sidebar-tab-content');
+                tabContent.innerHTML = renderSidebarTabContent('Prompts', d, children);
+                // Re-attach event
+                const newPromptSelect = document.getElementById('sidebar-prompt-select');
+                if (newPromptSelect) newPromptSelect.onchange = promptSelect.onchange;
+            };
+        }
         document.querySelectorAll('.child-link').forEach(link => {
             link.onclick = function(e) {
                 e.preventDefault();

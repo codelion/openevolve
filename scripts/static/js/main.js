@@ -83,8 +83,8 @@ function loadAndRenderData(data) {
     renderNodeList(data.nodes);
     document.getElementById('checkpoint-label').textContent =
         "Checkpoint: " + (data.checkpoint_dir || 'static export');
-    // Populate metric-select options
     const metricSelect = document.getElementById('metric-select');
+    const prevMetric = metricSelect.value || localStorage.getItem('selectedMetric') || null;
     metricSelect.innerHTML = '';
     const metrics = new Set();
     data.nodes.forEach(node => {
@@ -98,9 +98,14 @@ function loadAndRenderData(data) {
         option.textContent = metric;
         metricSelect.appendChild(option);
     });
-    if (metricSelect.options.length > 0) {
+    if (prevMetric && metrics.has(prevMetric)) {
+        metricSelect.value = prevMetric;
+    } else if (metricSelect.options.length > 0) {
         metricSelect.selectedIndex = 0;
     }
+    metricSelect.addEventListener('change', function() {
+        localStorage.setItem('selectedMetric', metricSelect.value);
+    });
 }
 
 if (window.STATIC_DATA) {
