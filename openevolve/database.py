@@ -307,8 +307,8 @@ class ProgramDatabase:
             logger.warning("No database path specified, skipping save")
             return
 
-        lock_name = os.path.basename(save_path) + '.lock'
-        lock_path = os.path.join('tmp/locks', lock_name)
+        lock_name = os.path.basename(save_path) + ".lock"
+        lock_path = os.path.join("tmp/locks", lock_name)
         try:
             with FileLock(lock_path, timeout=10):
                 # Create directory and remove old path if it exists
@@ -372,8 +372,8 @@ class ProgramDatabase:
             logger.info(f"Loaded database metadata with last_iteration={self.last_iteration}")
 
         # Load programs
-        lock_name = os.path.basename(path) + '.lock'
-        lock_path = os.path.join('tmp/locks', lock_name)
+        lock_name = os.path.basename(path) + ".lock"
+        lock_path = os.path.join("tmp/locks", lock_name)
         programs_dir = os.path.join(path, "programs")
         try:
             with FileLock(lock_path, timeout=10):
@@ -452,7 +452,7 @@ class ProgramDatabase:
                     bin_idx = 0
                 else:
                     avg_score = safe_numeric_average(program.metrics)
-                    bin_idx = min(int(avg_score * self.feature_bins), self.feature_bins - 1)
+                    bin_idx = max(0, min(int(avg_score * self.feature_bins), self.feature_bins - 1))
                 coords.append(bin_idx)
             elif dim in program.metrics:
                 # Use specific metric
