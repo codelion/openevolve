@@ -1,7 +1,7 @@
 # MLX LoRA Fine-tuning Optimization Configuration
 # Target: Real LoRA fine-tuning efficiency improvements while maintaining convergence
 
-max_iterations: 60  # More iterations for breakthrough discoveries
+max_iterations: 50  # More iterations for breakthrough discoveries
 checkpoint_interval: 5
 log_level: "INFO"
 
