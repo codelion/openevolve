@@ -695,17 +695,21 @@ class ProgramDatabase:
 
         # Clean up stale references and sample from current island
         valid_programs = [pid for pid in current_island_programs if pid in self.programs]
-        
+
         # Remove stale program IDs from island
         if len(valid_programs) < len(current_island_programs):
             stale_ids = current_island_programs - set(valid_programs)
-            logger.debug(f"Removing {len(stale_ids)} stale program IDs from island {self.current_island}")
+            logger.debug(
+                f"Removing {len(stale_ids)} stale program IDs from island {self.current_island}"
+            )
             for stale_id in stale_ids:
                 self.islands[self.current_island].discard(stale_id)
-        
+
         # If no valid programs after cleanup, reinitialize island
         if not valid_programs:
-            logger.warning(f"Island {self.current_island} has no valid programs after cleanup, reinitializing")
+            logger.warning(
+                f"Island {self.current_island} has no valid programs after cleanup, reinitializing"
+            )
             if self.best_program_id and self.best_program_id in self.programs:
                 best_program = self.programs[self.best_program_id]
                 self.islands[self.current_island].add(self.best_program_id)
@@ -713,7 +717,7 @@ class ProgramDatabase:
                 return best_program
             else:
                 return next(iter(self.programs.values()))
-        
+
         # Sample from valid programs
         parent_id = random.choice(valid_programs)
         return self.programs[parent_id]
@@ -725,20 +729,22 @@ class ProgramDatabase:
         if not self.archive:
             # Fallback to exploration if no archive
             return self._sample_exploration_parent()
-        
+
         # Clean up stale references in archive
         valid_archive = [pid for pid in self.archive if pid in self.programs]
-        
+
         # Remove stale program IDs from archive
         if len(valid_archive) < len(self.archive):
             stale_ids = self.archive - set(valid_archive)
             logger.debug(f"Removing {len(stale_ids)} stale program IDs from archive")
             for stale_id in stale_ids:
                 self.archive.discard(stale_id)
-        
+
         # If no valid archive programs, fallback to exploration
         if not valid_archive:
-            logger.warning("Archive has no valid programs after cleanup, falling back to exploration")
+            logger.warning(
+                "Archive has no valid programs after cleanup, falling back to exploration"
+            )
             return self._sample_exploration_parent()
 
         # Prefer programs from current island in archive
@@ -781,15 +787,19 @@ class ProgramDatabase:
         inspirations = []
 
         # Always include the absolute best program if available and different from parent
-        if (self.best_program_id is not None and 
-            self.best_program_id != parent.id and 
-            self.best_program_id in self.programs):
+        if (
+            self.best_program_id is not None
+            and self.best_program_id != parent.id
+            and self.best_program_id in self.programs
+        ):
             best_program = self.programs[self.best_program_id]
             inspirations.append(best_program)
             logger.debug(f"Including best program {self.best_program_id} in inspirations")
         elif self.best_program_id is not None and self.best_program_id not in self.programs:
             # Clean up stale best program reference
-            logger.warning(f"Best program {self.best_program_id} no longer exists, clearing reference")
+            logger.warning(
+                f"Best program {self.best_program_id} no longer exists, clearing reference"
+            )
             self.best_program_id = None
 
         # Add top programs as inspirations
@@ -821,9 +831,11 @@ class ProgramDatabase:
                 if cell_key in self.feature_map:
                     program_id = self.feature_map[cell_key]
                     # Check if program still exists before adding
-                    if (program_id != parent.id and 
-                        program_id not in [p.id for p in inspirations] and
-                        program_id in self.programs):
+                    if (
+                        program_id != parent.id
+                        and program_id not in [p.id for p in inspirations]
+                        and program_id in self.programs
+                    ):
                         nearby_programs.append(self.programs[program_id])
                     elif program_id not in self.programs:
                         # Clean up stale reference in feature_map
