@@ -23,6 +23,7 @@ class LLMEnsemble:
 
         # Initialize models from the configuration
         self.models = []
+        breakpoint()
         for model_cfg in models_cfg:
             # Determine model type based on provider or model name
             if hasattr(model_cfg, 'provider') and model_cfg.provider == 'gemini':
