@@ -1,7 +1,7 @@
 # Example configuration for using Google Gemini models with OpenEvolve
 
 # General settings
-max_iterations: 100
+max_iterations: 300
 checkpoint_interval: 10
 log_level: INFO
 log_dir: ./logs
@@ -20,21 +20,21 @@ llm:
   # Model ensemble configuration
   models:
     # Primary model - Gemini 2.0 Flash
-    - name: "gemini-2.0-flash"
+    - name: "gemini-2.5-pro"
       provider: "gemini"
-      weight: 0.6
+      weight: 0.8
       # API key can be set here or via GEMINI_API_KEY environment variable
       # api_key: "YOUR_GEMINI_API_KEY"
       
     # Secondary model - Gemini 1.5 Pro
-    - name: "gemini-1.5-pro"
+    - name: "gemini-2.5-pro"
       provider: "gemini"
-      weight: 0.4
+      weight: 0.2
       # api_key: "YOUR_GEMINI_API_KEY"
   
   # Evaluator models (if not specified, uses same as models)
   evaluator_models:
-    - name: "gemini-2.0-flash"
+    - name: "gemini-2.5-pro"
       provider: "gemini"
       weight: 1.0
       # api_key: "YOUR_GEMINI_API_KEY"
