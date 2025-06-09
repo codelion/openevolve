@@ -128,6 +128,11 @@ class PromptConfig:
     use_meta_prompting: bool = False
     meta_prompt_weight: float = 0.1
 
+    # Artifact rendering
+    include_artifacts: bool = True
+    max_artifact_bytes: int = 20 * 1024  # 20KB in prompt
+    artifact_security_filter: bool = True
+
 
 @dataclass
 class DatabaseConfig:
@@ -159,6 +164,12 @@ class DatabaseConfig:
     # Random seed for reproducible sampling
     random_seed: Optional[int] = None
 
+    # Artifact storage
+    artifacts_base_path: Optional[str] = None  # Defaults to db_path/artifacts
+    artifact_size_threshold: int = 32 * 1024  # 32KB threshold
+    cleanup_old_artifacts: bool = True
+    artifact_retention_days: int = 30
+
 
 @dataclass
 class EvaluatorConfig:
@@ -183,6 +194,10 @@ class EvaluatorConfig:
     # LLM-based feedback
     use_llm_feedback: bool = False
     llm_feedback_weight: float = 0.1
+
+    # Artifact handling
+    enable_artifacts: bool = True
+    max_artifact_storage: int = 100 * 1024 * 1024  # 100MB per program
 
 
 @dataclass

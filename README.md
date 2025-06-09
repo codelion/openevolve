@@ -183,6 +183,67 @@ Sample configuration files are available in the `configs/` directory:
 
 See the [Configuration Guide](configs/default_config.yaml) for a full list of options.
 
+## Artifacts Channel
+
+OpenEvolve includes a **artifacts side-channel** that allows evaluators to capture build errors, profiling results, etc. to provide better feedback to the LLM in subsequent generations. This feature enhances the evolution process by giving the LLM context about what went wrong and how to fix it.
+
+The artifacts channel operates alongside the traditional fitness metrics.
+
+### Example: Compilation Failure Feedback
+
+```python
+from openevolve.evaluation_result import EvaluationResult
+
+return EvaluationResult(
+    metrics={"compile_ok": 0.0, "score": 0.0},
+    artifacts={
+        "stderr": "SyntaxError: invalid syntax (line 15)",
+        "traceback": "...",
+        "failure_stage": "compilation"
+    }
+)
+```
+
+The next generation prompt will include:
+```
+## Last Execution Output
+### Stderr
+```
+SyntaxError: invalid syntax (line 15)
+```
+### Traceback
+```
+...
+```
+```
+
+### Configuration
+
+Artifacts can be controlled via configuration and environment variables:
+
+```yaml
+# config.yaml
+evaluator:
+  enable_artifacts: true
+
+prompt:
+  include_artifacts: true
+  max_artifact_bytes: 4096  # 4KB limit in prompts
+  artifact_security_filter: true
+```
+
+```bash
+# Environment variable to disable artifacts
+export ENABLE_ARTIFACTS=false
+```
+
+### Benefits
+
+- **Faster convergence** - LLMs can see what went wrong and fix it directly
+- **Better error handling** - Compilation and runtime failures become learning opportunities  
+- **Rich debugging context** - Full stack traces and error messages guide improvements
+- **Zero overhead** - When disabled, no performance impact on evaluation
+
 ## Examples
 
 See the `examples/` directory for complete examples of using OpenEvolve on various problems:

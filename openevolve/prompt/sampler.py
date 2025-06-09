@@ -55,6 +55,7 @@ class PromptSampler:
         evolution_round: int = 0,
         allow_full_rewrite: bool = False,
         template_key: Optional[str] = None,
+        program_artifacts: Optional[Dict[str, Union[str, bytes]]] = None,
         **kwargs: Any,
     ) -> Dict[str, str]:
         """
@@ -70,6 +71,7 @@ class PromptSampler:
             evolution_round: Current evolution round
             allow_full_rewrite: Whether to allow a full rewrite
             template_key: Optional override for template key
+            program_artifacts: Optional artifacts from program evaluation
             **kwargs: Additional keys to replace in the user prompt
 
         Returns:
@@ -111,6 +113,11 @@ class PromptSampler:
             previous_programs, top_programs, language
         )
 
+        # Format artifacts section if enabled and available
+        artifacts_section = ""
+        if self.config.include_artifacts and program_artifacts:
+            artifacts_section = self._render_artifacts(program_artifacts)
+
         # Apply stochastic template variations if enabled
         if self.config.use_template_stochasticity:
             user_template = self._apply_template_variations(user_template)
@@ -122,6 +129,7 @@ class PromptSampler:
             evolution_history=evolution_history,
             current_program=current_program,
             language=language,
+            artifacts=artifacts_section,
             **kwargs,
         )
 
@@ -396,3 +404,87 @@ class PromptSampler:
                 result = result.replace(f"{{{key}}}", chosen_variation)
 
         return result
+
+    def _render_artifacts(self, artifacts: Dict[str, Union[str, bytes]]) -> str:
+        """
+        Render artifacts for prompt inclusion
+
+        Args:
+            artifacts: Dictionary of artifact name to content
+
+        Returns:
+            Formatted string for prompt inclusion (empty string if no artifacts)
+        """
+        if not artifacts:
+            return ""
+
+        sections = []
+
+        # Process all artifacts using .items()
+        for key, value in artifacts.items():
+            content = self._safe_decode_artifact(value)
+            # Truncate if too long
+            if len(content) > self.config.max_artifact_bytes:
+                content = content[: self.config.max_artifact_bytes] + "\n... (truncated)"
+
+            sections.append(f"### {key}\n```\n{content}\n```")
+
+        if sections:
+            return "## Last Execution Output\n\n" + "\n\n".join(sections)
+        else:
+            return ""
+
+    def _safe_decode_artifact(self, value: Union[str, bytes]) -> str:
+        """
+        Safely decode an artifact value to string
+
+        Args:
+            value: Artifact value (string or bytes)
+
+        Returns:
+            String representation of the value
+        """
+        if isinstance(value, str):
+            # Apply security filter if enabled
+            if self.config.artifact_security_filter:
+                return self._apply_security_filter(value)
+            return value
+        elif isinstance(value, bytes):
+            try:
+                decoded = value.decode("utf-8", errors="replace")
+                if self.config.artifact_security_filter:
+                    return self._apply_security_filter(decoded)
+                return decoded
+            except Exception:
+                return f"<binary data: {len(value)} bytes>"
+        else:
+            return str(value)
+
+    def _apply_security_filter(self, text: str) -> str:
+        """
+        Apply security filtering to artifact text
+
+        Args:
+            text: Input text
+
+        Returns:
+            Filtered text with potential secrets/sensitive info removed
+        """
+        import re
+
+        # Remove ANSI escape sequences
+        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+        filtered = ansi_escape.sub("", text)
+
+        # Basic patterns for common secrets (can be expanded)
+        secret_patterns = [
+            (r"[A-Za-z0-9]{32,}", "<REDACTED_TOKEN>"),  # Long alphanumeric tokens
+            (r"sk-[A-Za-z0-9]{48}", "<REDACTED_API_KEY>"),  # OpenAI-style API keys
+            (r"password[=:]\s*[^\s]+", "password=<REDACTED>"),  # Password assignments
+            (r"token[=:]\s*[^\s]+", "token=<REDACTED>"),  # Token assignments
+        ]
+
+        for pattern, replacement in secret_patterns:
+            filtered = re.sub(pattern, replacement, filtered, flags=re.IGNORECASE)
+
+        return filtered

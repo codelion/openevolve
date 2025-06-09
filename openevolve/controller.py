@@ -230,6 +230,9 @@ class OpenEvolve:
             # Sample parent and inspirations from current island
             parent, inspirations = self.database.sample()
 
+            # Get artifacts for the parent program if available
+            parent_artifacts = self.database.get_artifacts(parent.id)
+
             # Build prompt
             prompt = self.prompt_sampler.build_prompt(
                 current_program=parent.code,
@@ -240,6 +243,7 @@ class OpenEvolve:
                 language=self.language,
                 evolution_round=i,
                 allow_full_rewrite=self.config.allow_full_rewrites,
+                program_artifacts=parent_artifacts if parent_artifacts else None,
             )
 
             # Generate code modification
@@ -283,6 +287,9 @@ class OpenEvolve:
                 child_id = str(uuid.uuid4())
                 child_metrics = await self.evaluator.evaluate_program(child_code, child_id)
 
+                # Handle artifacts if they exist
+                artifacts = self.evaluator.get_pending_artifacts(child_id)
+
                 # Create a child program
                 child_program = Program(
                     id=child_id,
@@ -299,6 +306,10 @@ class OpenEvolve:
 
                 # Add to database (will be added to current island)
                 self.database.add(child_program, iteration=i + 1)
+
+                # Store artifacts if they exist
+                if artifacts:
+                    self.database.store_artifacts(child_id, artifacts)
 
                 # Increment generation for current island
                 self.database.increment_island_generation()
