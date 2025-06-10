@@ -25,7 +25,7 @@ from typing import Dict, Union, List, Tuple, Optional, Any
 from pathlib import Path
 
 # Import EvaluationResult for artifacts support
-from openevolve.evaluation_result import EvaluationResult
+# from openevolve.evaluation_result import EvaluationResult  # Not needed - return dict directly
 
 # Required imports - fail fast if not available
 try:
@@ -923,22 +923,20 @@ class MLXLoRABenchmark:
         }
 
 
-def evaluate(program_path: str) -> EvaluationResult:
+def evaluate(program_path: str) -> Dict[str, Any]:
     """
     Evaluate MLX-LM LoRA kernel optimization program.
 
     Returns:
-        EvaluationResult with metrics and artifacts (stdout/stderr) for evolution feedback
+        Dictionary with metrics for OpenEvolve evolution feedback
     """
     print(f"🚀 Evaluating MLX LoRA Kernel Optimization: {program_path}")
 
     if not MLX_LM_AVAILABLE:
-        return EvaluationResult(
-            metrics={"overall_score": 0.0},
-            artifacts={
-                "stderr": "MLX-LM not available for evaluation. Please install: pip install mlx-lm",
-            }
-        )
+        return {
+        "overall_score": 0.0,
+        "error": "MLX-LM not available for evaluation. Please install: pip install mlx-lm"
+        }
 
     # Capture all output during evaluation
     with capture_output() as (stdout_capture, stderr_capture):
@@ -949,20 +947,16 @@ def evaluate(program_path: str) -> EvaluationResult:
             spec.loader.exec_module(evolved_program)
 
             if not hasattr(evolved_program, "evolved_lora_kernels"):
-                return EvaluationResult(
-                    metrics={"overall_score": 0.0},
-                    artifacts={
-                        "stderr": "Missing evolved_lora_kernels function",
-                    }
-                )
+                return {
+                    "overall_score": 0.0,
+                    "error": "Missing evolved_lora_kernels function"
+                }
 
             if not hasattr(evolved_program, "baseline_lora_kernels"):
-                return EvaluationResult(
-                    metrics={"overall_score": 0.0},
-                    artifacts={
-                        "stderr": "Missing baseline_lora_kernels function",
-                    }
-                )
+                return {
+                    "overall_score": 0.0,
+                    "error": "Missing baseline_lora_kernels function"
+                }
 
             # Get evolved kernels
             print("📦 Loading evolved kernels...")
@@ -985,13 +979,10 @@ def evaluate(program_path: str) -> EvaluationResult:
 
             except Exception as e:
                 print(f"❌ Failed to load evolved kernels: {e}")
-                return EvaluationResult(
-                    metrics={"overall_score": 0.0},
-                    artifacts={
-                        "stderr": f"Failed to load evolved kernels: {e}",
-                        "traceback": traceback.format_exc(),
-                    }
-                )
+                return {
+                    "overall_score": 0.0,
+                    "error": f"Failed to load evolved kernels: {e}"
+                }
 
             # Setup benchmark
             benchmark = MLXLoRABenchmark()
@@ -1002,12 +993,10 @@ def evaluate(program_path: str) -> EvaluationResult:
             )
 
             if "error" in comparison_results:
-                return EvaluationResult(
-                    metrics={"overall_score": 0.0},
-                    artifacts={
-                        "stderr": comparison_results["error"],
-                    }
-                )
+                return {
+                    "overall_score": 0.0,
+                    "error": comparison_results["error"]
+                }
 
             # Extract results
             overall_score = comparison_results["overall_score"]
@@ -1114,7 +1103,7 @@ def evaluate(program_path: str) -> EvaluationResult:
             else:
                 artifacts["summary"] = f"❌ Loss convergence failed (diff: {loss_difference:.4f})"
 
-            return EvaluationResult(metrics=metrics, artifacts=artifacts)
+            return metrics
 
         except Exception as e:
             error_msg = f"Evaluation failed: {str(e)}"
@@ -1133,14 +1122,11 @@ def evaluate(program_path: str) -> EvaluationResult:
             if stdout_content.strip():
                 artifacts["stdout"] = stdout_content.strip()
             
-            return EvaluationResult(
-                metrics={"overall_score": 0.0, "combined_score": 0.0},
-                artifacts=artifacts
-            )
+            return {"overall_score": 0.0, "combined_score": 0.0, "error": error_msg}
 
 
 if __name__ == "__main__":
-    print("Testing MLX LoRA Kernel Optimization Evaluator with Artifacts...")
+    print("Testing MLX LoRA Kernel Optimization Evaluator...")
 
     initial_program_path = os.path.join(os.path.dirname(__file__), "initial_program.py")
 
@@ -1148,14 +1134,10 @@ if __name__ == "__main__":
         result = evaluate(initial_program_path)
         print("\n=== Final Evaluation Results ===")
         print("METRICS:")
-        for k, v in result.metrics.items():
+        for k, v in result.items():
             if isinstance(v, float):
                 print(f"  {k}: {v:.4f}")
             else:
                 print(f"  {k}: {v}")
-        
-        print("\nARTIFACTS:")
-        for k, v in result.artifacts.items():
-            print(f"  {k}: {v}")
     else:
         print(f"Initial program not found at {initial_program_path}")
