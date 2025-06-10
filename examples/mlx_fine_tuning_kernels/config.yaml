@@ -14,7 +14,7 @@ llm:
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
   temperature: 0.7  # Reduced for more focused changes
   top_p: 0.9
-  max_tokens: 16000  # Reduced to focus on concise improvements
+  max_tokens: 24000  # Reduced to focus on concise improvements
   timeout: 300
 
 # SIMPLIFIED prompt targeting specific kernel improvements
