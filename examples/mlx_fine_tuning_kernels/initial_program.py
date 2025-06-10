@@ -313,15 +313,23 @@ def patch_model_with_kernels(model, evolved_kernels):
 
         # CRITICAL FIX: Replace existing LoRA layers with optimized versions
         OptimizedLoRALinear = evolved_kernels.get("optimized_lora_linear_class")
+        replaced_count = 0
+        
         if OptimizedLoRALinear:
             print("  🔧 Replacing LoRA layers with optimized versions...")
-            replaced_count = 0
             
             # Use MLX's named_modules() to find LoRA layers
             lora_layers_to_replace = []
             
-            # First pass: identify all LoRA layers using MLX-LM naming conventions
-            for name, module in model.named_modules():
+            # Debug: First check what modules exist in the model
+            print("    🔎 Scanning model structure for LoRA layers...")
+            all_modules = list(model.named_modules())
+            print(f"    Total modules found: {len(all_modules)}")
+            
+            # Look for modules that might be LoRA layers
+            for name, module in all_modules:
+                module_type = type(module).__name__
+                
                 # MLX-LM uses different naming patterns - check for common ones
                 has_lora = (
                     # Standard LoRA names
@@ -331,15 +339,29 @@ def patch_model_with_kernels(model, evolved_kernels):
                     # Alternative names
                     (hasattr(module, 'lora_A') and hasattr(module, 'lora_B')) or
                     # Check for any attributes containing 'lora'
-                    any('lora' in attr.lower() for attr in dir(module) if not attr.startswith('_'))
+                    any('lora' in attr.lower() for attr in dir(module) if not attr.startswith('_')) or
+                    # Check for LoRA in the class name
+                    'lora' in module_type.lower()
                 )
                 
-                if has_lora:
+                # Also check if this module has LoRA-related parameters
+                param_names = []
+                try:
+                    param_names = list(dict(module.named_parameters()).keys())
+                except:
+                    pass
+                
+                has_lora_params = any('lora' in p.lower() for p in param_names)
+                
+                if has_lora or has_lora_params:
                     lora_layers_to_replace.append((name, module))
-                    print(f"    🔍 Found LoRA layer: {name}")
+                    print(f"    🔍 Found LoRA layer: {name} (type: {module_type})")
                     # Debug: show what attributes this layer has
                     lora_attrs = [attr for attr in dir(module) if not attr.startswith('_') and ('lora' in attr.lower() or attr in ['A', 'B'])]
                     print(f"      LoRA attributes: {lora_attrs}")
+                    print(f"      LoRA parameters: {[p for p in param_names if 'lora' in p.lower()]}")
+            
+            print(f"    Found {len(lora_layers_to_replace)} potential LoRA layers to optimize")
             
             # Second pass: replace LoRA layers with optimized versions
             for layer_name, lora_layer in lora_layers_to_replace:
@@ -461,13 +483,20 @@ def patch_model_with_kernels(model, evolved_kernels):
                     traceback.print_exc()
             
             print(f"  ✅ Replaced {replaced_count} LoRA layers with optimized versions")
+        else:
+            print("  ⚠️ No OptimizedLoRALinear class found in evolved kernels")
 
         # Store kernels for use during training
         model._evolved_kernels = evolved_kernels
         model._has_evolved_kernels = True
-        model._kernels_applied = (replaced_count > 0) if 'replaced_count' in locals() else True
+        # Set kernels_applied based on whether we actually replaced any layers OR have valid kernels
+        model._kernels_applied = (
+            (replaced_count > 0) if 'replaced_count' in locals() else 
+            (evolved_kernels is not None and len(evolved_kernels) > 0)
+        )
 
         print(f"  ✅ Model patching complete - kernels ready for use")
+        print(f"  📊 Kernels applied status: {getattr(model, '_kernels_applied', False)}")
 
     except Exception as e:
         print(f"❌ ERROR during patching: {e}")
@@ -603,11 +632,17 @@ def standard_lora_fine_tuning_with_kernels(
     )
     print_trainable_parameters(model)
 
+    # Initialize kernel tracking
+    kernels_actually_applied = False
+    
     # THEN apply evolved kernels if provided (after LoRA layers exist)
     if evolved_kernels:
         print("🚀 Applying evolved kernels AFTER LoRA...")
         patch_model_with_kernels(model, evolved_kernels)
+        # Check if kernels were actually applied
+        kernels_actually_applied = getattr(model, '_kernels_applied', False)
         print(f"  ✅ Evolved kernels active: {list(evolved_kernels.keys())}")
+        print(f"  📊 Kernels actually applied: {kernels_actually_applied}")
     else:
         print("🔍 Using standard MLX-LM (no evolved kernels)")
 
@@ -698,7 +733,10 @@ def standard_lora_fine_tuning_with_kernels(
         "model_name": model_name,
         "num_layers_trained": args.num_layers,
         "lora_rank": args.lora_parameters["rank"],
-        "used_evolved_kernels": evolved_kernels is not None,
+        "used_evolved_kernels": kernels_actually_applied,  # Keep for backwards compatibility
+        "kernels_used": kernels_actually_applied,  # This is what the evaluator expects!
+        "kernels_provided": evolved_kernels is not None,
+        "kernels_applied": kernels_actually_applied,
     }
 
     return final_loss, metrics

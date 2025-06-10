@@ -875,6 +875,9 @@ class MLXLoRABenchmark:
         )
         overall_score = 0.7 * convergence_score + 0.3 * efficiency_score
 
+        # FIX: Check if kernels were actually used in evolved trials
+        kernels_actually_used = any(r.get("kernels_used", False) for r in evolved_success)
+
         return {
             "baseline_avg": baseline_avg,
             "evolved_avg": evolved_avg,
@@ -890,6 +893,10 @@ class MLXLoRABenchmark:
                 "baseline": len(baseline_success),
                 "evolved": len(evolved_success),
             },
+            # FIX: Include the kernel usage tracking
+            "kernels_actually_used": kernels_actually_used,
+            # DEBUGGING: Keep the raw trial data for debugging
+            "evolved_trials_debug": evolved_success,
         }
 
 
@@ -991,15 +998,22 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
             f"  Evolved  - Loss: {evolved_avg['final_loss']:.4f}, Time: {evolved_avg['training_time']:.1f}s, Memory: {evolved_avg['memory_delta']:.1f} MB"
         )
 
-        # Check if kernels were actually used in evolved trials
-        evolved_success = [r for r in comparison_results.get("evolved", []) if "error" not in r]
-        if evolved_success:
-            kernels_actually_used = any(r.get("kernels_used", False) for r in evolved_success)
-            if evolved_kernels and not kernels_actually_used:
+        # Check if kernels were actually used in evolved trials (now computed by _analyze_results)
+        kernels_actually_used = comparison_results.get("kernels_actually_used", False)
+        
+        # Debug output
+        if evolved_kernels:
+            if kernels_actually_used:
+                print(f"  ✅ Evolved kernels were successfully used in trials")
+            else:
                 print(f"  ⚠️ WARNING: Evolved kernels were provided but not used in trials")
                 print(f"  🔍 This suggests the kernel injection mechanism may not be working")
-            elif evolved_kernels and kernels_actually_used:
-                print(f"  ✅ Evolved kernels were successfully used in trials")
+                # Let's check the debug data
+                debug_trials = comparison_results.get("evolved_trials_debug", [])
+                print(f"  📊 Debug: {len(debug_trials)} evolved trials found")
+                for i, trial in enumerate(debug_trials):
+                    kernels_used_in_trial = trial.get("kernels_used", "MISSING")
+                    print(f"    Trial {i+1}: kernels_used = {kernels_used_in_trial}")
 
         # Success interpretation
         if overall_score >= 0.8:
@@ -1048,11 +1062,7 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
             "target_achieved": bool(
                 loss_convergence_ok and (speed_improvement > 1.1 or memory_improvement > 1.1)
             ),
-            "kernels_actually_used": (
-                bool(evolved_success and any(r.get("kernels_used", False) for r in evolved_success))
-                if evolved_success
-                else False
-            ),
+            "kernels_actually_used": kernels_actually_used,
         }
 
         return results
