@@ -93,4 +93,4 @@ evaluator:
 # Evolution settings
 diff_based_evolution: true
 allow_full_rewrites: false  
-max_code_length: 30000  # Reduced to encourage concise changes
+max_code_length: 50000  # Reduced to encourage concise changes
