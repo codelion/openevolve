@@ -1,0 +1,171 @@
+# Fixed Algorithmic MLX LoRA Optimization Configuration  
+# Target: Real algorithmic improvements using ACTUAL MLX APIs
+
+max_iterations: 15
+checkpoint_interval: 5
+log_level: "INFO"
+
+# LLM configuration
+llm:
+  primary_model: "gemini-2.5-flash-preview-05-20"
+  primary_model_weight: 0.6
+  secondary_model: "gemini-2.5-pro-preview-06-05"
+  secondary_model_weight: 0.4
+  api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
+  temperature: 0.7
+  top_p: 0.95
+  max_tokens: 32000
+  timeout: 240
+
+# FIXED ALGORITHMIC OPTIMIZATION prompt with real MLX APIs
+prompt:
+  system_message: |
+    You are optimizing the `optimized_lora_matmul` function using REAL ALGORITHMIC IMPROVEMENTS.
+    
+    # CURRENT NAIVE IMPLEMENTATION:
+    ```python
+    @mx.compile
+    def optimized_lora_matmul(x, lora_a, lora_b, scale):
+        # Naive approach - always does (x @ A) @ B
+        temp = mx.matmul(x, lora_a)
+        result = mx.matmul(temp, lora_b)
+        return scale * result
+    ```
+    
+    # REAL ALGORITHMIC OPTIMIZATION OPPORTUNITIES:
+    
+    ## 1. MATRIX MULTIPLICATION ORDER OPTIMIZATION
+    **Mathematical insight**: Choose optimal order based on tensor dimensions
+    ```python
+    # Strategy 1: Standard order (x @ A) @ B
+    # Good when: rank is small relative to input_features
+    # Memory: batch_size * seq_len * rank (intermediate)
+    
+    # Strategy 2: Pre-compute order x @ (A @ B) 
+    # Good when: rank is very small (≤ 8) and reused across batches
+    # Memory: input_features * output_features (intermediate)
+    
+    # Decision logic example:
+    if rank <= 8 and input_features > 512:
+        # Pre-compute A @ B, then x @ (A @ B)
+        ab_combined = mx.matmul(lora_a, lora_b)
+        return scale * mx.matmul(x, ab_combined)
+    else:
+        # Standard (x @ A) @ B
+        temp = mx.matmul(x, lora_a)
+        return scale * mx.matmul(temp, lora_b)
+    ```
+    
+    ## 2. SEQUENCE CHUNKING FOR MEMORY EFFICIENCY
+    **For large sequences**: Process in chunks to reduce peak memory
+    ```python
+    if seq_len > 256:  # Long sequence threshold
+        chunk_size = 128  # Optimal chunk size
+        results = []
+        for i in range(0, seq_len, chunk_size):
+            end_i = min(i + chunk_size, seq_len)
+            x_chunk = x[:, i:end_i, :]
+            # Process chunk with standard algorithm
+            temp = mx.matmul(x_chunk, lora_a)
+            result = mx.matmul(temp, lora_b)
+            results.append(result)
+        return scale * mx.concatenate(results, axis=1)
+    ```
+    
+    ## 3. EARLY SCALING OPTIMIZATION
+    **Optimize scaling placement**:
+    ```python
+    # Option 1: Scale lora_b early (fewer operations)
+    scaled_lora_b = scale * lora_b
+    temp = mx.matmul(x, lora_a)
+    return mx.matmul(temp, scaled_lora_b)
+    
+    # Option 2: Scale intermediate result
+    temp = scale * mx.matmul(x, lora_a)  
+    return mx.matmul(temp, lora_b)
+    ```
+    
+    ## 4. ADAPTIVE RANK-BASED STRATEGIES
+    **Different algorithms for different rank sizes**:
+    ```python
+    rank = lora_a.shape[1]
+    
+    if rank <= 4:
+        # Ultra-low rank: pre-compute and cache
+        return optimized_ultra_low_rank(x, lora_a, lora_b, scale)
+    elif rank <= 16:
+        # Low rank: standard with early scaling
+        return optimized_low_rank(x, lora_a, lora_b, scale)
+    elif rank <= 64:
+        # Medium rank: chunking if needed
+        return optimized_medium_rank(x, lora_a, lora_b, scale)
+    else:
+        # High rank: aggressive chunking
+        return optimized_high_rank(x, lora_a, lora_b, scale)
+    ```
+    
+    ## 5. MEMORY-AWARE PROCESSING
+    **Use available helper functions**:
+    ```python
+    # Use the provided helper functions!
+    batch_size, seq_len, input_features = x.shape
+    
+    # Get optimal chunk size based on memory
+    optimal_chunk = compute_optimal_chunk_size(x.shape)
+    
+    # Estimate costs for different strategies
+    standard_cost = estimate_computation_cost(x.shape, rank, "standard")
+    precompute_cost = estimate_computation_cost(x.shape, rank, "precompute")
+    
+    # Choose best strategy
+    if precompute_cost < standard_cost:
+        # Use pre-computation strategy
+    else:
+        # Use standard strategy
+    ```
+    
+    # CRITICAL: ONLY USE REAL MLX FUNCTIONS
+    **Available MLX operations**: 
+    - mx.matmul() ✅
+    - mx.concatenate() ✅ 
+    - mx.reshape() ✅
+    - mx.transpose() ✅
+    - mx.split() ✅
+    - mx.broadcast_to() ✅
+    - Basic arithmetic: *, +, -, / ✅
+    
+    **NOT AVAILABLE** (do not use):
+    - mx.fused() ❌ (doesn't exist)
+    - mx.eval() ❌ (not allowed in @mx.compile)
+    - mx.clear_cache() ❌ (not allowed in @mx.compile)
+    
+    # YOUR TASK:
+    1. **Analyze tensor shapes**: batch_size, seq_len, input_features, rank
+    2. **Choose optimal algorithm**: Based on rank size and sequence length
+    3. **Implement real optimizations**: Chunking, order optimization, early scaling
+    4. **Use conditional logic**: Adapt algorithm to input characteristics
+    5. **Leverage helper functions**: For memory and cost estimation
+    
+    Generate a truly optimized algorithm that adapts to different scenarios!
+  
+  num_top_programs: 3
+  num_diverse_programs: 2
+
+# Database configuration  
+database:
+  db_path: "./openevolve_output/program_db"
+  population_size: 25
+  archive_size: 15
+  num_islands: 1
+  elite_selection_ratio: 0.4
+  exploitation_ratio: 0.6
+  exploration_ratio: 0.4
+
+# Evaluator configuration
+evaluator:
+  timeout: 400
+
+# Evolution settings
+diff_based_evolution: true
+allow_full_rewrites: false
+max_code_length: 50000

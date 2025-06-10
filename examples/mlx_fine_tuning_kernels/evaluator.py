@@ -1,9 +1,11 @@
 """
-MLX LoRA Fine-tuning Optimization Evaluator
+MLX LoRA Fine-tuning Optimization Evaluator with Artifacts Support
 
 This evaluator performs real LoRA fine-tuning benchmarks using the mlx-lm library,
 comparing standard MLX-LM against MLX-LM with evolved kernels injected.
 The goal is to achieve the same training loss with improved memory efficiency and/or speed.
+
+Enhanced with artifacts to provide execution output feedback during evolution.
 """
 
 import importlib.util
@@ -16,8 +18,14 @@ import os
 import tempfile
 import shutil
 import json
+import sys
+import io
+import contextlib
 from typing import Dict, Union, List, Tuple, Optional, Any
 from pathlib import Path
+
+# Import EvaluationResult for artifacts support
+from openevolve.evaluation_result import EvaluationResult
 
 # Required imports - fail fast if not available
 try:
@@ -59,6 +67,23 @@ def clear_mlx_cache_and_gc():
     """Clear MLX cache and run garbage collection."""
     mx.clear_cache()
     gc.collect()
+
+
+@contextlib.contextmanager
+def capture_output():
+    """Context manager to capture stdout and stderr."""
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    stdout_capture = io.StringIO()
+    stderr_capture = io.StringIO()
+    
+    try:
+        sys.stdout = stdout_capture
+        sys.stderr = stderr_capture
+        yield stdout_capture, stderr_capture
+    finally:
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
 
 
 class MLXLoRABenchmark:
@@ -875,7 +900,7 @@ class MLXLoRABenchmark:
         )
         overall_score = 0.7 * convergence_score + 0.3 * efficiency_score
 
-        # FIX: Check if kernels were actually used in evolved trials
+        # Check if kernels were actually used in evolved trials
         kernels_actually_used = any(r.get("kernels_used", False) for r in evolved_success)
 
         return {
@@ -893,198 +918,244 @@ class MLXLoRABenchmark:
                 "baseline": len(baseline_success),
                 "evolved": len(evolved_success),
             },
-            # FIX: Include the kernel usage tracking
             "kernels_actually_used": kernels_actually_used,
-            # DEBUGGING: Keep the raw trial data for debugging
             "evolved_trials_debug": evolved_success,
         }
 
 
-def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
+def evaluate(program_path: str) -> EvaluationResult:
     """
     Evaluate MLX-LM LoRA kernel optimization program.
 
-    Uses sequential evaluation approach:
-    1. Run ALL baseline trials (standard MLX-LM)
-    2. Run ALL evolved trials (MLX-LM + evolved kernels)
-    3. Compare results
-
-    This avoids monkey patching interference between trials.
+    Returns:
+        EvaluationResult with metrics and artifacts (stdout/stderr) for evolution feedback
     """
     print(f"🚀 Evaluating MLX LoRA Kernel Optimization: {program_path}")
 
     if not MLX_LM_AVAILABLE:
-        return {
-            "overall_score": 0.0,
-            "error": "MLX-LM not available for evaluation. Please install: pip install mlx-lm",
-        }
+        return EvaluationResult(
+            metrics={"overall_score": 0.0},
+            artifacts={
+                "stderr": "MLX-LM not available for evaluation. Please install: pip install mlx-lm",
+            }
+        )
 
-    try:
-        # Load evolved program
-        spec = importlib.util.spec_from_file_location("evolved_program", program_path)
-        evolved_program = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(evolved_program)
-
-        if not hasattr(evolved_program, "evolved_lora_kernels"):
-            return {"overall_score": 0.0, "error": "Missing evolved_lora_kernels function"}
-
-        if not hasattr(evolved_program, "baseline_lora_kernels"):
-            return {"overall_score": 0.0, "error": "Missing baseline_lora_kernels function"}
-
-        # Get evolved kernels
-        print("📦 Loading evolved kernels...")
+    # Capture all output during evaluation
+    with capture_output() as (stdout_capture, stderr_capture):
         try:
-            evolved_kernels = evolved_program.evolved_lora_kernels()
-            baseline_kernels = evolved_program.baseline_lora_kernels()  # Returns None
+            # Load evolved program
+            spec = importlib.util.spec_from_file_location("evolved_program", program_path)
+            evolved_program = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(evolved_program)
 
-            print(
-                f"✅ Evolved kernels loaded: {list(evolved_kernels.keys()) if evolved_kernels else 'None'}"
+            if not hasattr(evolved_program, "evolved_lora_kernels"):
+                return EvaluationResult(
+                    metrics={"overall_score": 0.0},
+                    artifacts={
+                        "stderr": "Missing evolved_lora_kernels function",
+                    }
+                )
+
+            if not hasattr(evolved_program, "baseline_lora_kernels"):
+                return EvaluationResult(
+                    metrics={"overall_score": 0.0},
+                    artifacts={
+                        "stderr": "Missing baseline_lora_kernels function",
+                    }
+                )
+
+            # Get evolved kernels
+            print("📦 Loading evolved kernels...")
+            try:
+                evolved_kernels = evolved_program.evolved_lora_kernels()
+                baseline_kernels = evolved_program.baseline_lora_kernels()  # Returns None
+
+                print(
+                    f"✅ Evolved kernels loaded: {list(evolved_kernels.keys()) if evolved_kernels else 'None'}"
+                )
+                print(f"✅ Baseline: Standard MLX-LM (no custom kernels)")
+
+                # Validate evolved kernels
+                if evolved_kernels:
+                    for kernel_name, kernel_func in evolved_kernels.items():
+                        if kernel_func is None:
+                            print(f"  ⚠️ Warning: {kernel_name} is None")
+                        else:
+                            print(f"  ✅ {kernel_name}: {type(kernel_func)}")
+
+            except Exception as e:
+                print(f"❌ Failed to load evolved kernels: {e}")
+                return EvaluationResult(
+                    metrics={"overall_score": 0.0},
+                    artifacts={
+                        "stderr": f"Failed to load evolved kernels: {e}",
+                        "traceback": traceback.format_exc(),
+                    }
+                )
+
+            # Setup benchmark
+            benchmark = MLXLoRABenchmark()
+
+            # Run sequential comparison (baseline first, then evolved)
+            comparison_results = benchmark.compare_implementations(
+                evolved_kernels=evolved_kernels, num_trials=5
             )
-            print(f"✅ Baseline: Standard MLX-LM (no custom kernels)")
 
-            # Validate evolved kernels
+            if "error" in comparison_results:
+                return EvaluationResult(
+                    metrics={"overall_score": 0.0},
+                    artifacts={
+                        "stderr": comparison_results["error"],
+                    }
+                )
+
+            # Extract results
+            overall_score = comparison_results["overall_score"]
+            convergence_score = comparison_results["convergence_score"]
+            efficiency_score = comparison_results["efficiency_score"]
+
+            loss_difference = comparison_results["loss_difference"]
+            loss_convergence_ok = comparison_results["loss_convergence_ok"]
+            speed_improvement = comparison_results["speed_improvement"]
+            memory_improvement = comparison_results["memory_improvement"]
+            time_improvement = comparison_results["time_improvement"]
+
+            baseline_avg = comparison_results["baseline_avg"]
+            evolved_avg = comparison_results["evolved_avg"]
+
+            print(f"\n📊 MLX LORA KERNEL OPTIMIZATION RESULTS:")
+            print(
+                f"  Loss Convergence: {'✅' if loss_convergence_ok else '❌'} (diff: {loss_difference:.4f})"
+            )
+            print(f"  Speed Improvement: {speed_improvement:.2f}x")
+            print(f"  Memory Improvement: {memory_improvement:.2f}x")
+            print(f"  Time Improvement: {time_improvement:.2f}x")
+            print(f"  Convergence Score: {convergence_score:.3f}")
+            print(f"  Efficiency Score: {efficiency_score:.3f}")
+            print(f"  Overall Score: {overall_score:.3f}")
+
+            print(f"\n🔍 DETAILED METRICS:")
+            print(
+                f"  Baseline - Loss: {baseline_avg['final_loss']:.4f}, Time: {baseline_avg['training_time']:.1f}s, Memory: {baseline_avg['memory_delta']:.1f} MB"
+            )
+            print(
+                f"  Evolved  - Loss: {evolved_avg['final_loss']:.4f}, Time: {evolved_avg['training_time']:.1f}s, Memory: {evolved_avg['memory_delta']:.1f} MB"
+            )
+
+            # Check if kernels were actually used in evolved trials
+            kernels_actually_used = comparison_results.get("kernels_actually_used", False)
+            
             if evolved_kernels:
-                for kernel_name, kernel_func in evolved_kernels.items():
-                    if kernel_func is None:
-                        print(f"  ⚠️ Warning: {kernel_name} is None")
-                    else:
-                        print(f"  ✅ {kernel_name}: {type(kernel_func)}")
+                if kernels_actually_used:
+                    print(f"  ✅ Evolved kernels were successfully used in trials")
+                else:
+                    print(f"  ⚠️ WARNING: Evolved kernels were provided but not used in trials")
+
+            # Success interpretation
+            if overall_score >= 0.8:
+                print("  🥇 EXCELLENT: Strong improvements while maintaining convergence!")
+            elif overall_score >= 0.6:
+                print("  🥈 VERY GOOD: Good improvements with convergence!")
+            elif overall_score >= 0.4:
+                print("  🥉 GOOD: Some improvements achieved!")
+            elif convergence_score > 0.5:
+                print("  📈 PROGRESS: Reasonable convergence, efficiency needs work!")
+            else:
+                print("  🔄 DEVELOPING: Convergence issues need to be addressed!")
+
+            # Prepare metrics
+            metrics = {
+                "overall_score": float(overall_score),
+                "combined_score": float(overall_score),  # Primary metric for OpenEvolve
+                # Core metrics
+                "convergence_score": float(convergence_score),
+                "efficiency_score": float(efficiency_score),
+                "loss_convergence_ok": bool(loss_convergence_ok),
+                "loss_difference": float(loss_difference),
+                # Performance improvements
+                "speed_improvement": float(speed_improvement),
+                "memory_improvement": float(memory_improvement),
+                "time_improvement": float(time_improvement),
+                # Baseline metrics
+                "baseline_final_loss": float(baseline_avg["final_loss"]),
+                "baseline_training_time": float(baseline_avg["training_time"]),
+                "baseline_memory_delta": float(baseline_avg["memory_delta"]),
+                "baseline_tokens_per_second": float(baseline_avg["tokens_per_second"]),
+                # Evolved metrics
+                "evolved_final_loss": float(evolved_avg["final_loss"]),
+                "evolved_training_time": float(evolved_avg["training_time"]),
+                "evolved_memory_delta": float(evolved_avg["memory_delta"]),
+                "evolved_tokens_per_second": float(evolved_avg["tokens_per_second"]),
+                # Trial information
+                "successful_baseline_trials": comparison_results["successful_trials"]["baseline"],
+                "successful_evolved_trials": comparison_results["successful_trials"]["evolved"],
+                # Metadata
+                "kernels_actually_used": kernels_actually_used,
+            }
+
+            # Get captured output
+            stdout_content = stdout_capture.getvalue()
+            stderr_content = stderr_capture.getvalue()
+
+            # Prepare simple artifacts with actual program output
+            artifacts = {}
+            
+            if stdout_content.strip():
+                artifacts["stdout"] = stdout_content.strip()
+            
+            if stderr_content.strip():
+                artifacts["stderr"] = stderr_content.strip()
+
+            # Add a brief execution summary
+            if loss_convergence_ok and (speed_improvement > 1.1 or memory_improvement > 1.1):
+                artifacts["summary"] = f"✅ Success: {speed_improvement:.2f}x speed, {memory_improvement:.2f}x memory, loss converged"
+            elif loss_convergence_ok:
+                artifacts["summary"] = f"✅ Loss converged but efficiency gains modest: {speed_improvement:.2f}x speed, {memory_improvement:.2f}x memory"
+            else:
+                artifacts["summary"] = f"❌ Loss convergence failed (diff: {loss_difference:.4f})"
+
+            return EvaluationResult(metrics=metrics, artifacts=artifacts)
 
         except Exception as e:
-            print(f"❌ Failed to load evolved kernels: {e}")
-            return {"overall_score": 0.0, "error": f"Failed to load evolved kernels: {e}"}
-
-        # Setup benchmark
-        benchmark = MLXLoRABenchmark()
-
-        # Run sequential comparison (baseline first, then evolved)
-        comparison_results = benchmark.compare_implementations(
-            evolved_kernels=evolved_kernels, num_trials=5  # Reduced for faster testing
-        )
-
-        if "error" in comparison_results:
-            return {"overall_score": 0.0, "error": comparison_results["error"]}
-
-        # Extract results
-        overall_score = comparison_results["overall_score"]
-        convergence_score = comparison_results["convergence_score"]
-        efficiency_score = comparison_results["efficiency_score"]
-
-        loss_difference = comparison_results["loss_difference"]
-        loss_convergence_ok = comparison_results["loss_convergence_ok"]
-        speed_improvement = comparison_results["speed_improvement"]
-        memory_improvement = comparison_results["memory_improvement"]
-        time_improvement = comparison_results["time_improvement"]
-
-        baseline_avg = comparison_results["baseline_avg"]
-        evolved_avg = comparison_results["evolved_avg"]
-
-        print(f"\n📊 MLX LORA KERNEL OPTIMIZATION RESULTS:")
-        print(
-            f"  Loss Convergence: {'✅' if loss_convergence_ok else '❌'} (diff: {loss_difference:.4f})"
-        )
-        print(f"  Speed Improvement: {speed_improvement:.2f}x")
-        print(f"  Memory Improvement: {memory_improvement:.2f}x")
-        print(f"  Time Improvement: {time_improvement:.2f}x")
-        print(f"  Convergence Score: {convergence_score:.3f}")
-        print(f"  Efficiency Score: {efficiency_score:.3f}")
-        print(f"  Overall Score: {overall_score:.3f}")
-
-        print(f"\n🔍 DETAILED METRICS:")
-        print(
-            f"  Baseline - Loss: {baseline_avg['final_loss']:.4f}, Time: {baseline_avg['training_time']:.1f}s, Memory: {baseline_avg['memory_delta']:.1f} MB"
-        )
-        print(
-            f"  Evolved  - Loss: {evolved_avg['final_loss']:.4f}, Time: {evolved_avg['training_time']:.1f}s, Memory: {evolved_avg['memory_delta']:.1f} MB"
-        )
-
-        # Check if kernels were actually used in evolved trials (now computed by _analyze_results)
-        kernels_actually_used = comparison_results.get("kernels_actually_used", False)
-        
-        # Debug output
-        if evolved_kernels:
-            if kernels_actually_used:
-                print(f"  ✅ Evolved kernels were successfully used in trials")
-            else:
-                print(f"  ⚠️ WARNING: Evolved kernels were provided but not used in trials")
-                print(f"  🔍 This suggests the kernel injection mechanism may not be working")
-                # Let's check the debug data
-                debug_trials = comparison_results.get("evolved_trials_debug", [])
-                print(f"  📊 Debug: {len(debug_trials)} evolved trials found")
-                for i, trial in enumerate(debug_trials):
-                    kernels_used_in_trial = trial.get("kernels_used", "MISSING")
-                    print(f"    Trial {i+1}: kernels_used = {kernels_used_in_trial}")
-
-        # Success interpretation
-        if overall_score >= 0.8:
-            print("  🥇 EXCELLENT: Strong improvements while maintaining convergence!")
-        elif overall_score >= 0.6:
-            print("  🥈 VERY GOOD: Good improvements with convergence!")
-        elif overall_score >= 0.4:
-            print("  🥉 GOOD: Some improvements achieved!")
-        elif convergence_score > 0.5:
-            print("  📈 PROGRESS: Reasonable convergence, efficiency needs work!")
-        else:
-            print("  🔄 DEVELOPING: Convergence issues need to be addressed!")
-
-        # Prepare results
-        results = {
-            "overall_score": float(overall_score),
-            "combined_score": float(overall_score),  # Primary metric for OpenEvolve
-            # Core metrics
-            "convergence_score": float(convergence_score),
-            "efficiency_score": float(efficiency_score),
-            "loss_convergence_ok": bool(loss_convergence_ok),
-            "loss_difference": float(loss_difference),
-            # Performance improvements
-            "speed_improvement": float(speed_improvement),
-            "memory_improvement": float(memory_improvement),
-            "time_improvement": float(time_improvement),
-            # Baseline metrics
-            "baseline_final_loss": float(baseline_avg["final_loss"]),
-            "baseline_training_time": float(baseline_avg["training_time"]),
-            "baseline_memory_delta": float(baseline_avg["memory_delta"]),
-            "baseline_tokens_per_second": float(baseline_avg["tokens_per_second"]),
-            # Evolved metrics
-            "evolved_final_loss": float(evolved_avg["final_loss"]),
-            "evolved_training_time": float(evolved_avg["training_time"]),
-            "evolved_memory_delta": float(evolved_avg["memory_delta"]),
-            "evolved_tokens_per_second": float(evolved_avg["tokens_per_second"]),
-            # Trial information
-            "successful_baseline_trials": comparison_results["successful_trials"]["baseline"],
-            "successful_evolved_trials": comparison_results["successful_trials"]["evolved"],
-            # Metadata
-            "evaluation_type": "mlx_lora_kernel_optimization",
-            "achieves_convergence": bool(loss_convergence_ok),
-            "has_efficiency_improvements": bool(
-                speed_improvement > 1.05 or memory_improvement > 1.05
-            ),
-            "target_achieved": bool(
-                loss_convergence_ok and (speed_improvement > 1.1 or memory_improvement > 1.1)
-            ),
-            "kernels_actually_used": kernels_actually_used,
-        }
-
-        return results
-
-    except Exception as e:
-        print(f"❌ Evaluation failed: {str(e)}")
-        traceback.print_exc()
-        return {"overall_score": 0.0, "combined_score": 0.0, "error": str(e)}
+            error_msg = f"Evaluation failed: {str(e)}"
+            print(error_msg)
+            traceback.print_exc()
+            
+            # Get any captured output even if there was an error
+            stdout_content = stdout_capture.getvalue()
+            stderr_content = stderr_capture.getvalue()
+            
+            artifacts = {
+                "stderr": error_msg + "\n" + stderr_content if stderr_content else error_msg,
+                "traceback": traceback.format_exc(),
+            }
+            
+            if stdout_content.strip():
+                artifacts["stdout"] = stdout_content.strip()
+            
+            return EvaluationResult(
+                metrics={"overall_score": 0.0, "combined_score": 0.0},
+                artifacts=artifacts
+            )
 
 
 if __name__ == "__main__":
-    print("Testing MLX LoRA Kernel Optimization Evaluator...")
+    print("Testing MLX LoRA Kernel Optimization Evaluator with Artifacts...")
 
     initial_program_path = os.path.join(os.path.dirname(__file__), "initial_program.py")
 
     if os.path.exists(initial_program_path):
-        results = evaluate(initial_program_path)
+        result = evaluate(initial_program_path)
         print("\n=== Final Evaluation Results ===")
-        for k, v in results.items():
+        print("METRICS:")
+        for k, v in result.metrics.items():
             if isinstance(v, float):
                 print(f"  {k}: {v:.4f}")
             else:
                 print(f"  {k}: {v}")
+        
+        print("\nARTIFACTS:")
+        for k, v in result.artifacts.items():
+            print(f"  {k}: {v}")
     else:
         print(f"Initial program not found at {initial_program_path}")
