@@ -11,12 +11,14 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import traceback
 
 from openevolve.config import EvaluatorConfig
+from openevolve.evaluation_result import EvaluationResult
 from openevolve.llm.ensemble import LLMEnsemble
 from openevolve.utils.async_utils import TaskPool, run_in_executor
 from openevolve.prompt.sampler import PromptSampler
@@ -50,6 +52,9 @@ class Evaluator:
 
         # Set up evaluation function if file exists
         self._load_evaluation_function()
+
+        # Pending artifacts storage for programs
+        self._pending_artifacts: Dict[str, Dict[str, Union[str, bytes]]] = {}
 
         logger.info(f"Initialized evaluator with {evaluation_file}")
 
@@ -96,6 +101,9 @@ class Evaluator:
         start_time = time.time()
         program_id_str = f" {program_id}" if program_id else ""
 
+        # Check if artifacts are enabled
+        artifacts_enabled = os.environ.get("ENABLE_ARTIFACTS", "true").lower() == "true"
+
         # Retry logic for evaluation
         last_exception = None
         for attempt in range(self.config.max_retries + 1):
@@ -108,10 +116,13 @@ class Evaluator:
                 # Run evaluation
                 if self.config.cascade_evaluation:
                     # Run cascade evaluation
-                    metrics = await self._cascade_evaluate(temp_file_path)
+                    result = await self._cascade_evaluate(temp_file_path)
                 else:
                     # Run direct evaluation
-                    metrics = await self._direct_evaluate(temp_file_path)
+                    result = await self._direct_evaluate(temp_file_path)
+
+                # Process the result based on type
+                eval_result = self._process_evaluation_result(result)
 
                 # Add LLM feedback if configured
                 if self.config.use_llm_feedback and self.llm_ensemble:
@@ -119,21 +130,34 @@ class Evaluator:
 
                     # Combine metrics
                     for name, value in feedback_metrics.items():
-                        metrics[f"llm_{name}"] = value * self.config.llm_feedback_weight
+                        eval_result.metrics[f"llm_{name}"] = value * self.config.llm_feedback_weight
+
+                # Store artifacts if enabled and present
+                if artifacts_enabled and eval_result.has_artifacts() and program_id:
+                    self._pending_artifacts[program_id] = eval_result.artifacts
 
                 elapsed = time.time() - start_time
                 logger.info(
                     f"Evaluated program{program_id_str} in {elapsed:.2f}s: "
-                    f"{format_metrics_safe(metrics)}"
+                    f"{format_metrics_safe(eval_result.metrics)}"
                 )
 
-                return metrics
+                # Return just metrics for backward compatibility
+                return eval_result.metrics
 
             except Exception as e:
                 last_exception = e
                 logger.warning(
                     f"Evaluation attempt {attempt + 1}/{self.config.max_retries + 1} failed for program{program_id_str}: {str(e)}"
                 )
+
+                # Capture failure artifacts if enabled
+                if artifacts_enabled and program_id:
+                    self._pending_artifacts[program_id] = {
+                        "stderr": str(e),
+                        "traceback": traceback.format_exc(),
+                        "failure_stage": "evaluation",
+                    }
 
                 # If this is not the last attempt, wait a bit before retrying
                 if attempt < self.config.max_retries:
@@ -149,6 +173,39 @@ class Evaluator:
             f"All evaluation attempts failed for program{program_id_str}. Last error: {str(last_exception)}"
         )
         return {"error": 0.0}
+
+    def _process_evaluation_result(self, result: Any) -> EvaluationResult:
+        """
+        Process evaluation result to handle both dict and EvaluationResult returns
+
+        Args:
+            result: Raw result from evaluation function
+
+        Returns:
+            EvaluationResult instance
+        """
+        if isinstance(result, dict):
+            # Backward compatibility - wrap dict in EvaluationResult
+            return EvaluationResult.from_dict(result)
+        elif isinstance(result, EvaluationResult):
+            # New format - use directly
+            return result
+        else:
+            # Error case - return error metrics
+            logger.warning(f"Unexpected evaluation result type: {type(result)}")
+            return EvaluationResult(metrics={"error": 0.0})
+
+    def get_pending_artifacts(self, program_id: str) -> Optional[Dict[str, Union[str, bytes]]]:
+        """
+        Get and clear pending artifacts for a program
+
+        Args:
+            program_id: Program ID
+
+        Returns:
+            Artifacts dictionary or None if not found
+        """
+        return self._pending_artifacts.pop(program_id, None)
 
     @run_in_executor
     def _direct_evaluate(self, program_path: str) -> Dict[str, float]:
@@ -176,7 +233,9 @@ class Evaluator:
             logger.error(f"Error in direct evaluation: {str(e)}")
             return {"error": 0.0}
 
-    async def _cascade_evaluate(self, program_path: str) -> Dict[str, float]:
+    async def _cascade_evaluate(
+        self, program_path: str
+    ) -> Union[Dict[str, float], EvaluationResult]:
         """
         Run cascade evaluation with increasingly challenging test cases
 
@@ -184,7 +243,7 @@ class Evaluator:
             program_path: Path to the program file
 
         Returns:
-            Dictionary of metric name to score
+            Dictionary of metrics or EvaluationResult with metrics and artifacts
         """
         # Import the evaluation module to get cascade functions if they exist
         try:
@@ -202,78 +261,110 @@ class Evaluator:
             # Run first stage
             try:
                 stage1_result = await run_in_executor(module.evaluate_stage1)(program_path)
-                if not isinstance(stage1_result, dict):
-                    logger.warning(
-                        f"Stage 1 evaluation returned non-dictionary result: {stage1_result}"
-                    )
-                    return {"error": 0.0}
+                stage1_eval_result = self._process_evaluation_result(stage1_result)
             except Exception as e:
                 logger.error(f"Error in stage 1 evaluation: {str(e)}")
-                return {"error": 0.0}
+                # Capture stage 1 failure as artifacts
+                return EvaluationResult(
+                    metrics={"stage1_passed": 0.0, "error": 0.0},
+                    artifacts={
+                        "stderr": str(e),
+                        "traceback": traceback.format_exc(),
+                        "failure_stage": "stage1",
+                    },
+                )
 
             # Check threshold
-            if not self._passes_threshold(stage1_result, self.config.cascade_thresholds[0]):
-                return stage1_result
+            if not self._passes_threshold(
+                stage1_eval_result.metrics, self.config.cascade_thresholds[0]
+            ):
+                return stage1_eval_result
 
             # Check if second stage exists
             if not hasattr(module, "evaluate_stage2"):
-                return stage1_result
+                return stage1_eval_result
 
             # Run second stage
             try:
                 stage2_result = await run_in_executor(module.evaluate_stage2)(program_path)
-                if not isinstance(stage2_result, dict):
-                    logger.warning(
-                        f"Stage 2 evaluation returned non-dictionary result: {stage2_result}"
-                    )
-                    return stage1_result
+                stage2_eval_result = self._process_evaluation_result(stage2_result)
             except Exception as e:
                 logger.error(f"Error in stage 2 evaluation: {str(e)}")
-                return stage1_result
+                # Capture stage 2 failure, but keep stage 1 results
+                stage1_eval_result.artifacts.update(
+                    {
+                        "stage2_stderr": str(e),
+                        "stage2_traceback": traceback.format_exc(),
+                        "failure_stage": "stage2",
+                    }
+                )
+                stage1_eval_result.metrics["stage2_passed"] = 0.0
+                return stage1_eval_result
 
-            # Merge results
-            result = {}
+            # Merge results from stage 1 and 2
+            merged_metrics = {}
             # Convert all values to float to avoid type errors
-            for name, value in stage1_result.items():
+            for name, value in stage1_eval_result.metrics.items():
                 if isinstance(value, (int, float)) and name != "error":
-                    result[name] = float(value)
+                    merged_metrics[name] = float(value)
 
-            for name, value in stage2_result.items():
+            for name, value in stage2_eval_result.metrics.items():
                 if isinstance(value, (int, float)) and name != "error":
-                    result[name] = float(value)
+                    merged_metrics[name] = float(value)
 
-            # Check threshold
+            # Merge artifacts
+            merged_artifacts = {}
+            merged_artifacts.update(stage1_eval_result.artifacts)
+            merged_artifacts.update(stage2_eval_result.artifacts)
+
+            merged_result = EvaluationResult(metrics=merged_metrics, artifacts=merged_artifacts)
+
+            # Check threshold for stage 3
             if len(self.config.cascade_thresholds) < 2 or not self._passes_threshold(
-                result, self.config.cascade_thresholds[1]
+                merged_result.metrics, self.config.cascade_thresholds[1]
             ):
-                return result
+                return merged_result
 
             # Check if third stage exists
             if not hasattr(module, "evaluate_stage3"):
-                return result
+                return merged_result
 
             # Run third stage
             try:
                 stage3_result = await run_in_executor(module.evaluate_stage3)(program_path)
-                if not isinstance(stage3_result, dict):
-                    logger.warning(
-                        f"Stage 3 evaluation returned non-dictionary result: {stage3_result}"
-                    )
-                    return result
+                stage3_eval_result = self._process_evaluation_result(stage3_result)
             except Exception as e:
                 logger.error(f"Error in stage 3 evaluation: {str(e)}")
-                return result
+                # Capture stage 3 failure, but keep previous results
+                merged_result.artifacts.update(
+                    {
+                        "stage3_stderr": str(e),
+                        "stage3_traceback": traceback.format_exc(),
+                        "failure_stage": "stage3",
+                    }
+                )
+                merged_result.metrics["stage3_passed"] = 0.0
+                return merged_result
 
-            # Merge results
-            for name, value in stage3_result.items():
+            # Merge stage 3 results
+            for name, value in stage3_eval_result.metrics.items():
                 if isinstance(value, (int, float)) and name != "error":
-                    result[name] = float(value)
+                    merged_result.metrics[name] = float(value)
 
-            return result
+            merged_result.artifacts.update(stage3_eval_result.artifacts)
+
+            return merged_result
 
         except Exception as e:
             logger.error(f"Error in cascade evaluation: {str(e)}")
-            return {"error": 0.0}
+            return EvaluationResult(
+                metrics={"error": 0.0},
+                artifacts={
+                    "stderr": str(e),
+                    "traceback": traceback.format_exc(),
+                    "failure_stage": "cascade_setup",
+                },
+            )
 
     async def _llm_evaluate(self, program_code: str) -> Dict[str, float]:
         """
