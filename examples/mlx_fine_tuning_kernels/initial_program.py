@@ -143,20 +143,35 @@ def evolved_lora_kernels():
         raise ImportError("MLX-LM is required for LoRA kernel optimization")
 
     # EVOLVE-BLOCK-START
+    @mx.compile
+    def optimized_lora_matmul(x, lora_a, lora_b, scale):
+        """Compiled LoRA matrix multiplication sequence."""
+        # Use mx.compile to optimize the computation graph
+        # MLX-LM LoRA computation: x @ lora_a @ lora_b (NO transposes needed)
+        temp = mx.matmul(x, lora_a)  # (batch, seq, input_features) @ (input_features, rank)
+        result = mx.matmul(temp, lora_b)  # (batch, seq, rank) @ (rank, output_features)
+        return scale * result
+
     class OptimizedLoRALinear(nn.Module):
         """Optimized LoRA linear layer with fused operations and memory optimizations."""
 
-        def __init__(self, base_layer, r=16, alpha=16, dropout=0.0, scale=None):
+        def __init__(self, original_lora_layer, r=16, alpha=16, dropout=0.0, scale=None):
             super().__init__()
-            self.base_layer = base_layer
+            # Extract the base linear layer from the original LoRA layer
+            self.base_layer = getattr(original_lora_layer, 'linear', original_lora_layer)
             self.r = r
             self.alpha = alpha
             self.dropout = dropout
             self.scale = scale if scale is not None else alpha / r
 
-            # LoRA weights - optimized initialization
-            in_features = base_layer.weight.shape[1]
-            out_features = base_layer.weight.shape[0]
+            # Initialize LoRA weights (will be overwritten with trained weights)
+            if hasattr(self.base_layer, 'weight'):
+                in_features = self.base_layer.weight.shape[1]
+                out_features = self.base_layer.weight.shape[0]
+            else:
+                # Fallback for complex layer structures
+                in_features = getattr(original_lora_layer, 'in_features', 512)
+                out_features = getattr(original_lora_layer, 'out_features', 512)
 
             self.lora_a = mx.random.normal((r, in_features)) * 0.01
             self.lora_b = mx.zeros((out_features, r))
@@ -169,30 +184,22 @@ def evolved_lora_kernels():
             # Standard base computation
             base_out = self.base_layer(x)
 
-            # Optimized LoRA computation
+            # Optimized LoRA computation using standard pattern
             if self._training_mode or self._cached_delta_w is None:
-                # Training mode: standard computation
-                lora_out = mx.matmul(mx.matmul(x, self.lora_a.T), self.lora_b.T)
+                # Training mode: use compiled computation
+                lora_out = optimized_lora_matmul(x, self.lora_a, self.lora_b, self.scale)
             else:
-                # Inference mode: use pre-computed weights
-                lora_out = mx.matmul(x, self._cached_delta_w.T)
+                # Inference mode: use pre-computed weights (no transpose needed)
+                lora_out = mx.matmul(x, self._cached_delta_w)
 
-            return base_out + self.scale * lora_out
+            return base_out + lora_out
 
         def set_training_mode(self, training):
             """Set training mode and optimize for inference when possible."""
             self._training_mode = training
             if not training:
-                # Pre-compute delta weights for inference
-                self._cached_delta_w = self.scale * mx.matmul(self.lora_b, self.lora_a)
-
-    @mx.compile
-    def optimized_lora_matmul(x, lora_a, lora_b, scale):
-        """Compiled LoRA matrix multiplication sequence."""
-        # Use mx.compile to optimize the computation graph
-        temp = mx.matmul(x, lora_a.T)
-        result = mx.matmul(temp, lora_b.T)
-        return scale * result
+                # Pre-compute delta weights for inference: lora_a @ lora_b
+                self._cached_delta_w = self.scale * mx.matmul(self.lora_a, self.lora_b)
 
     def optimized_lora_forward_pass(model, x, use_kernels=True):
         """Optimized forward pass through model with LoRA layers."""
@@ -304,34 +311,168 @@ def patch_model_with_kernels(model, evolved_kernels):
         if not hasattr(model, "_original_forward"):
             model._original_forward = model.__call__
 
-        # Check for OptimizedLoRALinear class (currently just log it)
+        # CRITICAL FIX: Replace existing LoRA layers with optimized versions
         OptimizedLoRALinear = evolved_kernels.get("optimized_lora_linear_class")
         if OptimizedLoRALinear:
-            print("  ✅ OptimizedLoRALinear class available for evolution")
-
-        # Patch forward method to use optimized forward pass
-        optimized_forward = evolved_kernels.get("optimized_lora_forward_pass")
-        if optimized_forward:
-
-            def patched_forward(x):
+            print("  🔧 Replacing LoRA layers with optimized versions...")
+            replaced_count = 0
+            
+            # Use MLX's named_modules() to find LoRA layers
+            lora_layers_to_replace = []
+            
+            # First pass: identify all LoRA layers using MLX-LM naming conventions
+            for name, module in model.named_modules():
+                # MLX-LM uses different naming patterns - check for common ones
+                has_lora = (
+                    # Standard LoRA names
+                    (hasattr(module, 'lora_a') and hasattr(module, 'lora_b')) or
+                    # MLX-LM style names
+                    (hasattr(module, 'A') and hasattr(module, 'B')) or
+                    # Alternative names
+                    (hasattr(module, 'lora_A') and hasattr(module, 'lora_B')) or
+                    # Check for any attributes containing 'lora'
+                    any('lora' in attr.lower() for attr in dir(module) if not attr.startswith('_'))
+                )
+                
+                if has_lora:
+                    lora_layers_to_replace.append((name, module))
+                    print(f"    🔍 Found LoRA layer: {name}")
+                    # Debug: show what attributes this layer has
+                    lora_attrs = [attr for attr in dir(module) if not attr.startswith('_') and ('lora' in attr.lower() or attr in ['A', 'B'])]
+                    print(f"      LoRA attributes: {lora_attrs}")
+            
+            # Second pass: replace LoRA layers with optimized versions
+            for layer_name, lora_layer in lora_layers_to_replace:
                 try:
-                    return optimized_forward(model, x, use_kernels=True)
-                except Exception as e:
-                    print(f"  ⚠️ Optimized forward failed: {e}, using fallback")
-                    return model._original_forward(x)
-
-            model.__call__ = patched_forward
-            print("  ✅ Patched forward pass with optimized implementation")
+                    print(f"    📎 Replacing LoRA layer: {layer_name}")
+                    
+                    # Determine LoRA parameters from the actual layer
+                    lora_a = None
+                    lora_b = None
+                    
+                    # MLX-LM may store LoRA matrices in the parameters, not as attributes
+                    # Let's check the actual module's state and parameters
+                    print(f"      Module type: {type(lora_layer).__name__}")
+                    
+                    # Check all attributes that might contain LoRA matrices
+                    all_attrs = [attr for attr in dir(lora_layer) if not attr.startswith('_')]
+                    tensor_attrs = []
+                    
+                    for attr in all_attrs:
+                        try:
+                            val = getattr(lora_layer, attr)
+                            if hasattr(val, 'shape') and len(val.shape) == 2:
+                                tensor_attrs.append((attr, val))
+                                print(f"      Found tensor: {attr} shape {val.shape}")
+                        except:
+                            pass
+                    
+                    # Try different naming conventions and parameter access
+                    if hasattr(lora_layer, 'lora_a') and hasattr(lora_layer, 'lora_b'):
+                        lora_a, lora_b = lora_layer.lora_a, lora_layer.lora_b
+                        print(f"      Using lora_a/lora_b")
+                    elif hasattr(lora_layer, 'A') and hasattr(lora_layer, 'B'):
+                        lora_a, lora_b = lora_layer.A, lora_layer.B
+                        print(f"      Using A/B")
+                    elif len(tensor_attrs) >= 2:
+                        # Sort by shape to try to identify A and B matrices
+                        # LoRA A is typically smaller in first dimension (rank x in_features)
+                        # LoRA B is typically (out_features x rank)
+                        tensor_attrs.sort(key=lambda x: x[1].shape[0])  # Sort by first dimension
+                        lora_a = tensor_attrs[0][1]  # Smaller first dim (rank x in_features)
+                        lora_b = tensor_attrs[1][1]  # Larger first dim (out_features x rank)
+                        print(f"      Using tensors: {tensor_attrs[0][0]} (A) and {tensor_attrs[1][0]} (B)")
+                    else:
+                        # Try to access parameters directly
+                        try:
+                            params = dict(lora_layer.named_parameters())
+                            param_names = list(params.keys())
+                            print(f"      Parameters: {param_names}")
+                            
+                            # Look for parameters that might be LoRA matrices
+                            a_candidates = [p for p in param_names if 'a' in p.lower() or 'down' in p.lower()]
+                            b_candidates = [p for p in param_names if 'b' in p.lower() or 'up' in p.lower()]
+                            
+                            if a_candidates and b_candidates:
+                                lora_a = params[a_candidates[0]]
+                                lora_b = params[b_candidates[0]]
+                                print(f"      Using parameters: {a_candidates[0]} (A) and {b_candidates[0]} (B)")
+                        except Exception as param_e:
+                            print(f"      Parameter access failed: {param_e}")
+                    
+                    if lora_a is None or lora_b is None:
+                        print(f"    ⚠️ Could not find LoRA matrices in {layer_name}, skipping")
+                        continue
+                    
+                    # Get LoRA rank from matrix dimensions
+                    r = lora_a.shape[0]
+                    print(f"      LoRA rank: {r}, shapes: A={lora_a.shape}, B={lora_b.shape}")
+                    
+                    # Create optimized version with same parameters
+                    optimized_layer = OptimizedLoRALinear(
+                        original_lora_layer=lora_layer,  # Pass the original LoRA layer
+                        r=r,
+                        alpha=getattr(lora_layer, 'alpha', 16),
+                        dropout=getattr(lora_layer, 'dropout', 0.0),
+                        scale=getattr(lora_layer, 'scale', None)
+                    )
+                    
+                    # Copy existing LoRA weights
+                    optimized_layer.lora_a = lora_a
+                    optimized_layer.lora_b = lora_b
+                    
+                    # Navigate to parent and replace the layer
+                    # Handle both attribute access and list indices
+                    name_parts = layer_name.split('.')
+                    try:
+                        if len(name_parts) == 1:
+                            # Top-level attribute
+                            setattr(model, name_parts[0], optimized_layer)
+                        else:
+                            # Navigate to parent module, handling lists properly
+                            parent = model
+                            for i, part in enumerate(name_parts[:-1]):
+                                if hasattr(parent, part):
+                                    parent = getattr(parent, part)
+                                elif part.isdigit() and hasattr(parent, '__getitem__'):
+                                    # This is a list index
+                                    parent = parent[int(part)]
+                                else:
+                                    raise AttributeError(f"Cannot navigate to {part} in path {'.'.join(name_parts[:i+1])}")
+                            
+                            # Replace the final layer
+                            final_attr = name_parts[-1]
+                            if hasattr(parent, final_attr):
+                                setattr(parent, final_attr, optimized_layer)
+                            elif final_attr.isdigit() and hasattr(parent, '__setitem__'):
+                                parent[int(final_attr)] = optimized_layer
+                            else:
+                                raise AttributeError(f"Cannot set {final_attr} on {type(parent)}")
+                        
+                        replaced_count += 1
+                        print(f"      ✅ Successfully replaced {layer_name}")
+                        
+                    except Exception as nav_error:
+                        print(f"    ⚠️ Navigation failed for {layer_name}: {nav_error}")
+                    
+                except Exception as layer_error:
+                    print(f"    ⚠️ Failed to replace {layer_name}: {layer_error}")
+                    import traceback
+                    traceback.print_exc()
+            
+            print(f"  ✅ Replaced {replaced_count} LoRA layers with optimized versions")
 
         # Store kernels for use during training
         model._evolved_kernels = evolved_kernels
         model._has_evolved_kernels = True
-        model._kernels_applied = True
+        model._kernels_applied = (replaced_count > 0) if 'replaced_count' in locals() else True
 
         print(f"  ✅ Model patching complete - kernels ready for use")
 
     except Exception as e:
         print(f"❌ ERROR during patching: {e}")
+        import traceback
+        traceback.print_exc()
         # Don't re-raise - let training continue with standard implementation
         model._kernels_applied = False
 
@@ -446,14 +587,6 @@ def standard_lora_fine_tuning_with_kernels(
     print(f"Loading model: {model_name}")
     model, tokenizer = load(model_name)
 
-    # Apply evolved kernels if provided
-    if evolved_kernels:
-        print("🚀 Applying evolved kernels...")
-        patch_model_with_kernels(model, evolved_kernels)
-        print(f"  ✅ Evolved kernels active: {list(evolved_kernels.keys())}")
-    else:
-        print("🔍 Using standard MLX-LM (no evolved kernels)")
-
     # Convert config to namespace for MLX-LM compatibility
     args = types.SimpleNamespace(**config)
     args.data = train_data_path
@@ -462,13 +595,21 @@ def standard_lora_fine_tuning_with_kernels(
     print("Loading datasets...")
     train_set, valid_set, test_set = load_dataset(args, tokenizer)
 
-    # Apply LoRA using standard MLX-LM
+    # Apply LoRA using standard MLX-LM FIRST
     print("Applying LoRA...")
     model.freeze()
     linear_to_lora_layers(
         model, args.num_layers, args.lora_parameters, use_dora=(args.fine_tune_type == "dora")
     )
     print_trainable_parameters(model)
+
+    # THEN apply evolved kernels if provided (after LoRA layers exist)
+    if evolved_kernels:
+        print("🚀 Applying evolved kernels AFTER LoRA...")
+        patch_model_with_kernels(model, evolved_kernels)
+        print(f"  ✅ Evolved kernels active: {list(evolved_kernels.keys())}")
+    else:
+        print("🔍 Using standard MLX-LM (no evolved kernels)")
 
     # Setup optimizer using standard MLX
     optimizer_name = args.optimizer.lower()
@@ -614,14 +755,8 @@ def test_lora_functionality():
             print(f"✅ Model loaded: {type(model).__name__}")
             print(f"✅ Tokenizer loaded: {type(tokenizer).__name__}")
 
-            # Test evolved kernel integration
-            print("\n🚀 Testing evolved kernel integration...")
-            patch_model_with_kernels(model, evolved_kernels)
-            print("✅ Model patching successful")
-
-            unpatch_model(model)
-
-            # Test LoRA parameter setup
+            # Test LoRA parameter setup FIRST
+            print("\n🔧 Applying LoRA to model FIRST...")
             try:
                 model.freeze()
                 linear_to_lora_layers(
@@ -635,6 +770,13 @@ def test_lora_functionality():
             except Exception as param_e:
                 print(f"✅ Model loaded but LoRA setup test failed: {param_e}")
                 print("This may be expected for some model configurations")
+
+            # THEN test evolved kernel integration (after LoRA is applied)
+            print("\n🚀 Testing evolved kernel integration AFTER LoRA...")
+            patch_model_with_kernels(model, evolved_kernels)
+            print("✅ Model patching successful")
+
+            unpatch_model(model)
 
         except Exception as e:
             print(f"⚠️ Model loading failed: {e}")
