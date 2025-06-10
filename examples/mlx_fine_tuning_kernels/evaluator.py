@@ -959,7 +959,7 @@ def evaluate(program_path: str) -> Dict[str, Union[bool, float, str, int]]:
 
         # Run sequential comparison (baseline first, then evolved)
         comparison_results = benchmark.compare_implementations(
-            evolved_kernels=evolved_kernels, num_trials=3  # Reduced for faster testing
+            evolved_kernels=evolved_kernels, num_trials=5  # Reduced for faster testing
         )
 
         if "error" in comparison_results:
