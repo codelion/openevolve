@@ -1,96 +1,118 @@
-# MLX LoRA Fine-tuning Optimization Configuration
-# Target: Real LoRA fine-tuning efficiency improvements while maintaining convergence
+# MLX Quantized LoRA Fusion Optimization Configuration
+# Target: Eliminate dequantization bottleneck in MLX-LM LoRA implementation
 
-max_iterations: 20  # Reduced for focused evolution
+max_iterations: 20  # Keep existing proven count
 checkpoint_interval: 5
 log_level: "INFO"
 
-# LLM configuration
+# LLM configuration - keep proven models
 llm:
   primary_model: "gemini-2.5-flash-preview-05-20"
   primary_model_weight: 0.7
   secondary_model: "gemini-2.5-pro-preview-06-05"
   secondary_model_weight: 0.3
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
-  temperature: 0.7  # Reduced for more focused changes
+  temperature: 0.7  # Keep proven temperature
   top_p: 0.9
-  max_tokens: 24000  # Reduced to focus on concise improvements
+  max_tokens: 24000  # Keep proven token count
   timeout: 300
 
-# SIMPLIFIED prompt targeting specific kernel improvements
+# HIGHLY FOCUSED prompt targeting quantized LoRA fusion
 prompt:
   system_message: |
-    You are optimizing MLX LoRA kernels for better memory/speed while maintaining training convergence.
+    You are optimizing MLX quantized LoRA kernels to eliminate the dequantization bottleneck.
     
-    # GOAL: 15%+ efficiency improvement, same training loss
+    # SPECIFIC TARGET: Quantized LoRA Fusion
+    # PROBLEM: MLX-LM dequantizes entire weight matrices just to apply LoRA
+    # SOLUTION: Use mx.quantized_matmul directly, never dequantize
     
     # CRITICAL RULES:
     1. ONLY modify code inside EVOLVE-BLOCK-START/END
     2. Keep ALL function signatures identical
-    3. Focus on 1-2 kernels per evolution, not all at once
-    4. Use @mx.compile for hot paths
-    5. NO verbose comments - focus on actual optimizations
+    3. Focus SPECIFICALLY on quantized operations
+    4. Use @mx.compile for hot quantized paths
+    5. TARGET the dequantization inefficiency directly
     
-    # TARGET KERNELS (pick 1-2 per evolution):
+    # CORE OPTIMIZATION TARGET:
     
-    **OptimizedLoRALinear.__call__()** - Main computation bottleneck:
+    **Current MLX-LM Inefficiency (from DoRALinear.__call__):**
     ```python
     def __call__(self, x):
-        base_out = self.base_layer(x)
-        lora_out = mx.matmul(mx.matmul(x, self.lora_a.T), self.lora_b.T)
-        return base_out + self.scale * lora_out
+        w = self._dequantized_weight()  # ❌ EXPENSIVE: Full dequantization
+        y = x @ w.T                     # ❌ Standard matmul on dequantized weights
+        z = (self.dropout(x) @ self.lora_a) @ self.lora_b
+        return y + (self.scale * z).astype(x.dtype)
     ```
-    OPTIMIZE: Fuse operations, reduce allocations, use mx.compile
     
-    **optimized_lora_matmul()** - Core matrix ops:
+    **Target Optimization:**
+    ```python
+    def __call__(self, x):
+        # ✅ EFFICIENT: Direct quantized matmul, no dequantization
+        y = mx.quantized_matmul(x, self.quantized_weight, self.scales, self.biases,
+                               group_size=self.group_size, bits=self.bits, transpose=True)
+        z = efficient_lora_computation(x, self.lora_a, self.lora_b, self.scale)
+        return y + z.astype(x.dtype)
+    ```
+    
+    # KEY MLX QUANTIZED FUNCTIONS TO USE:
+    - mx.quantized_matmul() - Direct quantized matrix multiplication
+    - mx.compile() - Compile quantized operations for speed
+    - nn.QuantizedLinear attributes: .weight, .scales, .biases, .group_size, .bits
+    
+    # SPECIFIC OPTIMIZATIONS TO DISCOVER:
+    
+    **1. OptimizedQuantizedLoRALinear.__call__():**
+    - Replace _dequantized_weight() with mx.quantized_matmul()
+    - Keep quantized weights in quantized format
+    - Fuse LoRA computation efficiently
+    
+    **2. optimized_quantized_lora_matmul():**
     ```python
     @mx.compile
-    def optimized_lora_matmul(x, lora_a, lora_b, scale):
-        temp = mx.matmul(x, lora_a.T)
-        result = mx.matmul(temp, lora_b.T)
-        return scale * result
+    def optimized_quantized_lora_matmul(x, q_weight, scales, biases, lora_a, lora_b, scale, group_size, bits):
+        base_out = mx.quantized_matmul(x, q_weight, scales, biases, group_size, bits, transpose=True)
+        lora_out = mx.matmul(mx.matmul(x, lora_a), lora_b)
+        return base_out + (scale * lora_out).astype(base_out.dtype)
     ```
-    OPTIMIZE: Better fusion, vectorization, memory layout
     
-    **memory_efficient_loss_computation()** - Memory usage:
-    ```python
-    def memory_efficient_loss_computation(logits, targets, chunk_size=1024):
-        if logits.shape[-1] <= chunk_size:
-            return nn.losses.cross_entropy(logits, targets, reduction="mean")
-        # chunk processing...
-    ```
-    OPTIMIZE: Dynamic chunking, parallel processing
+    **3. Memory-efficient patterns:**
+    - Reduce intermediate tensor allocations
+    - Optimize for Apple Silicon unified memory
+    - Use mx.clear_cache() strategically
     
-    # PROVEN MLX OPTIMIZATIONS:
-    - @mx.compile on computation-heavy functions
-    - mx.fused ops to reduce intermediate tensors
-    - Pre-compute constant expressions
-    - Optimize tensor shapes and memory layout
-    - Batch operations when possible
+    # SUCCESS METRICS:
+    - Same final loss (±1% tolerance)
+    - 10-30% memory reduction (by avoiding dequantization)
+    - 5-20% speed improvement
+    - Direct use of quantized operations
     
-    # SUCCESS = Same loss + 15%+ speed OR memory improvement
+    # OPTIMIZATION STRATEGY:
+    1. Start with OptimizedQuantizedLoRALinear class
+    2. Focus on mx.quantized_matmul integration
+    3. Optimize LoRA computation patterns
+    4. Add memory management improvements
     
-    Make SMALL, FOCUSED changes. Test one optimization at a time.
+    Make TARGETED changes to eliminate dequantization. Test mx.quantized_matmul patterns.
   
-  num_top_programs: 4  # Reduced for more focused evolution
+  num_top_programs: 4  # Keep proven selection
   num_diverse_programs: 2
 
-# Database configuration
+# Database configuration - keep proven settings
 database:
   db_path: "./openevolve_output/program_db"
-  population_size: 40  # Reduced for faster iteration
+  population_size: 40  # Keep proven population size
   archive_size: 20
-  num_islands: 2  # Reduced complexity
+  num_islands: 2
   elite_selection_ratio: 0.25
-  exploitation_ratio: 0.7  # More exploitation for targeted improvements
+  exploitation_ratio: 0.7  # Keep proven balance
   exploration_ratio: 0.3
 
 # Evaluator configuration
 evaluator:
-  timeout: 600  # Reduced timeout
+  timeout: 600  # Keep proven timeout
   parallel_evaluations: 1
 
 # Evolution settings
 diff_based_evolution: true
 allow_full_rewrites: false  
-max_code_length: 50000  # Reduced to encourage concise changes
+max_code_length: 50000  # Keep proven code length

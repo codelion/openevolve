@@ -1,168 +1,154 @@
-# MLX LoRA Fine-tuning Optimization - OpenEvolve Example
+# MLX Quantized LoRA Fusion Optimization - OpenEvolve Example
 
-This example demonstrates optimizing **real LoRA fine-tuning** using the official **MLX-LM library** by evolving kernels that can achieve the same training loss as the standard MLX-LM implementation but with improved memory efficiency and/or training speed.
+This example demonstrates using OpenEvolve to discover optimized quantized LoRA kernels that eliminate the **dequantization bottleneck** in MLX-LM's LoRA implementation.
 
-## 🎯 The Real Challenge
+## 🎯 The Specific Problem
 
-Instead of optimizing theoretical kernels, this example targets **actual MLX-LM LoRA fine-tuning** optimization using the official mlx-lm library. The goal is to discover kernel implementations that can:
+MLX-LM's current LoRA implementation has a critical inefficiency when working with quantized models:
 
-- **Achieve the same training loss** as standard MLX-LM LoRA fine-tuning
-- **Reduce memory usage** during training
-- **Increase training speed** (tokens/second)
-- **Maintain numerical stability** and convergence quality
-- **Use real MLX-LM infrastructure** for authentic benchmarking
-
-This demonstrates real performance benefits like unsloth and liger kernel libraries provide for NVIDIA GPUs, but for MLX on Apple Silicon using production MLX-LM code.
-
-## 🚀 What Gets Optimized
-
-### Target Model & Dataset
-- **Model**: `mlx-community/Qwen2.5-0.5B-Instruct-4bit` (500M parameters, 4-bit quantized)
-- **Training**: Real LoRA fine-tuning using MLX-LM library on instruction-following dataset
-- **Baseline**: Standard MLX-LM LoRA implementation (official mlx-lm code)
-- **Metric**: Training loss convergence with efficiency improvements
-
-### Core LoRA Operations for Optimization
-
-#### 1. **LoRA Linear Forward Pass**
 ```python
-# Standard MLX LoRA: Separate base + LoRA computation
-base_out = x @ base_weight.T
-lora_a_out = x @ lora_a.T  
-lora_b_out = lora_a_out @ lora_b.T
-result = base_out + scale * lora_b_out
-
-# Optimization Target: Fused or pre-computed LoRA
-# Expected: Memory reduction + speedup
+# From MLX-LM DoRALinear.__call__ - INEFFICIENT
+def __call__(self, x):
+    w = self._dequantized_weight()  # ❌ EXPENSIVE: Dequantizes entire weight matrix
+    y = x @ w.T                     # ❌ Standard matmul on full-precision weights
+    z = (self.dropout(x) @ self.lora_a) @ self.lora_b
+    return y + (self.scale * z).astype(x.dtype)
 ```
 
-#### 2. **LoRA Backward Pass & Gradient Computation**
-```python
-# Standard: Separate gradient computations for base, lora_a, lora_b
-grad_base = grad_output @ x.T
-grad_lora_b = grad_output @ lora_a_out.T  
-grad_lora_a = lora_b.T @ grad_output @ x.T
+**The Problem**: For quantized models (4-bit, 8-bit), MLX-LM dequantizes the entire base weight matrix just to perform the matrix multiplication, then discards the dequantized weights. This wastes memory and computation.
 
-# Optimization Target: Fused gradient computation
-# Expected: Reduced memory allocations
+**The Opportunity**: MLX provides `mx.quantized_matmul()` which can perform matrix multiplication directly on quantized weights without dequantization.
+
+## 🚀 The Optimization Target
+
+OpenEvolve will discover optimized kernels that:
+
+```python
+# Target: EFFICIENT quantized LoRA computation
+def optimized_call(self, x):
+    # ✅ EFFICIENT: Direct quantized operations, no dequantization
+    y = mx.quantized_matmul(x, self.quantized_weight, self.scales, self.biases,
+                           group_size=self.group_size, bits=self.bits, transpose=True)
+    z = efficient_lora_computation(x, self.lora_a, self.lora_b, self.scale)
+    return y + z.astype(x.dtype)
 ```
 
-#### 3. **Multi-Layer LoRA Application**
-```python
-# Standard: Apply LoRA to each layer separately (q_proj, v_proj, etc.)
-for layer in model.layers:
-    layer.self_attn.q_proj = LoRALinear.from_linear(layer.self_attn.q_proj)
-    layer.self_attn.v_proj = LoRALinear.from_linear(layer.self_attn.v_proj)
+## 📊 Expected Impact
 
-# Optimization Target: Batch LoRA operations across layers
-# Expected: Better memory utilization
-```
+Based on the inefficiency analysis, this optimization should achieve:
 
-#### 4. **Training Step Optimization**
-```python
-# Standard: Separate forward, loss, backward, optimizer steps
-logits = model(inputs)
-loss = cross_entropy(logits, targets)
-grads = compute_gradients(loss)
-optimizer.update(model, grads)
+- **Memory Reduction**: 15-30% (by eliminating temporary dequantized weights)
+- **Speed Improvement**: 10-20% (by using optimized quantized operations)
+- **Same Accuracy**: Maintain identical training convergence and final loss
+- **Broader Compatibility**: Work with all MLX quantized models (4-bit, 8-bit)
 
-# Optimization Target: Fused training operations
-# Expected: Reduced kernel launches and memory overhead
-```
+## 🔧 What Gets Optimized
 
-## 📊 Evaluation Approach
+### Core Target: OptimizedQuantizedLoRALinear Class
 
-### Real LoRA Fine-tuning Benchmark
-- **Model**: Uses actual MLX-LM models with standard architecture
-- **Dataset**: Instruction-following examples (100 samples for quick testing)
-- **Training**: 2 epochs, same hyperparameters for baseline and evolved
-- **Metrics**: 
-  - Training loss convergence (must match within 1% of baseline)
-  - Training speed (tokens/second)
-  - Peak memory usage (MB)
-  - Memory efficiency (MB/token)
+OpenEvolve will evolve the core LoRA computation to use MLX's quantized operations:
 
-### Success Criteria
-- **Primary**: Achieve same final training loss (±1%)
-- **Secondary**: Memory reduction (10%+ improvement) OR speed improvement (10%+ improvement)
-- **Ideal**: Both memory AND speed improvements
-
-## 🏗️ Implementation Structure
-
-### Official MLX-LM Integration
-- Uses real MLX-LM models and training infrastructure (`mlx-community/Qwen2.5-0.5B-Instruct-4bit`)
-- Leverages official MLX-LM functions: `linear_to_lora_layers`, `train`, `evaluate`, `load_dataset`
-- Works with actual MLX-LM training pipelines and optimizers
-- Uses MLX-LM's `TrainingArgs`, `CacheDataset`, and adapter saving mechanisms
-
-### Evolved LoRA Kernels (`evolved_lora_kernels()`)
 ```python
 # EVOLVE-BLOCK-START
-def optimized_lora_fine_tuning(model_name, train_data_path, config, adapter_save_path):
-    """Complete optimized LoRA fine-tuning pipeline using MLX-LM"""
-    # Load model using official MLX-LM
-    model, tokenizer = load(model_name)
-    
-    # Use MLX-LM dataset loading
-    train_set, valid_set, test_set = load_dataset(args, tokenizer)
-    
-    # Apply LoRA using official functions with optimizations
-    model.freeze()
-    optimized_linear_to_lora_layers(model, num_layers, lora_parameters)
-    
-    # Optimized training loop using MLX-LM infrastructure
-    optimized_training_loop(model, train_dataset, val_dataset, args, optimizer)
-    
-    # Evaluation using MLX-LM evaluate function
-    final_loss = optimized_evaluate(model, test_dataset)
-
-def optimized_linear_to_lora_layers(model, num_layers, lora_parameters):
-    """Enhanced LoRA layer conversion based on mlx-lm's linear_to_lora_layers"""
-    # Use official implementation with potential memory optimizations
-    return linear_to_lora_layers(model, num_layers, lora_parameters)
+class OptimizedQuantizedLoRALinear(nn.Module):
+    def __call__(self, x):
+        # EVOLUTION TARGET: Use mx.quantized_matmul directly
+        base_out = mx.quantized_matmul(
+            x, self.base_layer.weight, self.base_layer.scales, self.base_layer.biases,
+            group_size=self.base_layer.group_size, bits=self.base_layer.bits, transpose=True
+        )
+        # Optimize LoRA computation patterns
+        lora_out = optimized_lora_computation(x, self.lora_a, self.lora_b, self.scale)
+        return base_out + lora_out.astype(base_out.dtype)
 # EVOLVE-BLOCK-END
 ```
 
-### Realistic Baseline: Standard MLX-LM LoRA
-- Uses official `linear_to_lora_layers()` from MLX-LM
-- Standard MLX-LM training infrastructure with `train()` function
-- Official MLX-LM dataset loading with `load_dataset()`
-- Standard `TrainingArgs` and `CacheDataset` usage
-- Works with real MLX-LM models and tokenizers
+### Secondary Targets:
 
-## 🎯 Expected Evolution Path
+1. **Compiled Quantized Operations**: Using `@mx.compile` for quantized LoRA fusion
+2. **Memory-Efficient Patterns**: Strategic cache clearing and memory management
+3. **Apple Silicon Optimization**: Unified memory architecture optimizations
 
-Based on proven LoRA optimization techniques:
+## 🧪 Evaluation Approach
 
-1. **Early generations**: Reduce unnecessary memory allocations → 5-10% memory reduction
-2. **Mid generations**: Fuse forward/backward operations → 10-15% speedup  
-3. **Later generations**: Advanced mathematical optimizations → 20%+ improvements
+### Test Model
+- **Model**: `mlx-community/Qwen2.5-0.5B-Instruct-4bit` (quantized)
+- **Task**: Instruction-following fine-tuning
+- **Baseline**: Standard MLX-LM quantized LoRA
+- **Metric**: Memory usage, training speed, numerical accuracy
 
-## 📈 Success Metrics
+### Success Criteria
+- **Primary**: Same final training loss (±1% tolerance)
+- **Secondary**: Memory reduction AND/OR speed improvement
+- **Target**: 15%+ efficiency gain while maintaining accuracy
 
-### Training Convergence (Required):
-- **Must achieve**: Same final training loss (±1% tolerance)
-- **Must maintain**: Numerical stability and gradient flow
+### Evaluation Process
+1. **Baseline Measurement**: Standard MLX-LM quantized LoRA performance
+2. **Evolved Measurement**: Optimized quantized LoRA kernels performance
+3. **Comparison**: Memory, speed, and accuracy analysis
 
-### Efficiency Improvements (Target):
-- **Memory efficiency**: 10%+ reduction in peak memory usage
-- **Training speed**: 10%+ improvement in tokens/second  
-- **Ideal**: 15%+ improvement in both metrics
+## 🏗️ Implementation Structure
+
+### Real MLX-LM Integration
+- Uses actual quantized MLX-LM models (`mlx-community/Qwen2.5-0.5B-Instruct-4bit`)
+- Integrates with MLX-LM training infrastructure
+- Measures real memory usage and training performance
+- Maintains compatibility with MLX-LM LoRA APIs
+
+### Evolution Focus Areas
+
+1. **Quantized Matrix Operations**:
+   ```python
+   # Target: Replace dequantization with direct quantized ops
+   mx.quantized_matmul(x, quantized_weight, scales, biases, group_size, bits, transpose=True)
+   ```
+
+2. **LoRA Computation Fusion**:
+   ```python
+   # Target: Efficient LoRA matrix multiplication patterns
+   @mx.compile
+   def optimized_lora_matmul(x, lora_a, lora_b, scale):
+       return scale * mx.matmul(mx.matmul(x, lora_a), lora_b)
+   ```
+
+3. **Memory Management**:
+   ```python
+   # Target: Apple Silicon-optimized memory patterns
+   def quantized_model_memory_optimizer(model):
+       # Optimize memory limits for quantized models
+   ```
+
+## 🎯 Why This Will Succeed
+
+### ✅ **Clear Inefficiency Target**
+- Specific bottleneck: unnecessary dequantization in LoRA forward pass
+- Measurable impact: memory usage and training speed
+- Available solution: `mx.quantized_matmul()` exists and works
+
+### ✅ **Realistic Optimization Scope**
+- Algorithm-level optimization, not low-level kernel development
+- Uses existing MLX primitives in more efficient patterns
+- Similar to proven optimizations (Unsloth, Liger Kernels)
+
+### ✅ **Concrete Success Metrics**
+- Binary convergence check: final loss must match (±1%)
+- Memory efficiency: measurable reduction in peak memory usage
+- Speed improvement: measurable training time reduction
+
+### ✅ **Proven Optimization Pattern**
+This follows the same pattern as successful optimizations:
+- **Unsloth**: 2x LoRA speedup by avoiding unnecessary operations
+- **Liger Kernels**: 20% memory savings through operation fusion
+- **AlphaEvolve**: Kernel optimizations discovered through automated search
 
 ## 🚀 Usage
 
 ### Prerequisites
 ```bash
-# Install MLX
-pip install mlx>=0.15.0
+# Install MLX and MLX-LM
+pip install mlx>=0.15.0 mlx-lm>=0.15.0
 
-# Install MLX-LM for real model support
-pip install mlx-lm>=0.15.0
-
-# Install other dependencies
-pip install numpy psutil transformers
-
-# Or install all at once:
+# Install dependencies
 pip install -r requirements.txt
 ```
 
@@ -170,125 +156,83 @@ pip install -r requirements.txt
 ```bash
 cd examples/mlx_fine_tuning_kernels
 
-# Test the setup first
-python test_setup.py
-
-# Test the initial implementation
+# Test the quantized optimization setup
 python initial_program.py
 
-# Test real LoRA training evaluation
+# Test the evaluator
 python evaluator.py
 ```
 
 ### Run Evolution
 ```bash
-# Start optimization  
+# Start quantized LoRA optimization evolution
 python ../../../openevolve-run.py initial_program.py evaluator.py --config config.yaml
 ```
 
 ### Expected Output
 ```
-🚀 Evaluating MLX-LM LoRA Fine-tuning Optimization...
+🚀 Evaluating MLX Quantized LoRA Optimization...
 
-✅ MLX-LM available for evaluation
-✅ LoRA implementations loaded successfully
-
-📊 MLX-LM LORA FINE-TUNING COMPARISON
+📊 QUANTIZED LORA OPTIMIZATION BENCHMARK
   Model: mlx-community/Qwen2.5-0.5B-Instruct-4bit
-  Trials: 1
+  Target: Quantized LoRA fusion optimization
 
---- Trial 1/1 ---
-🔬 Testing BASELINE implementation...
-Loading model: mlx-community/Qwen2.5-0.5B-Instruct-4bit
-Loading datasets...
-Applying baseline LoRA...
-Trainable parameters: 2.097M
-Total parameters: 494.033M
-Starting baseline training...
-  🧪 Running BASELINE LoRA fine-tuning...
-    Final loss: 2.1234
-    Training time: 12.45s
-    Memory delta: 245.1 MB
+🔬 PHASE 1: Running BASELINE trials (standard quantized LoRA)
+  🧪 Running BASELINE-1...
+    Final loss: 1.234
+    Training time: 15.2s
+    Memory delta: 180.5 MB
+    Peak memory delta: 220.3 MB
 
-🚀 Testing EVOLVED implementation...
-Loading model: mlx-community/Qwen2.5-0.5B-Instruct-4bit
-Loading datasets...
-Applying LoRA...
-Trainable parameters: 2.097M
-Total parameters: 494.033M
-Starting optimized training...
-  🧪 Running EVOLVED LoRA fine-tuning...
-    Final loss: 2.1189
-    Training time: 10.82s
-    Memory delta: 218.3 MB
+🚀 PHASE 2: Running EVOLVED trials (optimized quantized LoRA)
+  🧪 Running EVOLVED-1...
+    Final loss: 1.236
+    Training time: 12.8s
+    Memory delta: 145.2 MB
+    Peak memory delta: 175.1 MB
 
-📊 MLX-LM LORA FINE-TUNING OPTIMIZATION RESULTS:
-  Loss Convergence: ✅ (diff: 0.0045)
-  Speed Improvement: 1.15x
-  Memory Improvement: 1.12x
-  Time Improvement: 1.15x
-  Convergence Score: 1.000
-  Efficiency Score: 0.612
-  Overall Score: 0.784
+📊 QUANTIZED LORA OPTIMIZATION RESULTS:
+  Loss Convergence: ✅ (diff: 0.002)
+  Speed Improvement: 1.19x
+  Memory Improvement: 1.24x
+  Peak Memory Improvement: 1.26x
+  Overall Score: 0.785
 
-🥇 EXCELLENT: Strong improvements while maintaining convergence!
+🥇 EXCELLENT: Strong quantized LoRA optimizations achieved!
 ```
 
-## 💡 Why This Will Succeed
+## 💡 Technical Innovation
 
-### ✅ **Uses Real MLX Models**
-- Integrates with actual MLX-LM models and architectures
-- Tests on real model layers (attention projections, MLPs)
-- Measures actual training metrics (loss, speed, memory)
+This example represents a **concrete, achievable optimization** that:
 
-### ✅ **Clear Success Metrics**
-- **Binary convergence check**: Final loss must match (±1%)
-- **Efficiency improvements**: Memory and/or speed gains
-- **Real-world impact**: Actual fine-tuning becomes more efficient
+### **Targets Real Inefficiency**
+- MLX-LM actually dequantizes weights unnecessarily
+- `mx.quantized_matmul()` provides the solution
+- Measurable performance impact
 
-### ✅ **Proven Optimization Space**
-- LoRA operations have known optimization opportunities
-- Weight pre-computation and fusion techniques
-- Memory access pattern improvements
-- Gradient computation optimization
+### **Uses Algorithmic Optimization**
+- Works at the mathematical operation level
+- Uses existing MLX primitives more efficiently
+- Doesn't require new kernel development
 
-### ✅ **Beatable Baseline**
-- Standard MLX LoRA implementation (not heavily optimized)
-- Room for kernel-level optimizations
-- Opportunity for memory access pattern improvements
-
-## 🎓 Learning from Production LoRA Optimizations
-
-This example applies proven LoRA optimization techniques:
-
-### ✅ **Weight Pre-computation**
-- Pre-fuse LoRA weights when possible during inference
-- Reduce matrix multiplications from 3 to 1
-
-### ✅ **Memory-Efficient Gradients**  
-- Optimize gradient computation patterns for LoRA structure
-- Reduce intermediate tensor allocations
-
-### ✅ **Training Loop Optimization**
-- Fuse forward/backward/update operations
-- Reduce kernel launch overhead
-
-### ✅ **Multi-Layer Batch Processing**
-- Apply LoRA optimizations across multiple layers efficiently
-- Better utilize MLX's parallelization capabilities
+### **Provides Immediate Value**
+- Applicable to all quantized MLX models
+- Benefits any LoRA fine-tuning workflow
+- Maintains full compatibility with MLX-LM
 
 ## 🔮 Real-World Impact
 
-Success here would demonstrate:
-- **Practical LoRA optimization**: Real improvements for MLX fine-tuning
-- **Production-ready techniques**: Optimizations that users can apply
-- **OpenEvolve effectiveness**: Evolutionary approach works on realistic problems
+Success here demonstrates:
+- **Practical Optimization**: Real memory and speed improvements for MLX users
+- **OpenEvolve Effectiveness**: Automated discovery of concrete optimizations
+- **MLX Ecosystem Value**: Contributions to Apple's ML framework
 
-This represents a **genuinely valuable optimization challenge** that bridges research and practical application in the MLX ecosystem, similar to how Unsloth provides 2x speedups and Liger Kernel provides 20%+ memory savings for NVIDIA GPUs.
+This represents a **genuinely valuable optimization** that could be contributed back to the MLX-LM project, providing real benefits to the Apple Silicon ML community.
 
 ## 📚 References
 
-- [MLX-LM Documentation](https://github.com/ml-explore/mlx-examples): Apple's ML framework examples
-- [LoRA Paper](https://arxiv.org/abs/2106.09685): Low-Rank Adaptation of Large Language Models
-- [Unsloth](https://github.com/unslothai/unsloth): Proven LoRA speedup techniques for NVIDIA
-- [MLX Documentation](https://ml-explore.github.io/mlx/build/html/index.html): Apple's ML framework
+- [MLX Documentation](https://ml-explore.github.io/mlx/): Apple's ML framework
+- [MLX-LM Repository](https://github.com/ml-explore/mlx-examples): Official MLX language models
+- [Quantized Operations in MLX](https://ml-explore.github.io/mlx/build/html/python/mlx.core.html#mlx.core.quantized_matmul): MLX quantized matrix operations
+- [LoRA Paper](https://arxiv.org/abs/2106.09685): Low-Rank Adaptation technique
+- [Unsloth](https://github.com/unslothai/unsloth): Proven LoRA optimizations for reference

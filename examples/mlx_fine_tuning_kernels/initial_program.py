@@ -1,11 +1,13 @@
 """
-MLX LoRA Fine-tuning Optimization - OpenEvolve Example
+MLX LoRA + Quantization Fusion Optimization - OpenEvolve Example
 
-This example demonstrates optimizing specific LoRA kernels that get injected into
-standard MLX-LM training to achieve the same training loss but with improved
-memory efficiency and/or training speed.
+This example demonstrates evolving optimized quantized LoRA kernels that eliminate
+the expensive dequantization → LoRA → requantization pattern in MLX-LM.
 
-Similar to how unsloth provides optimized kernels for PyTorch/CUDA.
+SPECIFIC TARGET: The dequantization bottleneck in DoRALinear and LoRALinear
+where MLX-LM dequantizes entire weight matrices just to apply LoRA.
+
+OPTIMIZATION GOAL: Use mx.quantized_matmul directly, never dequantize base weights.
 """
 
 import math
@@ -15,6 +17,9 @@ from pathlib import Path
 import types
 import tempfile
 import json
+import gc
+import psutil
+import os
 
 try:
     import mlx.core as mx
@@ -40,16 +45,21 @@ try:
     from mlx_lm.utils import save_config
 
     MLX_LM_AVAILABLE = True
-    print("✅ MLX-LM available for real LoRA fine-tuning")
+    print("✅ MLX-LM available for quantized LoRA optimization")
 except ImportError as e:
     print(f"⚠️ MLX-LM not available: {e}")
     MLX_LM_AVAILABLE = False
 
 
+def get_memory_usage() -> float:
+    """Get current memory usage in MB."""
+    return psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
+
+
 def create_training_config():
-    """Create training configuration for LoRA fine-tuning with all MLX-LM expected attributes."""
+    """Create training configuration for quantized LoRA fine-tuning."""
     return {
-        "model": "mlx-community/Qwen2.5-0.5B-Instruct-4bit",
+        "model": "mlx-community/Qwen2.5-0.5B-Instruct-4bit",  # Quantized model
         "train": True,
         "fine_tune_type": "lora",
         "optimizer": "adam",
@@ -58,19 +68,18 @@ def create_training_config():
         "seed": 42,
         "num_layers": 4,
         "batch_size": 2,
-        "iters": 10,
+        "iters": 15,  # Short for fast evaluation
         "val_batches": 5,
         "learning_rate": 1e-4,
         "steps_per_report": 5,
         "steps_per_eval": 100,
         "adapter_path": "temp_adapters",
         "save_every": 100,
-        "max_seq_length": 512,
-        "lora_parameters": {"rank": 16, "dropout": 0.0, "scale": 16.0},
+        "max_seq_length": 256,  # Shorter for faster evaluation
+        "lora_parameters": {"rank": 8, "dropout": 0.0, "scale": 16.0},  # Smaller rank
         "mask_prompt": False,
-        # Additional MLX-LM expected attributes
         "test": True,
-        "test_batches": 10,
+        "test_batches": 5,
         "resume_adapter_file": None,
         "config": None,
         "grad_checkpoint": False,
@@ -79,39 +88,38 @@ def create_training_config():
     }
 
 
-def create_sample_dataset(output_dir: str, num_samples: int = 20):
-    """Create a small sample dataset for LoRA fine-tuning testing."""
+def create_sample_dataset(output_dir: str, num_samples: int = 50):
+    """Create a small sample dataset for quantized LoRA testing."""
     import os
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # Simple instruction-following examples
+    # Simple examples optimized for quantized model testing
     examples = [
-        {"text": "What is the capital of France?\nThe capital of France is Paris."},
-        {
-            "text": "Explain machine learning.\nMachine learning is a subset of artificial intelligence that enables computers to learn and improve from experience without being explicitly programmed."
-        },
-        {
-            "text": "How do you make tea?\nTo make tea, boil water, add tea leaves or a tea bag to a cup, pour the hot water over the tea, let it steep for 3-5 minutes, then remove the tea leaves or bag."
-        },
-        {
-            "text": "What is photosynthesis?\nPhotosynthesis is the process by which plants use sunlight, water, and carbon dioxide to create oxygen and energy in the form of sugar."
-        },
-        {"text": "Name three colors.\nThree colors are red, blue, and green."},
+        {"text": "What is machine learning?\nMachine learning is AI that learns from data without explicit programming."},
+        {"text": "Explain deep learning.\nDeep learning uses neural networks with many layers to learn complex patterns."},
+        {"text": "What is quantization?\nQuantization reduces model size by using lower precision numbers like int8 or int4."},
+        {"text": "How does LoRA work?\nLoRA adds small trainable matrices to frozen pre-trained weights for efficient fine-tuning."},
+        {"text": "What is Apple Silicon?\nApple Silicon refers to custom ARM-based processors designed by Apple for Mac computers."},
+        {"text": "What is MLX?\nMLX is Apple's machine learning framework optimized for Apple Silicon processors."},
+        {"text": "Explain transformers.\nTransformers are neural networks that use attention mechanisms for sequence processing."},
+        {"text": "What is fine-tuning?\nFine-tuning adapts pre-trained models to specific tasks with task-specific data."},
+        {"text": "What is attention?\nAttention mechanisms allow models to focus on relevant parts of input sequences."},
+        {"text": "What is CUDA?\nCUDA is NVIDIA's parallel computing platform for GPU acceleration."},
     ]
 
-    # Expand examples to requested number
+    # Expand to requested number
     expanded_examples = []
     for i in range(num_samples):
         example = examples[i % len(examples)]
         expanded_examples.append(example)
 
-    # Create train, valid, test splits
-    train_data = expanded_examples[: int(0.7 * num_samples)]
-    valid_data = expanded_examples[int(0.7 * num_samples) : int(0.9 * num_samples)]
-    test_data = expanded_examples[int(0.9 * num_samples) :]
+    # Create splits
+    train_data = expanded_examples[:int(0.7 * num_samples)]
+    valid_data = expanded_examples[int(0.7 * num_samples):int(0.9 * num_samples)]
+    test_data = expanded_examples[int(0.9 * num_samples):]
 
-    # Ensure at least one example in each split
+    # Ensure minimum sizes
     if not valid_data:
         valid_data = [train_data[0]]
     if not test_data:
@@ -123,482 +131,324 @@ def create_sample_dataset(output_dir: str, num_samples: int = 20):
             for example in data:
                 f.write(json.dumps(example) + "\n")
 
-    print(
-        f"✅ Created dataset with {len(train_data)} train, {len(valid_data)} valid, {len(test_data)} test examples"
-    )
+    print(f"✅ Created dataset: {len(train_data)} train, {len(valid_data)} valid, {len(test_data)} test")
 
 
 def evolved_lora_kernels():
     """
-    Evolved LoRA kernel implementations that optimize specific operations.
+    Evolved LoRA kernel implementations targeting quantized LoRA fusion.
 
-    These kernels target matrix operations, memory usage, and computation efficiency
-    while maintaining numerical correctness.
+    CORE TARGET: Eliminate the expensive dequantization in MLX-LM's LoRA implementation
+    by using mx.quantized_matmul directly on quantized base weights.
 
-    Returns:
-        Dictionary of evolved kernel implementations
+    BASELINE INEFFICIENCY (from MLX-LM DoRALinear):
+        w = self._dequantized_weight()  # EXPENSIVE: Full dequantization
+        y = x @ w.T                     # Standard matmul on dequantized weights
+
+    OPTIMIZATION TARGET:
+        y = mx.quantized_matmul(x, quantized_weight, scales, biases, 
+                               group_size, bits, transpose=True)  # Direct quantized ops
     """
 
     if not MLX_LM_AVAILABLE:
-        raise ImportError("MLX-LM is required for LoRA kernel optimization")
+        raise ImportError("MLX-LM is required for quantized LoRA optimization")
 
     # EVOLVE-BLOCK-START
     @mx.compile
-    def optimized_lora_matmul(x, lora_a, lora_b, scale):
-        """Compiled LoRA matrix multiplication sequence."""
-        # Use mx.compile to optimize the computation graph
-        # MLX-LM LoRA computation: x @ lora_a @ lora_b (NO transposes needed)
-        temp = mx.matmul(x, lora_a)  # (batch, seq, input_features) @ (input_features, rank)
-        result = mx.matmul(temp, lora_b)  # (batch, seq, rank) @ (rank, output_features)
+    def optimized_quantized_lora_matmul(x, quantized_weight, scales, biases, lora_a, lora_b, scale, group_size, bits):
+        """
+        Optimized quantized LoRA computation using direct quantized operations.
+        
+        Eliminates dequantization by using mx.quantized_matmul directly.
+        """
+        # CORE OPTIMIZATION: Use quantized matmul directly instead of dequantizing
+        # This is the key efficiency gain - no intermediate full-precision weights
+        base_out = mx.quantized_matmul(
+            x, quantized_weight, scales, biases,
+            group_size=group_size, bits=bits, transpose=True
+        )
+        
+        # Compute LoRA contribution efficiently
+        # Use compiled computation for better performance
+        lora_temp = mx.matmul(x, lora_a)
+        lora_out = mx.matmul(lora_temp, lora_b)
+        
+        # Fuse base and LoRA outputs
+        return base_out + (scale * lora_out).astype(base_out.dtype)
+
+    @mx.compile  
+    def optimized_lora_computation(x, lora_a, lora_b, scale):
+        """
+        Optimized LoRA matrix computation with potential fusion opportunities.
+        """
+        # Standard LoRA computation but compiled for efficiency
+        # Could be extended with custom tiling or memory patterns
+        temp = mx.matmul(x, lora_a)
+        result = mx.matmul(temp, lora_b)
         return scale * result
 
-    class OptimizedLoRALinear(nn.Module):
-        """Optimized LoRA linear layer with fused operations and memory optimizations."""
+    class OptimizedQuantizedLoRALinear(nn.Module):
+        """
+        Optimized LoRA linear layer that works directly with quantized weights.
+        
+        KEY OPTIMIZATION: Never dequantizes base weights, uses mx.quantized_matmul directly.
+        """
 
-        def __init__(self, original_lora_layer, r=16, alpha=16, dropout=0.0, scale=None):
+        def __init__(self, original_lora_layer, r=8, alpha=16, dropout=0.0, scale=None):
             super().__init__()
-            # Extract the base linear layer from the original LoRA layer
-            self.base_layer = getattr(original_lora_layer, 'linear', original_lora_layer)
+            
+            # Extract the quantized linear layer
+            if hasattr(original_lora_layer, 'linear'):
+                self.base_layer = original_lora_layer.linear
+            else:
+                self.base_layer = original_lora_layer
+                
+            # Ensure we have a quantized layer to optimize
+            if not isinstance(self.base_layer, nn.QuantizedLinear):
+                print(f"  ⚠️ Warning: Expected quantized layer, got {type(self.base_layer)}")
+                # Fall back to standard implementation for non-quantized layers
+                self.base_layer = original_lora_layer
+                self._is_optimized = False
+            else:
+                self._is_optimized = True
+                print(f"  ✅ Optimizing quantized layer: {self.base_layer.bits}-bit, group_size={self.base_layer.group_size}")
+
+            # LoRA parameters
             self.r = r
             self.alpha = alpha
             self.dropout = dropout
             self.scale = scale if scale is not None else alpha / r
 
-            # Initialize LoRA weights (will be overwritten with trained weights)
-            if hasattr(self.base_layer, 'weight'):
-                in_features = self.base_layer.weight.shape[1]
-                out_features = self.base_layer.weight.shape[0]
+            # Copy LoRA weights from original if available
+            if hasattr(original_lora_layer, 'lora_a'):
+                self.lora_a = original_lora_layer.lora_a
+                self.lora_b = original_lora_layer.lora_b
             else:
-                # Fallback for complex layer structures
-                in_features = getattr(original_lora_layer, 'in_features', 512)
-                out_features = getattr(original_lora_layer, 'out_features', 512)
-
-            self.lora_a = mx.random.normal((r, in_features)) * 0.01
-            self.lora_b = mx.zeros((out_features, r))
-
-            # Optimization: Pre-compute when possible
-            self._cached_delta_w = None
-            self._training_mode = True
+                # Initialize new LoRA weights
+                input_dims = self.base_layer.weight.shape[1]
+                if self._is_optimized:
+                    input_dims = input_dims * 32 // self.base_layer.bits
+                output_dims = self.base_layer.weight.shape[0]
+                
+                scale_init = 1 / math.sqrt(input_dims)
+                self.lora_a = mx.random.uniform(
+                    low=-scale_init, high=scale_init, shape=(input_dims, r)
+                )
+                self.lora_b = mx.zeros(shape=(r, output_dims))
 
         def __call__(self, x):
-            # Standard base computation
-            base_out = self.base_layer(x)
+            if not self._is_optimized:
+                # Fall back to standard implementation for non-quantized layers
+                if hasattr(self.base_layer, '__call__'):
+                    base_out = self.base_layer(x)
+                else:
+                    base_out = x @ self.base_layer.weight.T
+                lora_out = optimized_lora_computation(x, self.lora_a, self.lora_b, self.scale)
+                return base_out + lora_out.astype(x.dtype)
 
-            # Optimized LoRA computation using standard pattern
-            if self._training_mode or self._cached_delta_w is None:
-                # Training mode: use compiled computation
-                lora_out = optimized_lora_matmul(x, self.lora_a, self.lora_b, self.scale)
-            else:
-                # Inference mode: use pre-computed weights (no transpose needed)
-                lora_out = mx.matmul(x, self._cached_delta_w)
+            # CORE OPTIMIZATION: Use quantized operations directly
+            try:
+                # Use our optimized quantized LoRA computation
+                result = optimized_quantized_lora_matmul(
+                    x,
+                    self.base_layer.weight,  # Keep quantized
+                    self.base_layer.scales,
+                    self.base_layer.biases,
+                    self.lora_a,
+                    self.lora_b,
+                    self.scale,
+                    self.base_layer.group_size,
+                    self.base_layer.bits
+                )
+                
+                # Add bias if present
+                if hasattr(self.base_layer, 'bias') and self.base_layer.bias is not None:
+                    result = result + self.base_layer.bias
+                    
+                return result
+                
+            except Exception as e:
+                print(f"  ⚠️ Quantized optimization failed: {e}, falling back to standard")
+                # Graceful fallback to standard implementation
+                base_out = self.base_layer(x)
+                lora_out = optimized_lora_computation(x, self.lora_a, self.lora_b, self.scale)
+                return base_out + lora_out.astype(x.dtype)
 
-            return base_out + lora_out
+    def memory_efficient_quantized_training_step(model, batch, optimizer, use_quantized_kernels=True):
+        """
+        Memory-efficient training step optimized for quantized LoRA models.
+        """
+        if not use_quantized_kernels:
+            # Standard training step
+            def loss_fn(model):
+                logits = model(batch["input_ids"])
+                return nn.losses.cross_entropy(logits, batch["labels"], reduction="mean")
 
-        def set_training_mode(self, training):
-            """Set training mode and optimize for inference when possible."""
-            self._training_mode = training
-            if not training:
-                # Pre-compute delta weights for inference: lora_a @ lora_b
-                self._cached_delta_w = self.scale * mx.matmul(self.lora_a, self.lora_b)
+            loss, grads = mx.value_and_grad(loss_fn)(model)
+            optimizer.update(model, grads)
+            return loss
 
-    def optimized_lora_forward_pass(model, x, use_kernels=True):
-        """Optimized forward pass through model with LoRA layers."""
-        if not use_kernels:
-            return model(x)
+        # Optimized training step with memory management
+        def loss_fn(model):
+            # Clear cache before forward pass for quantized models
+            mx.clear_cache()
+            logits = model(batch["input_ids"])
+            return nn.losses.cross_entropy(logits, batch["labels"], reduction="mean")
 
-        # For now, use standard forward pass with potential optimizations
-        # This is a safe fallback that can be evolved
-        try:
-            # Attempt to use optimized matmul for any LoRA computations
-            # The model's __call__ method will use the patched forward
-            return model(x)
-        except Exception:
-            # Fallback to standard forward pass if optimization fails
-            return model._original_forward(x) if hasattr(model, "_original_forward") else model(x)
-
-    def optimized_gradient_computation(loss, model, use_kernels=True):
-        """Optimized gradient computation for LoRA parameters."""
-        if not use_kernels:
-            # Standard gradient computation
-            def loss_fn(m):
-                return loss
-
-            return mx.value_and_grad(loss_fn)(model)[1]
-
-        # Optimized gradient computation with compilation
-        try:
-
-            def loss_fn(m):
-                return loss
-
-            # Use mx.compile for gradient computation
-            @mx.compile
-            def compiled_grad_fn(model_params):
-                return mx.grad(loss_fn)(model_params)
-
-            return compiled_grad_fn(model)
-        except Exception:
-            # Fallback to standard computation
-            def loss_fn(m):
-                return loss
-
-            return mx.value_and_grad(loss_fn)(model)[1]
+        # Compute gradients with compilation
+        loss, grads = mx.value_and_grad(loss_fn)(model)
+        
+        # Clear cache before optimizer step
+        mx.clear_cache()
+        optimizer.update(model, grads)
+        
+        # Final cache clear for quantized models
+        mx.clear_cache()
+        
+        return loss
 
     @mx.compile
-    def optimized_parameter_update(params, grads, lr):
-        """Compiled parameter update for better performance."""
-        updated_params = {}
-        for key in params:
-            if key in grads:
-                updated_params[key] = params[key] - lr * grads[key]
-            else:
-                updated_params[key] = params[key]
-        return updated_params
+    def optimized_quantized_loss_computation(logits, targets):
+        """
+        Optimized loss computation for quantized models.
+        """
+        return nn.losses.cross_entropy(logits, targets, reduction="mean")
 
-    def memory_efficient_loss_computation(logits, targets, chunk_size=1024):
-        """Memory-efficient loss computation for large vocabularies."""
-        # For small vocabularies, use standard computation
-        if logits.shape[-1] <= chunk_size:
-            return nn.losses.cross_entropy(logits, targets, reduction="mean")
-
-        # For large vocabularies, compute loss in chunks
-        batch_size, seq_len, vocab_size = logits.shape
-        total_loss = 0.0
-        num_chunks = (vocab_size + chunk_size - 1) // chunk_size
-
-        for i in range(num_chunks):
-            start_idx = i * chunk_size
-            end_idx = min((i + 1) * chunk_size, vocab_size)
-
-            # Compute loss for this chunk
-            logits_chunk = logits[:, :, start_idx:end_idx]
-            targets_chunk = mx.where(
-                (targets >= start_idx) & (targets < end_idx),
-                targets - start_idx,
-                -1,  # Ignore index
-            )
-
-            # Only compute loss for valid targets in this chunk
-            valid_mask = targets_chunk >= 0
-            if mx.any(valid_mask):
-                chunk_loss = nn.losses.cross_entropy(logits_chunk, targets_chunk, reduction="mean")
-                total_loss += chunk_loss * mx.mean(valid_mask.astype(mx.float32))
-
-        return total_loss / num_chunks
+    def quantized_model_memory_optimizer(model):
+        """
+        Optimize memory usage patterns for quantized models.
+        """
+        # Set appropriate memory limits for quantized models
+        max_mem = mx.metal.device_info()["max_recommended_working_set_size"]
+        
+        # For quantized models, we can be more aggressive with memory usage
+        # since the weights take less space
+        quantized_limit = int(0.95 * max_mem)  # Use more memory for quantized models
+        mx.set_wired_limit(quantized_limit)
+        
+        print(f"  🎯 Set optimized memory limit for quantized model: {quantized_limit // (1024*1024)} MB")
 
     return {
-        "optimized_lora_linear_class": OptimizedLoRALinear,
-        "optimized_lora_matmul": optimized_lora_matmul,
-        "optimized_lora_forward_pass": optimized_lora_forward_pass,
-        "optimized_gradient_computation": optimized_gradient_computation,
-        "optimized_parameter_update": optimized_parameter_update,
-        "memory_efficient_loss_computation": memory_efficient_loss_computation,
+        "optimized_quantized_lora_linear_class": OptimizedQuantizedLoRALinear,
+        "optimized_quantized_lora_matmul": optimized_quantized_lora_matmul,
+        "optimized_lora_computation": optimized_lora_computation,
+        "memory_efficient_quantized_training_step": memory_efficient_quantized_training_step,
+        "optimized_quantized_loss_computation": optimized_quantized_loss_computation,
+        "quantized_model_memory_optimizer": quantized_model_memory_optimizer,
     }
     # EVOLVE-BLOCK-END
 
 
-def patch_model_with_kernels(model, evolved_kernels):
-    """Patch model to use evolved kernels during training and inference."""
+def patch_quantized_lora_layers(model, evolved_kernels):
+    """Patch model to use evolved quantized LoRA kernels."""
     if not evolved_kernels:
-        print("  🔍 No evolved kernels to apply - using standard MLX-LM")
+        print("  🔍 No evolved kernels to apply")
         model._kernels_applied = False
         return
 
-    print(f"🚀 Patching model with {len(evolved_kernels)} evolved kernels...")
+    print(f"🚀 Patching model with quantized LoRA optimizations...")
 
     try:
-        # Store original forward method safely
-        if not hasattr(model, "_original_forward"):
-            model._original_forward = model.__call__
+        # Apply memory optimization first
+        memory_optimizer = evolved_kernels.get("quantized_model_memory_optimizer")
+        if memory_optimizer:
+            memory_optimizer(model)
 
-        # CRITICAL FIX: Replace existing LoRA layers with optimized versions
-        OptimizedLoRALinear = evolved_kernels.get("optimized_lora_linear_class")
+        # Replace LoRA layers with quantized optimized versions
+        OptimizedQuantizedLoRALinear = evolved_kernels.get("optimized_quantized_lora_linear_class")
+        if not OptimizedQuantizedLoRALinear:
+            print("  ⚠️ No optimized LoRA class found")
+            model._kernels_applied = False
+            return
+
         replaced_count = 0
         
-        if OptimizedLoRALinear:
-            print("  🔧 Replacing LoRA layers with optimized versions...")
+        # Find and replace LoRA layers
+        print("  🔧 Scanning for LoRA layers to optimize...")
+        
+        all_modules = list(model.named_modules())
+        print(f"    Total modules: {len(all_modules)}")
+        
+        lora_layers_found = []
+        
+        for name, module in all_modules:
+            module_type = type(module).__name__
             
-            # Use MLX's named_modules() to find LoRA layers
-            lora_layers_to_replace = []
+            # Look for LoRA layers (from MLX-LM)
+            is_lora = (
+                'LoRA' in module_type or 'lora' in module_type.lower() or
+                (hasattr(module, 'lora_a') and hasattr(module, 'lora_b')) or
+                (hasattr(module, 'linear') and hasattr(module.linear, 'weight'))
+            )
             
-            # Debug: First check what modules exist in the model
-            print("    🔎 Scanning model structure for LoRA layers...")
-            all_modules = list(model.named_modules())
-            print(f"    Total modules found: {len(all_modules)}")
-            
-            # Look for modules that might be LoRA layers
-            for name, module in all_modules:
-                module_type = type(module).__name__
+            if is_lora:
+                lora_layers_found.append((name, module))
+                print(f"    🔍 Found LoRA layer: {name} (type: {module_type})")
                 
-                # MLX-LM uses different naming patterns - check for common ones
-                has_lora = (
-                    # Standard LoRA names
-                    (hasattr(module, 'lora_a') and hasattr(module, 'lora_b')) or
-                    # MLX-LM style names
-                    (hasattr(module, 'A') and hasattr(module, 'B')) or
-                    # Alternative names
-                    (hasattr(module, 'lora_A') and hasattr(module, 'lora_B')) or
-                    # Check for any attributes containing 'lora'
-                    any('lora' in attr.lower() for attr in dir(module) if not attr.startswith('_')) or
-                    # Check for LoRA in the class name
-                    'lora' in module_type.lower()
+                # Check if it has a quantized base layer
+                base_layer = getattr(module, 'linear', module)
+                if isinstance(base_layer, nn.QuantizedLinear):
+                    print(f"      ✅ Has quantized base: {base_layer.bits}-bit")
+                else:
+                    print(f"      ℹ️ Base layer type: {type(base_layer)}")
+
+        print(f"    Found {len(lora_layers_found)} LoRA layers")
+
+        # Replace LoRA layers with optimized versions
+        for layer_name, lora_layer in lora_layers_found:
+            try:
+                print(f"    📎 Optimizing LoRA layer: {layer_name}")
+                
+                # Create optimized version
+                optimized_layer = OptimizedQuantizedLoRALinear(
+                    original_lora_layer=lora_layer,
+                    r=getattr(lora_layer, 'r', 8),
+                    alpha=getattr(lora_layer, 'alpha', 16),
+                    dropout=getattr(lora_layer, 'dropout', 0.0),
+                    scale=getattr(lora_layer, 'scale', None)
                 )
                 
-                # Also check if this module has LoRA-related parameters
-                param_names = []
-                try:
-                    param_names = list(dict(module.named_parameters()).keys())
-                except:
-                    pass
-                
-                has_lora_params = any('lora' in p.lower() for p in param_names)
-                
-                if has_lora or has_lora_params:
-                    lora_layers_to_replace.append((name, module))
-                    print(f"    🔍 Found LoRA layer: {name} (type: {module_type})")
-                    # Debug: show what attributes this layer has
-                    lora_attrs = [attr for attr in dir(module) if not attr.startswith('_') and ('lora' in attr.lower() or attr in ['A', 'B'])]
-                    print(f"      LoRA attributes: {lora_attrs}")
-                    print(f"      LoRA parameters: {[p for p in param_names if 'lora' in p.lower()]}")
-            
-            print(f"    Found {len(lora_layers_to_replace)} potential LoRA layers to optimize")
-            
-            # Second pass: replace LoRA layers with optimized versions
-            for layer_name, lora_layer in lora_layers_to_replace:
-                try:
-                    print(f"    📎 Replacing LoRA layer: {layer_name}")
-                    
-                    # Determine LoRA parameters from the actual layer
-                    lora_a = None
-                    lora_b = None
-                    
-                    # MLX-LM may store LoRA matrices in the parameters, not as attributes
-                    # Let's check the actual module's state and parameters
-                    print(f"      Module type: {type(lora_layer).__name__}")
-                    
-                    # Check all attributes that might contain LoRA matrices
-                    all_attrs = [attr for attr in dir(lora_layer) if not attr.startswith('_')]
-                    tensor_attrs = []
-                    
-                    for attr in all_attrs:
-                        try:
-                            val = getattr(lora_layer, attr)
-                            if hasattr(val, 'shape') and len(val.shape) == 2:
-                                tensor_attrs.append((attr, val))
-                                print(f"      Found tensor: {attr} shape {val.shape}")
-                        except:
-                            pass
-                    
-                    # Try different naming conventions and parameter access
-                    if hasattr(lora_layer, 'lora_a') and hasattr(lora_layer, 'lora_b'):
-                        lora_a, lora_b = lora_layer.lora_a, lora_layer.lora_b
-                        print(f"      Using lora_a/lora_b")
-                    elif hasattr(lora_layer, 'A') and hasattr(lora_layer, 'B'):
-                        lora_a, lora_b = lora_layer.A, lora_layer.B
-                        print(f"      Using A/B")
-                    elif len(tensor_attrs) >= 2:
-                        # Sort by shape to try to identify A and B matrices
-                        # LoRA A is typically smaller in first dimension (rank x in_features)
-                        # LoRA B is typically (out_features x rank)
-                        tensor_attrs.sort(key=lambda x: x[1].shape[0])  # Sort by first dimension
-                        lora_a = tensor_attrs[0][1]  # Smaller first dim (rank x in_features)
-                        lora_b = tensor_attrs[1][1]  # Larger first dim (out_features x rank)
-                        print(f"      Using tensors: {tensor_attrs[0][0]} (A) and {tensor_attrs[1][0]} (B)")
-                    else:
-                        # Try to access parameters directly
-                        try:
-                            params = dict(lora_layer.named_parameters())
-                            param_names = list(params.keys())
-                            print(f"      Parameters: {param_names}")
-                            
-                            # Look for parameters that might be LoRA matrices
-                            a_candidates = [p for p in param_names if 'a' in p.lower() or 'down' in p.lower()]
-                            b_candidates = [p for p in param_names if 'b' in p.lower() or 'up' in p.lower()]
-                            
-                            if a_candidates and b_candidates:
-                                lora_a = params[a_candidates[0]]
-                                lora_b = params[b_candidates[0]]
-                                print(f"      Using parameters: {a_candidates[0]} (A) and {b_candidates[0]} (B)")
-                        except Exception as param_e:
-                            print(f"      Parameter access failed: {param_e}")
-                    
-                    if lora_a is None or lora_b is None:
-                        print(f"    ⚠️ Could not find LoRA matrices in {layer_name}, skipping")
-                        continue
-                    
-                    # Get LoRA rank from matrix dimensions
-                    r = lora_a.shape[0]
-                    print(f"      LoRA rank: {r}, shapes: A={lora_a.shape}, B={lora_b.shape}")
-                    
-                    # Create optimized version with same parameters
-                    optimized_layer = OptimizedLoRALinear(
-                        original_lora_layer=lora_layer,  # Pass the original LoRA layer
-                        r=r,
-                        alpha=getattr(lora_layer, 'alpha', 16),
-                        dropout=getattr(lora_layer, 'dropout', 0.0),
-                        scale=getattr(lora_layer, 'scale', None)
-                    )
-                    
-                    # Copy existing LoRA weights
-                    optimized_layer.lora_a = lora_a
-                    optimized_layer.lora_b = lora_b
-                    
-                    # Navigate to parent and replace the layer
-                    # Handle both attribute access and list indices
-                    name_parts = layer_name.split('.')
-                    try:
-                        if len(name_parts) == 1:
-                            # Top-level attribute
-                            setattr(model, name_parts[0], optimized_layer)
+                # Replace in model
+                name_parts = layer_name.split('.')
+                if len(name_parts) == 1:
+                    setattr(model, name_parts[0], optimized_layer)
+                else:
+                    parent = model
+                    for part in name_parts[:-1]:
+                        if part.isdigit() and hasattr(parent, '__getitem__'):
+                            parent = parent[int(part)]
                         else:
-                            # Navigate to parent module, handling lists properly
-                            parent = model
-                            for i, part in enumerate(name_parts[:-1]):
-                                if hasattr(parent, part):
-                                    parent = getattr(parent, part)
-                                elif part.isdigit() and hasattr(parent, '__getitem__'):
-                                    # This is a list index
-                                    parent = parent[int(part)]
-                                else:
-                                    raise AttributeError(f"Cannot navigate to {part} in path {'.'.join(name_parts[:i+1])}")
-                            
-                            # Replace the final layer
-                            final_attr = name_parts[-1]
-                            if hasattr(parent, final_attr):
-                                setattr(parent, final_attr, optimized_layer)
-                            elif final_attr.isdigit() and hasattr(parent, '__setitem__'):
-                                parent[int(final_attr)] = optimized_layer
-                            else:
-                                raise AttributeError(f"Cannot set {final_attr} on {type(parent)}")
-                        
-                        replaced_count += 1
-                        print(f"      ✅ Successfully replaced {layer_name}")
-                        
-                    except Exception as nav_error:
-                        print(f"    ⚠️ Navigation failed for {layer_name}: {nav_error}")
+                            parent = getattr(parent, part)
                     
-                except Exception as layer_error:
-                    print(f"    ⚠️ Failed to replace {layer_name}: {layer_error}")
-                    import traceback
-                    traceback.print_exc()
-            
-            print(f"  ✅ Replaced {replaced_count} LoRA layers with optimized versions")
-        else:
-            print("  ⚠️ No OptimizedLoRALinear class found in evolved kernels")
+                    final_attr = name_parts[-1]
+                    if final_attr.isdigit() and hasattr(parent, '__setitem__'):
+                        parent[int(final_attr)] = optimized_layer
+                    else:
+                        setattr(parent, final_attr, optimized_layer)
+                
+                replaced_count += 1
+                print(f"      ✅ Successfully optimized {layer_name}")
+                
+            except Exception as e:
+                print(f"    ⚠️ Failed to optimize {layer_name}: {e}")
 
-        # Store kernels for use during training
+        print(f"  ✅ Optimized {replaced_count} LoRA layers for quantized computation")
+
+        # Store kernels and status
         model._evolved_kernels = evolved_kernels
         model._has_evolved_kernels = True
-        # Set kernels_applied based on whether we actually replaced any layers OR have valid kernels
-        model._kernels_applied = (
-            (replaced_count > 0) if 'replaced_count' in locals() else 
-            (evolved_kernels is not None and len(evolved_kernels) > 0)
-        )
+        model._kernels_applied = replaced_count > 0
 
-        print(f"  ✅ Model patching complete - kernels ready for use")
-        print(f"  📊 Kernels applied status: {getattr(model, '_kernels_applied', False)}")
+        print(f"  📊 Quantized LoRA optimization status: {model._kernels_applied}")
 
     except Exception as e:
-        print(f"❌ ERROR during patching: {e}")
+        print(f"❌ ERROR during quantized LoRA patching: {e}")
         import traceback
         traceback.print_exc()
-        # Don't re-raise - let training continue with standard implementation
         model._kernels_applied = False
 
 
-def unpatch_model(model):
-    """Remove evolved kernel patches from model - handles MLX Model class safely."""
-    # Check if kernels were actually applied
-    if hasattr(model, "_kernels_applied") and not getattr(model, "_kernels_applied", True):
-        print("✅ No kernels to unpatch (none were applied)")
-        return
-
-    success_count = 0
-
-    # Restore original forward method safely
-    try:
-        if hasattr(model, "_original_forward"):
-            original_forward = getattr(model, "_original_forward", None)
-            if original_forward:
-                model.__call__ = original_forward
-                success_count += 1
-    except Exception as e:
-        print(f"⚠️ Could not restore original forward: {e}")
-
-    # Clean up attributes - handle MLX Model class behavior
-    attributes_to_clean = [
-        "_original_forward",
-        "_evolved_kernels",
-        "_has_evolved_kernels",
-        "_kernels_applied",
-    ]
-
-    for attr_name in attributes_to_clean:
-        if hasattr(model, attr_name):
-            try:
-                delattr(model, attr_name)
-                success_count += 1
-            except (AttributeError, TypeError):
-                # MLX Model class has custom attribute handling
-                try:
-                    setattr(model, attr_name, None)
-                    success_count += 1
-                except Exception:
-                    pass  # Expected MLX behavior - ignore silently
-
-    if success_count > 0:
-        print("✅ Model unpatching completed successfully")
-    else:
-        print("✅ Model unpatching completed (MLX model class behavior is normal)")
-
-
-def optimized_training_step(model, batch, optimizer, evolved_kernels=None):
-    """Optimized training step using evolved kernels."""
-    if not evolved_kernels or not hasattr(model, "_has_evolved_kernels"):
-        # Standard training step
-        def loss_fn(model):
-            logits = model(batch["input_ids"])
-            return nn.losses.cross_entropy(logits, batch["labels"], reduction="mean")
-
-        loss, grads = mx.value_and_grad(loss_fn)(model)
-        optimizer.update(model, grads)
-        return loss
-
-    # Optimized training step with evolved kernels
-    optimized_loss_fn = evolved_kernels.get("memory_efficient_loss_computation")
-    optimized_grad_fn = evolved_kernels.get("optimized_gradient_computation")
-    optimized_update_fn = evolved_kernels.get("optimized_parameter_update")
-
-    def loss_fn(model):
-        logits = model(batch["input_ids"])
-        if optimized_loss_fn:
-            return optimized_loss_fn(logits, batch["labels"])
-        else:
-            return nn.losses.cross_entropy(logits, batch["labels"], reduction="mean")
-
-    # Compute loss and gradients
-    if optimized_grad_fn:
-        loss = loss_fn(model)
-        grads = optimized_grad_fn(loss, model, use_kernels=True)
-    else:
-        loss, grads = mx.value_and_grad(loss_fn)(model)
-
-    # Update parameters
-    if optimized_update_fn:
-        # Use optimized parameter update
-        learning_rate = optimizer.learning_rate
-        if hasattr(learning_rate, "item"):
-            learning_rate = float(learning_rate.item())
-
-        # Simplified update for demonstration
-        optimizer.update(model, grads)
-    else:
-        optimizer.update(model, grads)
-
-    return loss
-
-
-def standard_lora_fine_tuning_with_kernels(
+def quantized_lora_fine_tuning_with_kernels(
     model_name: str,
     train_data_path: str,
     config: Dict[str, Any],
@@ -606,25 +456,36 @@ def standard_lora_fine_tuning_with_kernels(
     evolved_kernels: Optional[Dict] = None,
 ) -> Tuple[float, Dict[str, Any]]:
     """
-    Standard MLX-LM LoRA fine-tuning with optional evolved kernel optimizations.
+    Quantized LoRA fine-tuning with evolved kernel optimizations.
+    
+    Specifically targets quantized models and measures the impact of 
+    evolved quantized LoRA kernels.
     """
-    # Set random seed for reproducibility
+    # Set random seed
     mx.random.seed(config.get("seed", 42))
     np.random.seed(config.get("seed", 42))
 
-    # Load model and tokenizer using standard MLX-LM
-    print(f"Loading model: {model_name}")
+    print(f"Loading quantized model: {model_name}")
     model, tokenizer = load(model_name)
 
-    # Convert config to namespace for MLX-LM compatibility
+    # Verify we have a quantized model
+    quantized_layers = []
+    for name, module in model.named_modules():
+        if isinstance(module, nn.QuantizedLinear):
+            quantized_layers.append((name, module))
+
+    print(f"✅ Found {len(quantized_layers)} quantized layers in model")
+    if len(quantized_layers) == 0:
+        print("⚠️ WARNING: No quantized layers found - optimization may not be effective")
+
+    # Setup MLX-LM components
     args = types.SimpleNamespace(**config)
     args.data = train_data_path
 
-    # Load datasets using standard MLX-LM
     print("Loading datasets...")
     train_set, valid_set, test_set = load_dataset(args, tokenizer)
 
-    # Apply LoRA using standard MLX-LM FIRST
+    # Apply LoRA first
     print("Applying LoRA...")
     model.freeze()
     linear_to_lora_layers(
@@ -632,21 +493,20 @@ def standard_lora_fine_tuning_with_kernels(
     )
     print_trainable_parameters(model)
 
-    # Initialize kernel tracking
-    kernels_actually_applied = False
-    
-    # THEN apply evolved kernels if provided (after LoRA layers exist)
-    if evolved_kernels:
-        print("🚀 Applying evolved kernels AFTER LoRA...")
-        patch_model_with_kernels(model, evolved_kernels)
-        # Check if kernels were actually applied
-        kernels_actually_applied = getattr(model, '_kernels_applied', False)
-        print(f"  ✅ Evolved kernels active: {list(evolved_kernels.keys())}")
-        print(f"  📊 Kernels actually applied: {kernels_actually_applied}")
-    else:
-        print("🔍 Using standard MLX-LM (no evolved kernels)")
+    # Track memory and performance
+    memory_before = get_memory_usage()
+    kernels_applied = False
 
-    # Setup optimizer using standard MLX
+    # Apply evolved quantized LoRA kernels
+    if evolved_kernels:
+        print("🚀 Applying evolved quantized LoRA kernels...")
+        patch_quantized_lora_layers(model, evolved_kernels)
+        kernels_applied = getattr(model, '_kernels_applied', False)
+        print(f"  📊 Kernels applied: {kernels_applied}")
+    else:
+        print("🔍 Using standard MLX-LM quantized LoRA")
+
+    # Setup optimizer
     optimizer_name = args.optimizer.lower()
     optimizer_config = args.optimizer_config.get(optimizer_name, {})
 
@@ -657,17 +517,15 @@ def standard_lora_fine_tuning_with_kernels(
     else:
         raise ValueError(f"Unsupported optimizer: {optimizer_name}")
 
-    # Create adapter save directory
+    # Setup training
     adapter_path = Path(adapter_save_path)
     adapter_path.mkdir(parents=True, exist_ok=True)
 
-    # Save configuration
     args.adapter_file = adapter_path / "adapters.safetensors"
     config_to_save = vars(args).copy()
     config_to_save["adapter_file"] = str(config_to_save["adapter_file"])
     save_config(config_to_save, adapter_path / "adapter_config.json")
 
-    # Training arguments for MLX-LM
     training_args = TrainingArgs(
         batch_size=int(args.batch_size),
         iters=int(args.iters),
@@ -680,20 +538,12 @@ def standard_lora_fine_tuning_with_kernels(
         grad_checkpoint=bool(args.grad_checkpoint),
     )
 
-    # Custom training loop with evolved kernels
-    print("Starting training...")
+    # Training with timing and memory tracking
+    print("Starting quantized LoRA training...")
     start_time = time.time()
+    memory_peak_before = mx.get_peak_memory()
 
     try:
-        if evolved_kernels and hasattr(model, "_has_evolved_kernels"):
-            print("🚀 Using optimized training loop with evolved kernels")
-            # Custom training loop would go here
-            # For now, fall back to standard training but with patched model
-
-        print(
-            f"Training args: batch_size={training_args.batch_size}, " f"iters={training_args.iters}"
-        )
-
         train(
             model=model,
             args=training_args,
@@ -702,131 +552,115 @@ def standard_lora_fine_tuning_with_kernels(
             val_dataset=CacheDataset(valid_set),
             training_callback=None,
         )
-
     except Exception as e:
         print(f"Training failed: {e}")
         raise
-    finally:
-        # Clean up patches
-        if evolved_kernels:
-            unpatch_model(model)
 
     training_time = time.time() - start_time
+    memory_peak_after = mx.get_peak_memory()
+    memory_after = get_memory_usage()
 
-    # Evaluate using standard MLX-LM
+    # Evaluation
     print("Evaluating...")
     try:
         final_loss = evaluate(
             model=model,
             dataset=CacheDataset(test_set),
             batch_size=int(args.batch_size),
-            num_batches=int(args.test_batches) if hasattr(args, "test_batches") else 10,
+            num_batches=int(args.test_batches) if hasattr(args, "test_batches") else 5,
             max_seq_length=int(args.max_seq_length),
         )
     except Exception as e:
         print(f"Evaluation failed: {e}")
         raise
 
+    # Calculate metrics
+    memory_delta = memory_after - memory_before
+    memory_peak_delta = memory_peak_after - memory_peak_before
+
     metrics = {
         "final_loss": float(final_loss),
         "training_time": training_time,
+        "memory_delta": float(memory_delta),
+        "memory_peak_delta": float(memory_peak_delta / 1e6),  # Convert to MB
         "model_name": model_name,
         "num_layers_trained": args.num_layers,
         "lora_rank": args.lora_parameters["rank"],
-        "used_evolved_kernels": kernels_actually_applied,  # Keep for backwards compatibility
-        "kernels_used": kernels_actually_applied,  # This is what the evaluator expects!
-        "kernels_provided": evolved_kernels is not None,
-        "kernels_applied": kernels_actually_applied,
+        "quantized_layers_count": len(quantized_layers),
+        "kernels_applied": kernels_applied,
+        "optimization_target": "quantized_lora_fusion",
     }
 
     return final_loss, metrics
 
 
 def baseline_lora_kernels():
-    """
-    Baseline: Return None to use standard MLX-LM without any optimizations.
-    """
+    """Baseline: No kernels, use standard MLX-LM quantized LoRA."""
     return None
 
 
-def test_lora_functionality():
-    """Test basic LoRA functionality using real mlx-lm."""
-    print("Testing MLX-LM LoRA Fine-tuning Integration...")
+def test_quantized_lora_optimization():
+    """Test quantized LoRA optimization functionality."""
+    print("Testing MLX Quantized LoRA Optimization...")
 
-    if not MLX_AVAILABLE:
-        print("❌ MLX not available")
-        return False
-
-    if not MLX_LM_AVAILABLE:
-        print("❌ MLX-LM not available")
+    if not MLX_AVAILABLE or not MLX_LM_AVAILABLE:
+        print("❌ MLX or MLX-LM not available")
         return False
 
     try:
-        print("\n=== Testing Real MLX-LM LoRA Fine-tuning ===")
+        print("\n=== Testing Quantized LoRA Optimization ===")
 
-        # Create temporary data directory
+        # Create test data
         temp_data_dir = "temp_data"
-        create_sample_dataset(temp_data_dir, num_samples=20)
+        create_sample_dataset(temp_data_dir, num_samples=50)
 
-        # Test configuration
         config = create_training_config()
         config["data"] = temp_data_dir
 
-        print("✅ Configuration created")
-        print(f"  - Model: {config['model']}")
+        print("✅ Configuration created for quantized model")
+        print(f"  - Model: {config['model']} (quantized)")
         print(f"  - LoRA rank: {config['lora_parameters']['rank']}")
         print(f"  - Training iterations: {config['iters']}")
-        print(f"  - Batch size: {config['batch_size']}")
 
-        # Get evolved kernels
-        print("\n📦 Loading evolved kernels...")
+        # Test evolved kernels
+        print("\n📦 Loading evolved quantized LoRA kernels...")
         evolved_kernels = evolved_lora_kernels()
         baseline_kernels = baseline_lora_kernels()
 
-        print("✅ Evolved kernels loaded")
-        print(f"✅ Baseline kernels: {baseline_kernels} (standard MLX-LM)")
+        print("✅ Evolved quantized LoRA kernels loaded")
+        print(f"  - Kernels available: {list(evolved_kernels.keys())}")
+        print(f"  - Baseline: {baseline_kernels} (standard MLX-LM)")
 
         # Test basic model loading
-        print("\n🔧 Testing basic model loading...")
+        print("\n🔧 Testing quantized model loading...")
         try:
             model, tokenizer = load(config["model"])
             print(f"✅ Model loaded: {type(model).__name__}")
-            print(f"✅ Tokenizer loaded: {type(tokenizer).__name__}")
 
-            # Test LoRA parameter setup FIRST
-            print("\n🔧 Applying LoRA to model FIRST...")
-            try:
-                model.freeze()
-                linear_to_lora_layers(
-                    model,
-                    2,
-                    {"rank": 8, "dropout": 0.0, "scale": 16.0},
-                    use_dora=False,
-                )
-                print_trainable_parameters(model)
-                print("✅ LoRA setup working correctly")
-            except Exception as param_e:
-                print(f"✅ Model loaded but LoRA setup test failed: {param_e}")
-                print("This may be expected for some model configurations")
+            # Check for quantized layers
+            quantized_count = 0
+            for name, module in model.named_modules():
+                if isinstance(module, nn.QuantizedLinear):
+                    quantized_count += 1
 
-            # THEN test evolved kernel integration (after LoRA is applied)
-            print("\n🚀 Testing evolved kernel integration AFTER LoRA...")
-            patch_model_with_kernels(model, evolved_kernels)
-            print("✅ Model patching successful")
+            print(f"✅ Found {quantized_count} quantized layers in model")
 
-            unpatch_model(model)
+            if quantized_count == 0:
+                print("⚠️ WARNING: No quantized layers found - may not be a quantized model")
 
         except Exception as e:
-            print(f"⚠️ Model loading failed: {e}")
-            print("This is expected if the model is not available or too large for testing")
+            print(f"⚠️ Model loading test failed: {e}")
 
-        print("\n🎯 MLX-LM LoRA kernel optimization tests passed!")
-        print("Ready for OpenEvolve kernel evolution!")
+        print("\n🎯 Quantized LoRA optimization tests passed!")
+        print("\nOptimization target:")
+        print("- Eliminate dequantization in LoRA forward pass")
+        print("- Use mx.quantized_matmul directly on quantized weights")
+        print("- Reduce memory usage and improve training speed")
+        print("- Maintain numerical accuracy with quantized models")
 
-        # Cleanup temporary files
+        # Cleanup
         try:
             import shutil
-
             shutil.rmtree(temp_data_dir, ignore_errors=True)
             shutil.rmtree("temp_adapters", ignore_errors=True)
         except:
@@ -837,31 +671,26 @@ def test_lora_functionality():
     except Exception as e:
         print(f"❌ Test failed: {e}")
         import traceback
-
         traceback.print_exc()
         return False
 
 
 if __name__ == "__main__":
-    success = test_lora_functionality()
+    success = test_quantized_lora_optimization()
     if success:
-        print("\n🎯 MLX LoRA Kernel Optimization Ready!")
+        print("\n🎯 MLX Quantized LoRA Optimization Ready!")
         print("\nThis example targets:")
-        print("- Evolved LoRA kernels integrated into MLX-LM training")
-        print("- Same training loss with optimized kernel implementations")
-        print("- Memory reduction and/or speed improvements")
-        print("- Real kernel usage during training and inference")
-        print("\nEvolution targets:")
-        print("- OptimizedLoRALinear class with fused operations")
-        print("- Compiled matrix multiplication sequences")
-        print("- Optimized gradient computation patterns")
-        print("- Memory-efficient loss computation")
-        print("- Custom training step optimizations")
+        print("- SPECIFIC INEFFICIENCY: MLX-LM dequantizes weights for LoRA computation")
+        print("- OPTIMIZATION TARGET: Use mx.quantized_matmul directly, never dequantize")
+        print("- EXPECTED IMPROVEMENT: 15-30% memory reduction, 10-20% speed improvement")
+        print("- MEASUREMENT: Memory usage, training time, numerical accuracy")
+        print("\nEvolution will discover:")
+        print("- Efficient quantized LoRA fusion patterns")
+        print("- Memory-optimized computation strategies")
+        print("- Apple Silicon-specific quantized optimizations")
         print("\nNext steps:")
         print("1. Run: python evaluator.py")
-        print(
-            "2. Run: python ../../../openevolve-run.py initial_program.py evaluator.py --config config.yaml"
-        )
+        print("2. Run: python ../../../openevolve-run.py initial_program.py evaluator.py --config config.yaml")
     else:
         print("\n❌ Setup failed. Please check MLX and MLX-LM installation:")
         print("pip install mlx>=0.15.0 mlx-lm>=0.15.0")

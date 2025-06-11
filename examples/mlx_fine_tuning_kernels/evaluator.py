@@ -1,11 +1,17 @@
 """
-MLX LoRA Fine-tuning Optimization Evaluator with Artifacts Support
+MLX Quantized LoRA Optimization Evaluator
 
-This evaluator performs real LoRA fine-tuning benchmarks using the mlx-lm library,
-comparing standard MLX-LM against MLX-LM with evolved kernels injected.
-The goal is to achieve the same training loss with improved memory efficiency and/or speed.
+This evaluator measures the performance impact of evolved quantized LoRA kernels
+that eliminate the dequantization bottleneck in MLX-LM.
 
-Enhanced with artifacts to provide execution output feedback during evolution.
+SPECIFIC TARGET: Quantified performance improvements from using mx.quantized_matmul 
+directly instead of dequantizing weights for LoRA computation.
+
+EVALUATION METRICS:
+- Memory efficiency: Reduced peak memory usage during training
+- Training speed: Faster forward/backward passes
+- Numerical accuracy: Same final loss as baseline
+- Quantization preservation: No dequantization during LoRA computation
 """
 
 import importlib.util
@@ -24,10 +30,7 @@ import contextlib
 from typing import Dict, Union, List, Tuple, Optional, Any
 from pathlib import Path
 
-# Import EvaluationResult for artifacts support
-# from openevolve.evaluation_result import EvaluationResult  # Not needed - return dict directly
-
-# Required imports - fail fast if not available
+# Required imports
 try:
     import mlx.core as mx
     import mlx.nn as nn
@@ -52,7 +55,7 @@ try:
     from mlx_lm.utils import save_config
 
     MLX_LM_AVAILABLE = True
-    print("✅ MLX-LM available for evaluation")
+    print("✅ MLX-LM available for quantized LoRA evaluation")
 except ImportError as e:
     print(f"⚠️ MLX-LM not available: {e}")
     MLX_LM_AVAILABLE = False
@@ -63,7 +66,12 @@ def get_memory_usage() -> float:
     return psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
 
 
-def clear_mlx_cache_and_gc():
+def get_peak_memory_mb() -> float:
+    """Get MLX peak memory usage in MB."""
+    return mx.get_peak_memory() / 1e6
+
+
+def clear_memory_and_cache():
     """Clear MLX cache and run garbage collection."""
     mx.clear_cache()
     gc.collect()
@@ -86,10 +94,11 @@ def capture_output():
         sys.stderr = old_stderr
 
 
-class MLXLoRABenchmark:
+class QuantizedLoRABenchmark:
     """
-    Benchmark for comparing standard MLX-LM vs MLX-LM with evolved kernels.
-    Uses proper sequential evaluation to avoid monkey patching interference.
+    Benchmark for comparing standard quantized LoRA vs optimized quantized LoRA.
+    
+    Focuses specifically on the dequantization efficiency improvements.
     """
 
     def __init__(self, model_name: str = "mlx-community/Qwen2.5-0.5B-Instruct-4bit"):
@@ -105,8 +114,8 @@ class MLXLoRABenchmark:
                 pass
         self.temp_dirs.clear()
 
-    def create_test_config(self, data_dir: str, adapter_dir: str) -> Dict[str, Any]:
-        """Create test configuration for LoRA fine-tuning with all MLX-LM expected attributes."""
+    def create_quantized_test_config(self, data_dir: str, adapter_dir: str) -> Dict[str, Any]:
+        """Create test configuration optimized for quantized LoRA evaluation."""
         return {
             "model": self.model_name,
             "train": True,
@@ -115,19 +124,18 @@ class MLXLoRABenchmark:
             "optimizer_config": {"adam": {}},
             "data": data_dir,
             "seed": 42,
-            "num_layers": 4,  # More layers for comprehensive evaluation
-            "batch_size": 2,  # Reasonable batch size for larger dataset
-            "iters": 25,  # More iterations for larger dataset
+            "num_layers": 4,  # Meaningful number of layers for real optimization
+            "batch_size": 2,
+            "iters": 25,  # Substantial training for visible improvements
             "val_batches": 10,
             "learning_rate": 1e-4,
             "steps_per_report": 10,
-            "steps_per_eval": 50,
+            "steps_per_eval": 100,
             "adapter_path": adapter_dir,
             "save_every": 100,
-            "max_seq_length": 512,  # Full sequence length
-            "lora_parameters": {"rank": 16, "dropout": 0.0, "scale": 16.0},  # Standard rank
+            "max_seq_length": 512,  # Full sequences for realistic memory usage
+            "lora_parameters": {"rank": 16, "dropout": 0.0, "scale": 16.0},  # Standard LoRA rank
             "mask_prompt": False,
-            # Additional MLX-LM expected attributes
             "test": True,
             "test_batches": 10,
             "resume_adapter_file": None,
@@ -137,64 +145,73 @@ class MLXLoRABenchmark:
             "wandb": None,
         }
 
-    def compare_implementations(self, evolved_kernels: Dict, num_trials: int = 3) -> Dict[str, Any]:
+    def analyze_model_quantization(self, model):
+        """Analyze the quantization characteristics of the model."""
+        quantized_layers = []
+        total_layers = 0
+        
+        for name, module in model.named_modules():
+            if isinstance(module, (nn.Linear, nn.QuantizedLinear)):
+                total_layers += 1
+                if isinstance(module, nn.QuantizedLinear):
+                    quantized_layers.append({
+                        'name': name,
+                        'bits': module.bits,
+                        'group_size': module.group_size,
+                        'weight_shape': module.weight.shape
+                    })
+
+        return {
+            'quantized_layer_count': len(quantized_layers),
+            'total_linear_layers': total_layers,
+            'quantization_ratio': len(quantized_layers) / max(total_layers, 1),
+            'quantized_layers': quantized_layers
+        }
+
+    def compare_quantized_implementations(self, evolved_kernels: Dict, num_trials: int = 3) -> Dict[str, Any]:
         """
-        Compare standard MLX-LM vs MLX-LM with evolved kernels.
-
-        PROPER EVALUATION STRUCTURE:
-        1. Run ALL baseline trials first (no patching)
-        2. Calculate baseline metrics
-        3. Apply evolved kernels patching ONCE
-        4. Run ALL evolved trials
-        5. Calculate evolved metrics
-        6. Compare results
-
-        This avoids monkey patching interference between trials.
+        Compare standard quantized LoRA vs evolved quantized LoRA kernels.
+        
+        Focus: Measure the specific impact of eliminating dequantization.
         """
 
         if not MLX_LM_AVAILABLE:
-            return {"error": "MLX-LM not available for real benchmarking"}
+            return {"error": "MLX-LM not available for quantized LoRA benchmarking"}
 
-        print(f"\n📊 MLX-LM LORA KERNEL COMPARISON")
+        print(f"\n📊 QUANTIZED LORA OPTIMIZATION BENCHMARK")
         print(f"  Model: {self.model_name}")
         print(f"  Trials per implementation: {num_trials}")
-        print(f"  Evaluation strategy: Sequential (baseline first, then evolved)")
-        print(
-            f"  Evolved kernels available: {list(evolved_kernels.keys()) if evolved_kernels else 'None'}"
-        )
+        print(f"  Target: Quantized LoRA fusion optimization")
+        print(f"  Evolved kernels: {list(evolved_kernels.keys()) if evolved_kernels else 'None'}")
 
         baseline_results = []
         evolved_results = []
 
         # ========================================
-        # PHASE 1: Run ALL baseline trials first
+        # PHASE 1: Baseline quantized LoRA trials
         # ========================================
-        print(f"\n🔬 PHASE 1: Running {num_trials} BASELINE trials (standard MLX-LM)")
+        print(f"\n🔬 PHASE 1: Running {num_trials} BASELINE trials (standard quantized LoRA)")
 
         for trial in range(num_trials):
             print(f"\n--- Baseline Trial {trial + 1}/{num_trials} ---")
 
-            # Create temporary directories for this trial
             baseline_data_dir = tempfile.mkdtemp(prefix="baseline_data_")
             baseline_adapter_dir = tempfile.mkdtemp(prefix="baseline_adapters_")
             self.temp_dirs.extend([baseline_data_dir, baseline_adapter_dir])
 
             try:
-                # Create test dataset
                 self._create_test_dataset(baseline_data_dir)
-                baseline_config = self.create_test_config(baseline_data_dir, baseline_adapter_dir)
+                baseline_config = self.create_quantized_test_config(baseline_data_dir, baseline_adapter_dir)
 
-                clear_mlx_cache_and_gc()
+                clear_memory_and_cache()
 
-                # Run baseline (standard MLX-LM)
-                baseline_result = self._run_single_trial(
+                baseline_result = self._run_quantized_trial(
                     baseline_config,
                     f"BASELINE-{trial+1}",
-                    evolved_kernels=None,  # No kernels = standard MLX-LM
+                    evolved_kernels=None
                 )
                 baseline_results.append(baseline_result)
 
-                # Early exit if first baseline trial fails
                 if trial == 0 and "error" in baseline_result:
                     print("  🚨 First baseline trial failed - stopping evaluation")
                     return {"error": f"First baseline trial failed: {baseline_result['error']}"}
@@ -202,50 +219,37 @@ class MLXLoRABenchmark:
             except Exception as e:
                 print(f"  ❌ Baseline trial {trial+1} failed: {e}")
                 baseline_results.append({"error": str(e)})
-
-                # Early exit if first trial fails
                 if trial == 0:
-                    print("  🚨 First baseline trial failed - stopping evaluation")
                     return {"error": f"First baseline trial failed: {e}"}
 
         # ========================================
-        # PHASE 2: Run ALL evolved trials
+        # PHASE 2: Evolved quantized LoRA trials
         # ========================================
-        print(f"\n🚀 PHASE 2: Running {num_trials} EVOLVED trials (MLX-LM + evolved kernels)")
+        print(f"\n🚀 PHASE 2: Running {num_trials} EVOLVED trials (optimized quantized LoRA)")
 
-        # Verify evolved kernels are valid before running trials
         if evolved_kernels:
             print(f"  ✅ Testing evolved kernels: {list(evolved_kernels.keys())}")
-            for kernel_name, kernel_func in evolved_kernels.items():
-                if kernel_func is None:
-                    print(f"  ⚠️ Warning: {kernel_name} is None")
-                else:
-                    print(f"  ✅ {kernel_name}: {type(kernel_func)}")
 
         for trial in range(num_trials):
             print(f"\n--- Evolved Trial {trial + 1}/{num_trials} ---")
 
-            # Create temporary directories for this trial
             evolved_data_dir = tempfile.mkdtemp(prefix="evolved_data_")
             evolved_adapter_dir = tempfile.mkdtemp(prefix="evolved_adapters_")
             self.temp_dirs.extend([evolved_data_dir, evolved_adapter_dir])
 
             try:
-                # Create test dataset (same as baseline)
                 self._create_test_dataset(evolved_data_dir)
-                evolved_config = self.create_test_config(evolved_data_dir, evolved_adapter_dir)
+                evolved_config = self.create_quantized_test_config(evolved_data_dir, evolved_adapter_dir)
 
-                clear_mlx_cache_and_gc()
+                clear_memory_and_cache()
 
-                # Run evolved (MLX-LM + evolved kernels)
-                evolved_result = self._run_single_trial(
+                evolved_result = self._run_quantized_trial(
                     evolved_config,
                     f"EVOLVED-{trial+1}",
-                    evolved_kernels=evolved_kernels,  # Inject evolved kernels
+                    evolved_kernels=evolved_kernels
                 )
                 evolved_results.append(evolved_result)
 
-                # Early exit if first evolved trial fails
                 if trial == 0 and "error" in evolved_result:
                     print("  🚨 First evolved trial failed - stopping evaluation")
                     return {"error": f"First evolved trial failed: {evolved_result['error']}"}
@@ -253,23 +257,18 @@ class MLXLoRABenchmark:
             except Exception as e:
                 print(f"  ❌ Evolved trial {trial+1} failed: {e}")
                 evolved_results.append({"error": str(e)})
-
-                # Early exit if first trial fails
                 if trial == 0:
-                    print("  🚨 First evolved trial failed - stopping evaluation")
                     return {"error": f"First evolved trial failed: {e}"}
 
         # ========================================
-        # PHASE 3: Analyze and compare results
+        # PHASE 3: Analysis
         # ========================================
         self.cleanup()
-
         results = {"baseline": baseline_results, "evolved": evolved_results}
+        return self._analyze_quantized_results(results)
 
-        return self._analyze_results(results)
-
-    def _create_test_dataset(self, output_dir: str, num_samples: int = 500):
-        """Create a comprehensive test dataset for LoRA fine-tuning with diverse examples."""
+    def _create_test_dataset(self, output_dir: str, num_samples: int = 400):
+        """Create a comprehensive test dataset for quantized LoRA evaluation with diverse examples."""
         examples = [
             # AI and Machine Learning
             {
@@ -731,62 +730,58 @@ class MLXLoRABenchmark:
             },
         ]
 
-        # Use smaller dataset for faster evaluation
-        if num_samples > len(examples):
-            dataset = []
-            for i in range(num_samples):
-                dataset.append(examples[i % len(examples)])
-        else:
-            dataset = examples[:num_samples]
+        # Use full dataset size for realistic performance measurement
+        expanded_examples = []
+        for i in range(num_samples):
+            expanded_examples.append(examples[i % len(examples)])
 
-        # Create balanced splits with minimum sizes
-        train_size = max(10, int(0.7 * num_samples))
-        val_size = max(5, int(0.2 * num_samples))
-        test_size = max(3, num_samples - train_size - val_size)
+        # Create substantial splits for meaningful performance testing
+        train_data = expanded_examples[:int(0.7 * num_samples)]
+        valid_data = expanded_examples[int(0.7 * num_samples):int(0.85 * num_samples)]
+        test_data = expanded_examples[int(0.85 * num_samples):]
 
-        train_data = dataset[:train_size]
-        val_data = dataset[train_size : train_size + val_size]
-        test_data = dataset[train_size + val_size : train_size + val_size + test_size]
+        # Ensure adequate split sizes
+        if len(valid_data) < 10:
+            valid_data = train_data[-10:]
+        if len(test_data) < 10:
+            test_data = train_data[-10:]
 
-        print(
-            f"📊 Dataset: {len(train_data)} train, {len(val_data)} valid, {len(test_data)} test examples"
-        )
-
-        # Write datasets - Use "valid" not "val" for MLX-LM
+        # Write datasets
         os.makedirs(output_dir, exist_ok=True)
-        for split, data in [("train", train_data), ("valid", val_data), ("test", test_data)]:
-            file_path = os.path.join(output_dir, f"{split}.jsonl")
-            with open(file_path, "w") as f:
+        for split, data in [("train", train_data), ("valid", valid_data), ("test", test_data)]:
+            with open(f"{output_dir}/{split}.jsonl", "w") as f:
                 for example in data:
                     f.write(json.dumps(example) + "\n")
 
-    def _run_single_trial(
+        print(f"📊 Full Dataset: {len(train_data)} train, {len(valid_data)} valid, {len(test_data)} test samples")
+
+    def _run_quantized_trial(
         self, config: Dict[str, Any], trial_name: str, evolved_kernels: Optional[Dict] = None
     ) -> Dict[str, Union[float, str]]:
-        """Run a single LoRA fine-tuning trial."""
+        """Run a single quantized LoRA trial."""
 
         print(f"  🧪 Running {trial_name}...")
         if evolved_kernels:
-            print(f"    📦 Using evolved kernels: {list(evolved_kernels.keys())}")
+            print(f"    📦 Using evolved quantized kernels")
         else:
-            print(f"    📋 Using standard MLX-LM (no kernels)")
+            print(f"    📋 Using standard quantized LoRA")
 
         try:
-            # Memory before
+            # Memory tracking
             memory_before = get_memory_usage()
+            peak_memory_before = get_peak_memory_mb()
             start_time = time.perf_counter()
 
-            # Import and run the training function
+            # Import the training function
             import sys
             import os
-
             current_dir = os.path.dirname(os.path.abspath(__file__))
             sys.path.insert(0, current_dir)
 
-            from initial_program import standard_lora_fine_tuning_with_kernels
+            from initial_program import quantized_lora_fine_tuning_with_kernels
 
-            # Run training with or without evolved kernels
-            final_loss, metrics = standard_lora_fine_tuning_with_kernels(
+            # Run quantized LoRA training with substantial data
+            final_loss, metrics = quantized_lora_fine_tuning_with_kernels(
                 model_name=config["model"],
                 train_data_path=config["data"],
                 config=config,
@@ -794,53 +789,58 @@ class MLXLoRABenchmark:
                 evolved_kernels=evolved_kernels,
             )
 
-            # Timing and memory
+            # Timing and memory measurement
             end_time = time.perf_counter()
             memory_after = get_memory_usage()
+            peak_memory_after = get_peak_memory_mb()
 
             total_time = end_time - start_time
-            memory_delta = memory_after - memory_before
-
-            # Extract additional metrics
             training_time = metrics.get("training_time", total_time)
+            memory_delta = memory_after - memory_before
+            peak_memory_delta = peak_memory_after - peak_memory_before
 
-            # Check if kernels were actually used
-            kernels_used = metrics.get("used_evolved_kernels", False)
-            if evolved_kernels and not kernels_used:
-                print(f"    ⚠️ Warning: Evolved kernels provided but not used")
-            elif evolved_kernels and kernels_used:
-                print(f"    ✅ Evolved kernels successfully applied")
+            # Check kernel application
+            kernels_applied = metrics.get("kernels_applied", False)
+            quantized_layers_count = metrics.get("quantized_layers_count", 0)
 
-            # Calculate approximate tokens/second
+            if evolved_kernels and not kernels_applied:
+                print(f"    ⚠️ Warning: Evolved kernels provided but not applied")
+            elif evolved_kernels and kernels_applied:
+                print(f"    ✅ Evolved quantized kernels successfully applied")
+
+            # Calculate performance metrics with substantial dataset
             estimated_tokens = config["iters"] * config["batch_size"] * config["max_seq_length"]
             tokens_per_second = estimated_tokens / training_time if training_time > 0 else 0
 
             print(f"    Final loss: {final_loss:.4f}")
             print(f"    Training time: {training_time:.2f}s")
             print(f"    Memory delta: {memory_delta:.1f} MB")
+            print(f"    Peak memory delta: {peak_memory_delta:.1f} MB")
             print(f"    Tokens/sec: {tokens_per_second:.1f}")
-            print(f"    Kernels used: {kernels_used}")
+            print(f"    Quantized layers: {quantized_layers_count}")
+            print(f"    Kernels applied: {kernels_applied}")
 
             return {
                 "final_loss": float(final_loss),
                 "training_time": float(training_time),
                 "total_time": float(total_time),
                 "memory_delta": float(memory_delta),
+                "peak_memory_delta": float(peak_memory_delta),
                 "tokens_per_second": float(tokens_per_second),
+                "quantized_layers_count": int(quantized_layers_count),
+                "kernels_applied": bool(kernels_applied),
                 "lora_rank": config["lora_parameters"]["rank"],
                 "num_layers": config["num_layers"],
-                "kernels_used": bool(kernels_used),
             }
 
         except Exception as e:
             print(f"    ❌ Failed: {e}")
             import traceback
-
             traceback.print_exc()
             return {"error": str(e)}
 
-    def _analyze_results(self, results: Dict[str, List[Dict]]) -> Dict[str, Any]:
-        """Analyze comparison results."""
+    def _analyze_quantized_results(self, results: Dict[str, List[Dict]]) -> Dict[str, Any]:
+        """Analyze quantized LoRA optimization results with full dataset metrics."""
 
         # Filter successful results
         baseline_success = [r for r in results["baseline"] if "error" not in r]
@@ -853,11 +853,12 @@ class MLXLoRABenchmark:
                 "evolved_success": len(evolved_success),
             }
 
-        # Calculate averages
+        # Calculate averages from full dataset results
         baseline_avg = {
             "final_loss": np.mean([r["final_loss"] for r in baseline_success]),
             "training_time": np.mean([r["training_time"] for r in baseline_success]),
             "memory_delta": np.mean([r["memory_delta"] for r in baseline_success]),
+            "peak_memory_delta": np.mean([r["peak_memory_delta"] for r in baseline_success]),
             "tokens_per_second": np.mean([r["tokens_per_second"] for r in baseline_success]),
         }
 
@@ -865,43 +866,50 @@ class MLXLoRABenchmark:
             "final_loss": np.mean([r["final_loss"] for r in evolved_success]),
             "training_time": np.mean([r["training_time"] for r in evolved_success]),
             "memory_delta": np.mean([r["memory_delta"] for r in evolved_success]),
+            "peak_memory_delta": np.mean([r["peak_memory_delta"] for r in evolved_success]),
             "tokens_per_second": np.mean([r["tokens_per_second"] for r in evolved_success]),
         }
 
-        # Calculate improvements
+        # Calculate improvements with realistic dataset scale
         loss_difference = abs(evolved_avg["final_loss"] - baseline_avg["final_loss"])
-        loss_tolerance = max(0.01 * baseline_avg["final_loss"], 0.001)  # 1% or 0.001 minimum
+        loss_tolerance = max(0.01 * baseline_avg["final_loss"], 0.01)  # 1% tolerance
         loss_convergence_ok = loss_difference <= loss_tolerance
 
         speed_improvement = (
             evolved_avg["tokens_per_second"] / baseline_avg["tokens_per_second"]
-            if baseline_avg["tokens_per_second"] > 0
-            else 1.0
+            if baseline_avg["tokens_per_second"] > 0 else 1.0
         )
-        time_improvement = (
-            baseline_avg["training_time"] / evolved_avg["training_time"]
-            if evolved_avg["training_time"] > 0
-            else 1.0
-        )
+        
         memory_improvement = (
             baseline_avg["memory_delta"] / evolved_avg["memory_delta"]
-            if evolved_avg["memory_delta"] > 0
-            else 1.0
+            if evolved_avg["memory_delta"] > 0 else 1.0
+        )
+        
+        peak_memory_improvement = (
+            baseline_avg["peak_memory_delta"] / evolved_avg["peak_memory_delta"]
+            if evolved_avg["peak_memory_delta"] > 0 else 1.0
         )
 
-        # Overall score calculation
-        convergence_score = (
-            1.0
-            if loss_convergence_ok
-            else max(0.0, 1.0 - (loss_difference / baseline_avg["final_loss"]))
+        time_improvement = (
+            baseline_avg["training_time"] / evolved_avg["training_time"]
+            if evolved_avg["training_time"] > 0 else 1.0
         )
-        efficiency_score = 0.5 * min(speed_improvement / 1.05, 2.0) + 0.5 * min(
-            memory_improvement / 1.05, 2.0
-        )
-        overall_score = 0.7 * convergence_score + 0.3 * efficiency_score
 
-        # Check if kernels were actually used in evolved trials
-        kernels_actually_used = any(r.get("kernels_used", False) for r in evolved_success)
+        # Scoring with realistic expectations for quantized optimization
+        convergence_score = 1.0 if loss_convergence_ok else max(0.0, 1.0 - (loss_difference / baseline_avg["final_loss"]))
+        
+        # Score improvements with realistic thresholds for quantized LoRA fusion
+        memory_score = min(memory_improvement / 1.05, 2.0)  # 5% improvement = 1.0 score
+        speed_score = min(speed_improvement / 1.02, 2.0)    # 2% improvement = 1.0 score  
+        peak_memory_score = min(peak_memory_improvement / 1.10, 2.0)  # 10% improvement = 1.0 score
+        
+        efficiency_score = 0.4 * memory_score + 0.3 * speed_score + 0.3 * peak_memory_score
+        
+        # Overall score balances convergence and efficiency
+        overall_score = 0.6 * convergence_score + 0.4 * efficiency_score
+
+        # Check if kernels were actually used
+        kernels_actually_used = any(r.get("kernels_applied", False) for r in evolved_success)
 
         return {
             "baseline_avg": baseline_avg,
@@ -909,8 +917,9 @@ class MLXLoRABenchmark:
             "loss_difference": loss_difference,
             "loss_convergence_ok": loss_convergence_ok,
             "speed_improvement": speed_improvement,
-            "time_improvement": time_improvement,
             "memory_improvement": memory_improvement,
+            "peak_memory_improvement": peak_memory_improvement,
+            "time_improvement": time_improvement,
             "convergence_score": convergence_score,
             "efficiency_score": efficiency_score,
             "overall_score": overall_score,
@@ -919,26 +928,26 @@ class MLXLoRABenchmark:
                 "evolved": len(evolved_success),
             },
             "kernels_actually_used": kernels_actually_used,
-            "evolved_trials_debug": evolved_success,
+            "optimization_target": "quantized_lora_fusion",
         }
 
 
 def evaluate(program_path: str) -> Dict[str, Any]:
     """
-    Evaluate MLX-LM LoRA kernel optimization program.
-
+    Evaluate MLX quantized LoRA optimization program with full dataset scale.
+    
     Returns:
         Dictionary with metrics for OpenEvolve evolution feedback
     """
-    print(f"🚀 Evaluating MLX LoRA Kernel Optimization: {program_path}")
+    print(f"🚀 Evaluating MLX Quantized LoRA Optimization: {program_path}")
 
     if not MLX_LM_AVAILABLE:
         return {
-        "overall_score": 0.0,
-        "error": "MLX-LM not available for evaluation. Please install: pip install mlx-lm"
+            "overall_score": 0.0,
+            "error": "MLX-LM not available. Please install: pip install mlx-lm"
         }
 
-    # Capture all output during evaluation
+    # Capture output during evaluation
     with capture_output() as (stdout_capture, stderr_capture):
         try:
             # Load evolved program
@@ -958,16 +967,14 @@ def evaluate(program_path: str) -> Dict[str, Any]:
                     "error": "Missing baseline_lora_kernels function"
                 }
 
-            # Get evolved kernels
-            print("📦 Loading evolved kernels...")
+            # Get kernels
+            print("📦 Loading evolved quantized LoRA kernels...")
             try:
                 evolved_kernels = evolved_program.evolved_lora_kernels()
-                baseline_kernels = evolved_program.baseline_lora_kernels()  # Returns None
+                baseline_kernels = evolved_program.baseline_lora_kernels()
 
-                print(
-                    f"✅ Evolved kernels loaded: {list(evolved_kernels.keys()) if evolved_kernels else 'None'}"
-                )
-                print(f"✅ Baseline: Standard MLX-LM (no custom kernels)")
+                print(f"✅ Evolved kernels loaded: {list(evolved_kernels.keys()) if evolved_kernels else 'None'}")
+                print(f"✅ Baseline: Standard quantized LoRA")
 
                 # Validate evolved kernels
                 if evolved_kernels:
@@ -984,12 +991,12 @@ def evaluate(program_path: str) -> Dict[str, Any]:
                     "error": f"Failed to load evolved kernels: {e}"
                 }
 
-            # Setup benchmark
-            benchmark = MLXLoRABenchmark()
+            # Setup benchmark for full-scale evaluation
+            benchmark = QuantizedLoRABenchmark()
 
-            # Run sequential comparison (baseline first, then evolved)
-            comparison_results = benchmark.compare_implementations(
-                evolved_kernels=evolved_kernels, num_trials=5
+            # Run comparison with full dataset scale
+            comparison_results = benchmark.compare_quantized_implementations(
+                evolved_kernels=evolved_kernels, num_trials=3
             )
 
             if "error" in comparison_results:
@@ -998,7 +1005,7 @@ def evaluate(program_path: str) -> Dict[str, Any]:
                     "error": comparison_results["error"]
                 }
 
-            # Extract results
+            # Extract results from full-scale testing
             overall_score = comparison_results["overall_score"]
             convergence_score = comparison_results["convergence_score"]
             efficiency_score = comparison_results["efficiency_score"]
@@ -1007,55 +1014,53 @@ def evaluate(program_path: str) -> Dict[str, Any]:
             loss_convergence_ok = comparison_results["loss_convergence_ok"]
             speed_improvement = comparison_results["speed_improvement"]
             memory_improvement = comparison_results["memory_improvement"]
+            peak_memory_improvement = comparison_results["peak_memory_improvement"]
             time_improvement = comparison_results["time_improvement"]
 
             baseline_avg = comparison_results["baseline_avg"]
             evolved_avg = comparison_results["evolved_avg"]
 
-            print(f"\n📊 MLX LORA KERNEL OPTIMIZATION RESULTS:")
-            print(
-                f"  Loss Convergence: {'✅' if loss_convergence_ok else '❌'} (diff: {loss_difference:.4f})"
-            )
+            print(f"\n📊 QUANTIZED LORA OPTIMIZATION RESULTS (Full Dataset):")
+            print(f"  Loss Convergence: {'✅' if loss_convergence_ok else '❌'} (diff: {loss_difference:.4f})")
             print(f"  Speed Improvement: {speed_improvement:.2f}x")
             print(f"  Memory Improvement: {memory_improvement:.2f}x")
+            print(f"  Peak Memory Improvement: {peak_memory_improvement:.2f}x")
             print(f"  Time Improvement: {time_improvement:.2f}x")
             print(f"  Convergence Score: {convergence_score:.3f}")
             print(f"  Efficiency Score: {efficiency_score:.3f}")
             print(f"  Overall Score: {overall_score:.3f}")
 
             print(f"\n🔍 DETAILED METRICS:")
-            print(
-                f"  Baseline - Loss: {baseline_avg['final_loss']:.4f}, Time: {baseline_avg['training_time']:.1f}s, Memory: {baseline_avg['memory_delta']:.1f} MB"
-            )
-            print(
-                f"  Evolved  - Loss: {evolved_avg['final_loss']:.4f}, Time: {evolved_avg['training_time']:.1f}s, Memory: {evolved_avg['memory_delta']:.1f} MB"
-            )
+            print(f"  Baseline - Loss: {baseline_avg['final_loss']:.4f}, Time: {baseline_avg['training_time']:.1f}s")
+            print(f"             Memory: {baseline_avg['memory_delta']:.1f} MB, Peak: {baseline_avg['peak_memory_delta']:.1f} MB")
+            print(f"  Evolved  - Loss: {evolved_avg['final_loss']:.4f}, Time: {evolved_avg['training_time']:.1f}s")
+            print(f"             Memory: {evolved_avg['memory_delta']:.1f} MB, Peak: {evolved_avg['peak_memory_delta']:.1f} MB")
 
-            # Check if kernels were actually used in evolved trials
+            # Check kernel usage
             kernels_actually_used = comparison_results.get("kernels_actually_used", False)
             
             if evolved_kernels:
                 if kernels_actually_used:
-                    print(f"  ✅ Evolved kernels were successfully used in trials")
+                    print(f"  ✅ Quantized optimization kernels successfully applied")
                 else:
-                    print(f"  ⚠️ WARNING: Evolved kernels were provided but not used in trials")
+                    print(f"  ⚠️ WARNING: Evolved kernels provided but not applied")
 
-            # Success interpretation
+            # Success interpretation for quantized optimization
             if overall_score >= 0.8:
-                print("  🥇 EXCELLENT: Strong improvements while maintaining convergence!")
+                print("  🥇 EXCELLENT: Strong quantized LoRA optimizations achieved!")
             elif overall_score >= 0.6:
-                print("  🥈 VERY GOOD: Good improvements with convergence!")
+                print("  🥈 VERY GOOD: Good quantized memory/speed improvements!")
             elif overall_score >= 0.4:
-                print("  🥉 GOOD: Some improvements achieved!")
+                print("  🥉 GOOD: Some quantized optimizations working!")
             elif convergence_score > 0.5:
-                print("  📈 PROGRESS: Reasonable convergence, efficiency needs work!")
+                print("  📈 PROGRESS: Convergence maintained, optimizing efficiency!")
             else:
-                print("  🔄 DEVELOPING: Convergence issues need to be addressed!")
+                print("  🔄 DEVELOPING: Need to maintain numerical accuracy!")
 
-            # Prepare metrics
+            # Prepare metrics from full-scale evaluation
             metrics = {
                 "overall_score": float(overall_score),
-                "combined_score": float(overall_score),  # Primary metric for OpenEvolve
+                "combined_score": float(overall_score),
                 # Core metrics
                 "convergence_score": float(convergence_score),
                 "efficiency_score": float(efficiency_score),
@@ -1064,44 +1069,27 @@ def evaluate(program_path: str) -> Dict[str, Any]:
                 # Performance improvements
                 "speed_improvement": float(speed_improvement),
                 "memory_improvement": float(memory_improvement),
+                "peak_memory_improvement": float(peak_memory_improvement),
                 "time_improvement": float(time_improvement),
                 # Baseline metrics
                 "baseline_final_loss": float(baseline_avg["final_loss"]),
                 "baseline_training_time": float(baseline_avg["training_time"]),
                 "baseline_memory_delta": float(baseline_avg["memory_delta"]),
+                "baseline_peak_memory_delta": float(baseline_avg["peak_memory_delta"]),
                 "baseline_tokens_per_second": float(baseline_avg["tokens_per_second"]),
                 # Evolved metrics
                 "evolved_final_loss": float(evolved_avg["final_loss"]),
                 "evolved_training_time": float(evolved_avg["training_time"]),
                 "evolved_memory_delta": float(evolved_avg["memory_delta"]),
+                "evolved_peak_memory_delta": float(evolved_avg["peak_memory_delta"]),
                 "evolved_tokens_per_second": float(evolved_avg["tokens_per_second"]),
-                # Trial information
+                # Trial info
                 "successful_baseline_trials": comparison_results["successful_trials"]["baseline"],
                 "successful_evolved_trials": comparison_results["successful_trials"]["evolved"],
                 # Metadata
                 "kernels_actually_used": kernels_actually_used,
+                "optimization_target": "quantized_lora_fusion",
             }
-
-            # Get captured output
-            stdout_content = stdout_capture.getvalue()
-            stderr_content = stderr_capture.getvalue()
-
-            # Prepare simple artifacts with actual program output
-            artifacts = {}
-            
-            if stdout_content.strip():
-                artifacts["stdout"] = stdout_content.strip()
-            
-            if stderr_content.strip():
-                artifacts["stderr"] = stderr_content.strip()
-
-            # Add a brief execution summary
-            if loss_convergence_ok and (speed_improvement > 1.1 or memory_improvement > 1.1):
-                artifacts["summary"] = f"✅ Success: {speed_improvement:.2f}x speed, {memory_improvement:.2f}x memory, loss converged"
-            elif loss_convergence_ok:
-                artifacts["summary"] = f"✅ Loss converged but efficiency gains modest: {speed_improvement:.2f}x speed, {memory_improvement:.2f}x memory"
-            else:
-                artifacts["summary"] = f"❌ Loss convergence failed (diff: {loss_difference:.4f})"
 
             return metrics
 
@@ -1110,29 +1098,17 @@ def evaluate(program_path: str) -> Dict[str, Any]:
             print(error_msg)
             traceback.print_exc()
             
-            # Get any captured output even if there was an error
-            stdout_content = stdout_capture.getvalue()
-            stderr_content = stderr_capture.getvalue()
-            
-            artifacts = {
-                "stderr": error_msg + "\n" + stderr_content if stderr_content else error_msg,
-                "traceback": traceback.format_exc(),
-            }
-            
-            if stdout_content.strip():
-                artifacts["stdout"] = stdout_content.strip()
-            
             return {"overall_score": 0.0, "combined_score": 0.0, "error": error_msg}
 
 
 if __name__ == "__main__":
-    print("Testing MLX LoRA Kernel Optimization Evaluator...")
+    print("Testing MLX Quantized LoRA Optimization Evaluator with Full Dataset...")
 
     initial_program_path = os.path.join(os.path.dirname(__file__), "initial_program.py")
 
     if os.path.exists(initial_program_path):
         result = evaluate(initial_program_path)
-        print("\n=== Final Evaluation Results ===")
+        print("\n=== Final Evaluation Results (Full Scale) ===")
         print("METRICS:")
         for k, v in result.items():
             if isinstance(v, float):
