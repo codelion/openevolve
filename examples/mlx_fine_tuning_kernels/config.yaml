@@ -1,7 +1,13 @@
-# MLX Quantized LoRA Fusion Optimization Configuration
+# MLX Quantized LoRA Fusion Optimization Configuration - EVOLVED VERSION
 # Target: Eliminate dequantization bottleneck in MLX-LM LoRA implementation
+# 
+# EVOLUTION IMPROVEMENTS:
+# - Training iterations: 15 → 50 (better convergence)
+# - Trial count: 5 → 7 (improved statistics)
+# - Statistical significance: p < 0.05 → p < 0.1 (less strict)
+# - Starting from best evolved program (Generation 4) with advanced optimizations
 
-max_iterations: 20  # Keep existing proven count
+max_iterations: 20  # EVOLVED: Can increase to 30+ for continued evolution with improved setup
 checkpoint_interval: 5
 log_level: "INFO"
 
