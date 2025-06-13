@@ -46,6 +46,12 @@ tabs.forEach(tab => {
                 showSidebarContent(window._lastSelectedNodeData || null);
             }
         }
+        // Disable page scroll for graph tabs
+        if (tab === 'branching' || tab === 'performance') {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
     });
 });
 
