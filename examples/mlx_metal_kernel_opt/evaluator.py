@@ -517,14 +517,14 @@ CUSTOM_ATTENTION_ACTIVE = True
         memories = [r.peak_memory_gb for r in results if r.peak_memory_gb > 0]
         
         return {
-            'avg_decode_speed': np.mean(decode_speeds) if decode_speeds else 0,
-            'min_decode_speed': np.min(decode_speeds) if decode_speeds else 0,
-            'max_decode_speed': np.max(decode_speeds) if decode_speeds else 0,
-            'avg_prefill_speed': np.mean(prefill_speeds) if prefill_speeds else 0,
-            'avg_memory_gb': np.mean(memories) if memories else 0,
-            'max_memory_gb': np.max(memories) if memories else 0,
-            'num_successful_tests': len(results),
-            'decode_speed_std': np.std(decode_speeds) if len(decode_speeds) > 1 else 0
+            'avg_decode_speed': float(np.mean(decode_speeds)) if decode_speeds else 0.0,
+            'min_decode_speed': float(np.min(decode_speeds)) if decode_speeds else 0.0,
+            'max_decode_speed': float(np.max(decode_speeds)) if decode_speeds else 0.0,
+            'avg_prefill_speed': float(np.mean(prefill_speeds)) if prefill_speeds else 0.0,
+            'avg_memory_gb': float(np.mean(memories)) if memories else 0.0,
+            'max_memory_gb': float(np.max(memories)) if memories else 0.0,
+            'num_successful_tests': int(len(results)),
+            'decode_speed_std': float(np.std(decode_speeds)) if len(decode_speeds) > 1 else 0.0
         }
     
     def _calculate_final_score(self, performance: Dict[str, float], correctness: float) -> float:
@@ -591,10 +591,10 @@ CUSTOM_ATTENTION_ACTIVE = True
         current_decode = performance['avg_decode_speed']
         
         return {
-            'decode_improvement_pct': ((current_decode - baseline_decode) / baseline_decode) * 100,
-            'decode_improvement_absolute': current_decode - baseline_decode,
-            'memory_change_gb': performance['avg_memory_gb'] - self.baseline_metrics['avg_memory_gb'],
-            'target_achieved': current_decode >= 80.0,  # 80+ tokens/sec target
+            'decode_improvement_pct': float(((current_decode - baseline_decode) / baseline_decode) * 100),
+            'decode_improvement_absolute': float(current_decode - baseline_decode),
+            'memory_change_gb': float(performance['avg_memory_gb'] - self.baseline_metrics['avg_memory_gb']),
+            'target_achieved': bool(current_decode >= 80.0),  # 80+ tokens/sec target
         }
     
     def _generate_summary(self, performance: Dict[str, float], correctness: float) -> str:
@@ -656,12 +656,12 @@ CUSTOM_ATTENTION_ACTIVE = True
     def _result_to_dict(self, result: BenchmarkResult) -> Dict:
         """Convert BenchmarkResult to dictionary"""
         return {
-            'name': result.name,
-            'decode_tokens_per_sec': result.decode_tokens_per_sec,
-            'prefill_tokens_per_sec': result.prefill_tokens_per_sec,
-            'peak_memory_gb': result.peak_memory_gb,
-            'generated_tokens': result.generated_tokens,
-            'total_time_sec': result.total_time_sec
+            'name': str(result.name),
+            'decode_tokens_per_sec': float(result.decode_tokens_per_sec),
+            'prefill_tokens_per_sec': float(result.prefill_tokens_per_sec),
+            'peak_memory_gb': float(result.peak_memory_gb),
+            'generated_tokens': int(result.generated_tokens),
+            'total_time_sec': float(result.total_time_sec)
         }
 
 
