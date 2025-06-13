@@ -1,0 +1,162 @@
+# Qwen3-0.6B Custom GQA Attention Optimization Configuration
+# Target: Evolve custom GQA implementation using MLX primitives
+# Baseline: 70.3 tokens/sec average decode speed  
+# Goal: 80+ tokens/sec through custom kernel evolution
+
+max_iterations: 30
+checkpoint_interval: 5
+log_level: "INFO"
+
+# LLM configuration - proven models for kernel optimization
+llm:
+  primary_model: "gemini-2.5-flash-preview-05-20"
+  primary_model_weight: 0.7
+  secondary_model: "gemini-2.5-pro-preview-06-05"
+  secondary_model_weight: 0.3
+  api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
+  temperature: 0.7
+  top_p: 0.9
+  max_tokens: 32000
+  timeout: 300
+
+# Focused prompt for custom GQA kernel evolution
+prompt:
+  system_message: |
+    You are an expert in optimizing attention kernels using MLX primitives for Apple Silicon.
+    
+    # SPECIFIC TARGET: Custom GQA Attention Kernel Evolution
+    # CURRENT PERFORMANCE: 70.3 tokens/sec average decode speed
+    # GOAL: 80+ tokens/sec (14%+ improvement) through kernel-level optimizations
+    # HARDWARE: Apple M4 24GB unified memory
+    
+    # ARCHITECTURE DETAILS:
+    - Qwen3-0.6B: 40 query heads : 8 key/value heads (5:1 GQA ratio)
+    - Head dimension: 128, Hidden size: 5120
+    - Sequence lengths: 128-2048 tokens, Precision: bfloat16
+    
+    # CURRENT CUSTOM IMPLEMENTATION (Baseline to Evolve):
+    ```python
+    # Manual GQA broadcasting approach (can be optimized)
+    keys_expanded = mx.repeat(keys, self.gqa_ratio, axis=1)     # [B, 40, L, 128]
+    values_expanded = mx.repeat(values, self.gqa_ratio, axis=1) # [B, 40, L, 128]
+    
+    # Standard attention computation (room for optimization)
+    scores = mx.matmul(queries, keys_expanded.transpose(0, 1, 3, 2)) * self.scale
+    attn_weights = mx.softmax(scores, axis=-1, precise=True)
+    output = mx.matmul(attn_weights, values_expanded)
+    ```
+    
+    # KEY OPTIMIZATION OPPORTUNITIES:
+    
+    **1. GQA Broadcasting Strategies:**
+    Current: `mx.repeat` creates explicit copies of KV tensors
+    Alternatives:
+    - Chunked computation: Process 5 query heads per KV head separately
+    - On-demand broadcasting: Avoid materialized copies
+    - Strided access patterns: Direct indexing instead of repeat
+    - Memory-efficient reshaping: Better tensor layouts
+    
+    **2. Computation Fusion:**
+    Current: Separate matmul → softmax → matmul operations
+    Opportunities:
+    - Fused attention kernels using mx.fast primitives
+    - Combined operations to reduce memory transfers
+    - Optimized scaling and masking integration
+    
+    **3. Memory Access Optimization:**
+    Apple Silicon unified memory allows specific optimizations:
+    - Coalesced memory access for 40-head query tensor
+    - Cache-friendly KV head access patterns
+    - Reduced intermediate tensor allocations
+    - Better transpose operation ordering
+    
+    **4. Apple Silicon Specific Optimizations:**
+    - bfloat16 native operations
+    - Metal Performance Shaders integration
+    - Unified memory bandwidth optimization
+    - SIMD-friendly computation patterns
+    
+    **5. Sequence Length Scaling:**
+    Current performance degrades with longer contexts
+    Opportunities:
+    - Better attention computation chunking
+    - Optimized causal mask application
+    - Memory-efficient large sequence handling
+    
+    # EVOLUTION CONSTRAINTS:
+    1. ONLY modify code inside the single EVOLVE-BLOCK-START/END section
+    2. Use MLX primitives: mx.matmul, mx.softmax, mx.repeat, mx.where, etc.
+    3. Maintain numerical correctness (same output as baseline)
+    4. Keep tensor shapes compatible: input [B,40,L,128] output [B,40,L,128]
+    5. Support causal masking for autoregressive generation
+    
+    # SPECIFIC EVOLUTION STRATEGIES TO EXPLORE:
+    
+    **Strategy 1: Chunked GQA Computation**
+    Instead of broadcasting, process query heads in groups:
+    ```python
+    outputs = []
+    for i in range(self.gqa_ratio):  # 5 iterations
+        q_chunk = queries[:, i*8:(i+1)*8, :, :]  # [B, 8, L, 128]
+        scores = mx.matmul(q_chunk, keys.transpose(0, 1, 3, 2)) * self.scale
+        attn_weights = mx.softmax(scores, axis=-1)
+        output_chunk = mx.matmul(attn_weights, values)
+        outputs.append(output_chunk)
+    output = mx.concatenate(outputs, axis=1)
+    ```
+    
+    **Strategy 2: Optimized Broadcasting**
+    Use reshape and tile operations instead of repeat:
+    ```python
+    # More memory-efficient broadcasting
+    keys_reshaped = keys[:, :, None, :, :].repeat(self.gqa_ratio, axis=2)
+    keys_expanded = keys_reshaped.reshape(B, -1, L, 128)
+    ```
+    
+    **Strategy 3: Fused Operations**
+    Combine multiple operations to reduce memory transfers:
+    ```python
+    # Fused scaled dot-product attention using mx.fast primitives
+    # This might leverage optimized Metal kernels
+    ```
+    
+    **Strategy 4: Memory Layout Optimization**
+    Optimize tensor layouts for Apple Silicon:
+    ```python
+    # Ensure contiguous memory layouts
+    # Optimize transpose operations
+    # Reduce intermediate allocations
+    ```
+    
+    # SUCCESS METRICS (from benchmark suite):
+    - Average decode speed: 70.3 → 80+ tokens/sec (14%+ improvement)
+    - Memory efficiency: maintain <2GB usage
+    - Scaling: reduce performance drop with longer contexts
+    - Correctness: identical outputs to baseline implementation
+    
+    Focus on CONCRETE kernel optimizations using MLX primitives.
+    Test different GQA computation strategies systematically.
+    Prioritize memory bandwidth efficiency and computation fusion.
+    
+  num_top_programs: 4
+  num_diverse_programs: 2
+
+# Database configuration
+database:
+  db_path: "./openevolve_output/qwen3_custom_gqa"
+  population_size: 25
+  archive_size: 12
+  num_islands: 2
+  elite_selection_ratio: 0.25
+  exploitation_ratio: 0.7
+  exploration_ratio: 0.3
+
+# Evaluator configuration
+evaluator:
+  timeout: 300  # 5 minutes per evaluation
+  parallel_evaluations: 1
+
+# Evolution settings
+diff_based_evolution: true
+allow_full_rewrites: false
+max_code_length: 50000
