@@ -96,9 +96,13 @@ def program_page(program_id):
     data = load_evolution_data(checkpoint_dir)
     program_data = next((p for p in data["nodes"] if p["id"] == program_id), None)
     program_data = {"code": "", "prompts": {}, **program_data}
+    artifacts_json = program_data.get("artifacts_json", None)
 
     return render_template(
-        "program_page.html", program_data=program_data, checkpoint_dir=checkpoint_dir
+        "program_page.html",
+        program_data=program_data,
+        checkpoint_dir=checkpoint_dir,
+        artifacts_json=artifacts_json,
     )
 
 
