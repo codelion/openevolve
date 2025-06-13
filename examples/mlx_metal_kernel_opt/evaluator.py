@@ -156,6 +156,20 @@ Question: Analyze the computational and memory efficiency benefits of GQA compar
         try:
             print("🔧 Executing evolved program...")
             
+            # Check if program_text is actually a file path
+            if program_text.startswith('/') and '\n' not in program_text and len(program_text) < 500:
+                # This looks like a file path, read the actual content
+                print(f"📁 Reading program from file: {program_text}")
+                if os.path.exists(program_text):
+                    with open(program_text, 'r') as f:
+                        actual_program_text = f.read()
+                else:
+                    print(f"❌ Program file not found: {program_text}")
+                    return None
+            else:
+                # This is the actual program text
+                actual_program_text = program_text
+            
             # Create execution environment with required imports
             exec_globals = {
                 '__builtins__': __builtins__,
@@ -176,7 +190,7 @@ Question: Analyze the computational and memory efficiency benefits of GQA compar
                 print("⚠️  Could not import mlx_lm, RoPE may not work")
             
             # Execute the evolved program
-            exec(program_text, exec_globals)
+            exec(actual_program_text, exec_globals)
             
             # Extract the custom attention class
             custom_class = exec_globals.get('CustomGQAAttention')
