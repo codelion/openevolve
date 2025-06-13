@@ -10,7 +10,7 @@ llm:
   secondary_model: "gemini-2.5-flash-preview-05-20"
   secondary_model_weight: 0.4
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
-  api_key: AIzaSyCZ8ZokvaCZVOgIeaQ24SDkx_Kw6QgRNAU
+  api_key: YOUR_API_KEY
   temperature: 0.7
   top_p: 0.95
   max_tokens: 4096
