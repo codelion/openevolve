@@ -245,7 +245,7 @@ def benchmark_custom_vs_standard_attention():
         tokens_per_sec = seq_len / avg_time
         
         print(f"  Custom GQA: {avg_time*1000:.2f} ms, {tokens_per_sec:.1f} tokens/sec")
-        print(f"  Memory: {mx.metal.get_active_memory() / 1e9:.2f} GB")
+        print(f"  Memory: {mx.get_active_memory() / 1e9:.2f} GB")
 
 
 def test_custom_gqa_correctness():
