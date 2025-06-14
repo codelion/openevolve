@@ -29,7 +29,7 @@ Sample Output 2:
 
 ## Getting Started
 
-First, download your personal configuration file (must be logged in) from [Kattis](https://open.kattis.com/download/kattisrc) and save it as `.kittisrc`.
+First, fill your username and token in `example.kattisrc` according to your personal configuration file (must be logged in) from [Kattis](https://open.kattis.com/download/kattisrc) and rename the file as `.kittisrc`.
 
 Then, to run this example:
 
