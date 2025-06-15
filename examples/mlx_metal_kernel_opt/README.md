@@ -278,6 +278,59 @@ cd examples/mlx_metal_kernel_opt
 python run_benchmarks.py --mode compare   # Compare standard vs optimized
 ```
 
+## 🧪 **NEW: Simple Testing Tools**
+
+### **Quick Performance Testing**
+
+We've added simple tools to easily test your optimized attention kernel:
+
+#### **1. Verify Setup**
+```bash
+python verify_setup.py  # Check dependencies and files
+```
+
+#### **2. Quick Demo**
+```bash
+python quick_demo.py  # Run demo with multiple test prompts
+```
+
+#### **3. Custom Testing**
+```bash
+# Test with default best_program.py
+python test_optimized_attention.py
+
+# Test with custom program
+python test_optimized_attention.py path/to/your/best_program.py
+
+# Test with custom prompt
+python test_optimized_attention.py --prompt "Write a Python function:" --max-tokens 200
+```
+
+#### **4. Cleanup**
+```bash
+python cleanup.py  # Move temporary files to temp/ directory
+```
+
+### **What These Tools Do:**
+
+- **🔧 test_optimized_attention.py**: Monkey patches mlx-lm with your optimized attention and runs side-by-side performance comparison
+- **🚀 quick_demo.py**: Automated demo with multiple test prompts showing performance improvements
+- **🔍 verify_setup.py**: Checks dependencies, files, and setup before running tests
+- **🧹 cleanup.py**: Organizes temporary files created during testing
+
+### **Expected Output:**
+
+```
+🚀 PERFORMANCE COMPARISON:
+   Speed Improvement: +9.8%
+   Memory Change: -0.04 GB
+   Time Improvement: +9.6%
+
+🎯 SIGNIFICANT IMPROVEMENT achieved!
+```
+
+See `TESTING_GUIDE.md` for detailed usage instructions.
+
 ## 📈 **Expected Evolution Trajectory**
 
 ### **Generation 1-10: Broadcasting Optimizations**

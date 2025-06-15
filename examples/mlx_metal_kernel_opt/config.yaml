@@ -1,23 +1,18 @@
-# Qwen3-0.6B Custom GQA Attention Optimization Configuration
-# Target: Evolve custom GQA implementation using MLX primitives
-# Baseline: 70.3 tokens/sec average decode speed  
-# Goal: 80+ tokens/sec through custom kernel evolution
-
-max_iterations: 30
-checkpoint_interval: 5
+max_iterations: 50
+checkpoint_interval: 10
 log_level: "INFO"
 
 # LLM configuration - proven models for kernel optimization
 llm:
   primary_model: "gemini-2.5-flash-preview-05-20"
-  primary_model_weight: 0.7
+  primary_model_weight: 0.6
   secondary_model: "gemini-2.5-pro-preview-06-05"
-  secondary_model_weight: 0.3
+  secondary_model_weight: 0.4
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
-  temperature: 0.7
-  top_p: 0.9
+  temperature: 0.8
+  top_p: 0.95
   max_tokens: 32000
-  timeout: 300
+  timeout: 600
 
 # Focused prompt for custom GQA kernel evolution
 prompt:
@@ -144,16 +139,16 @@ prompt:
 # Database configuration
 database:
   db_path: "./openevolve_output/qwen3_custom_gqa"
-  population_size: 25
-  archive_size: 12
-  num_islands: 2
+  population_size: 50
+  archive_size: 20
+  num_islands: 4
   elite_selection_ratio: 0.25
   exploitation_ratio: 0.7
   exploration_ratio: 0.3
 
 # Evaluator configuration
 evaluator:
-  timeout: 300  # 5 minutes per evaluation
+  timeout: 600  # 5 minutes per evaluation
   parallel_evaluations: 1
 
 # Evolution settings
