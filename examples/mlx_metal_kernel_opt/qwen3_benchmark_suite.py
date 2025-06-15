@@ -325,6 +325,8 @@ analysis of optimization strategies specifically for Apple Silicon devices,
 considering unified memory architecture, Metal Performance Shaders, and the 
 specific computational characteristics of M-series chips."""
         )
+        
+        return extended_context
 
     def _create_progressive_context_prompt(self) -> str:
         """Create prompt that builds context progressively"""
