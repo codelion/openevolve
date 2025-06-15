@@ -825,7 +825,7 @@ def test_fixed_evaluator():
     print("=" * 80)
 
     # Load initial program for testing
-    initial_program_path = os.path.join(os.path.dirname(__file__), "initial_program_cycle2.py")
+    initial_program_path = os.path.join(os.path.dirname(__file__), "initial_program.py")
 
     if not os.path.exists(initial_program_path):
         print(f"❌ Initial program not found: {initial_program_path}")
