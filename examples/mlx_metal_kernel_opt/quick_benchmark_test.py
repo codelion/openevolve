@@ -5,7 +5,8 @@ Quick Benchmark Test - Test the benchmark suite with a few key scenarios
 import os
 import sys
 
-sys.path.append("/Users/asankhaya/Documents/GitHub/openevolve/examples/mlx_metal_kernel_opt")
+# Add current directory to path for local imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from qwen3_benchmark_suite import Qwen3BenchmarkSuite, BenchmarkConfig
 
@@ -41,17 +42,7 @@ def run_quick_test():
         ),
     ]
 
-    # Change to mlx-lm directory
-    original_dir = os.getcwd()
-    mlx_lm_dir = "/Users/asankhaya/Documents/GitHub/mlx-lm"
-
-    if os.path.exists(mlx_lm_dir):
-        os.chdir(mlx_lm_dir)
-        print(f"Changed to mlx-lm directory: {mlx_lm_dir}")
-    else:
-        print(f"Error: mlx-lm directory not found at {mlx_lm_dir}")
-        return
-
+    # Use mlx-lm as installed package (no need to change directories)
     try:
         benchmark_suite = Qwen3BenchmarkSuite()
 
@@ -105,8 +96,9 @@ def run_quick_test():
 
         return results
 
-    finally:
-        os.chdir(original_dir)
+    except Exception as e:
+        print(f"Error running benchmarks: {e}")
+        return None
 
 
 if __name__ == "__main__":
