@@ -53,23 +53,20 @@ def run_quick_test():
         # Import mlx for cache clearing
         import mlx.core as mx
         import numpy as np
-        
+
         benchmark_suite = Qwen3BenchmarkSuite()
 
         print(f"\n{'='*80}")
         print(f"Quick Benchmark Test - Qwen3-0.6B")
         print(f"Testing {len(test_configs)} key scenarios with warmup")
         print(f"{'='*80}")
-        
+
         # Global warmup - run one quick test to warm up the system
         print(f"🔥 Running global warmup to initialize MLX and model...")
         try:
             mx.clear_cache()
             warmup_config = BenchmarkConfig(
-                name="warmup",
-                prompt="Hello",
-                max_tokens=5,
-                description="Warmup run"
+                name="warmup", prompt="Hello", max_tokens=5, description="Warmup run"
             )
             print(f"   Global warmup in progress...")
             warmup_result = benchmark_suite.run_single_benchmark(warmup_config)
@@ -118,7 +115,9 @@ def run_quick_test():
                     f"Speed range: {np.min(decode_speeds):.1f} - {np.max(decode_speeds):.1f} tokens/sec"
                 )
                 print(f"Performance std dev: {np.std(decode_speeds):.1f} tokens/sec")
-                print(f"Overall consistency: {np.std(decode_speeds)/np.mean(decode_speeds)*100:.1f}% CV")
+                print(
+                    f"Overall consistency: {np.std(decode_speeds)/np.mean(decode_speeds)*100:.1f}% CV"
+                )
 
         print(f"\n{'='*80}")
         print("Quick test complete! If this looks good, run the full benchmark suite.")

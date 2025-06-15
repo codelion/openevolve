@@ -1,4 +1,4 @@
-"""    
+"""
 Fixed Qwen3 Custom GQA Attention Evaluator
 
 This evaluator addresses the critical methodology issues identified in the original evaluator:
@@ -10,7 +10,7 @@ This evaluator addresses the critical methodology issues identified in the origi
 
 Evolution Target:
 - Custom GQA implementation using MLX primitives
-- 40:8 query-to-KV head pattern optimization  
+- 40:8 query-to-KV head pattern optimization
 - Apple M4 unified memory optimizations
 - Goal: Genuine performance improvements over dynamic baseline
 """
@@ -39,18 +39,18 @@ class FixedCustomGQAEvaluator:
 
     def __init__(self):
         self.model_path = "mlx-community/Qwen3-0.6B-bf16"
-        
+
         # Baseline will be measured dynamically
         self.baseline_metrics = None
         self.baseline_results = None
-        
+
         # Use comprehensive benchmark suite for consistency
         self.benchmark_suite = Qwen3BenchmarkSuite(self.model_path)
-        
+
         # Statistical parameters for reliable measurement
         self.warmup_runs = 2
         self.measurement_runs = 3
-        
+
         print("🔧 Initialized Fixed Custom GQA Evaluator")
         print(f"📱 Model: {self.model_path}")
         print(f"🧪 Using comprehensive test suite (20+ scenarios)")
@@ -60,7 +60,7 @@ class FixedCustomGQAEvaluator:
         """
         Fixed evaluation methodology:
         1. Extract custom attention class from evolved program
-        2. Measure current baseline performance dynamically  
+        2. Measure current baseline performance dynamically
         3. Apply custom attention and measure performance
         4. Compare results using proper statistical analysis
         """
@@ -82,7 +82,7 @@ class FixedCustomGQAEvaluator:
                 return self._create_failure_result("Failed to extract CustomGQAAttention class")
 
             # Step 2: Measure baseline performance dynamically
-            print("\n📊 STEP 2: Measuring Dynamic Baseline Performance") 
+            print("\n📊 STEP 2: Measuring Dynamic Baseline Performance")
             baseline_results = self._measure_baseline_performance()
             if not baseline_results:
                 return self._create_failure_result("Failed to measure baseline performance")
@@ -181,15 +181,15 @@ class FixedCustomGQAEvaluator:
                 return None
 
             print("  ✅ Successfully extracted CustomGQAAttention class")
-            
+
             # Verify it's a valid class
             if not isinstance(custom_class, type):
                 print("  ❌ CustomGQAAttention is not a valid class")
                 return None
-                
+
             print(f"  📋 Class name: {custom_class.__name__}")
             print(f"  📋 Base classes: {[base.__name__ for base in custom_class.__bases__]}")
-            
+
             return custom_class
 
         except Exception as e:
@@ -202,40 +202,48 @@ class FixedCustomGQAEvaluator:
         try:
             print("  📊 Running comprehensive baseline benchmark...")
             print("  ⏱️  This will take several minutes...")
-            
+
             # Clear any potential custom hooks first
             self._ensure_standard_attention()
-            
+
             # Use a subset of benchmarks for faster evolution (but still comprehensive)
             # We'll use representative benchmarks across all categories
             baseline_configs = self._get_evolution_benchmark_configs()
-            
+
             print(f"  🧪 Running {len(baseline_configs)} representative benchmarks")
-            
+
             baseline_results = []
-            
+
             for i, config in enumerate(baseline_configs, 1):
                 print(f"  [{i}/{len(baseline_configs)}] Running baseline: {config.name}")
                 try:
                     result = self.benchmark_suite.run_single_benchmark(config)
                     baseline_results.append(result)
-                    print(f"    ✅ Baseline {config.name}: {result.decode_tokens_per_sec:.1f} tokens/sec")
+                    print(
+                        f"    ✅ Baseline {config.name}: {result.decode_tokens_per_sec:.1f} tokens/sec"
+                    )
                 except Exception as e:
                     print(f"    ❌ Failed baseline {config.name}: {e}")
                     continue
 
             if len(baseline_results) < len(baseline_configs) * 0.8:  # Need 80% success rate
-                print(f"  ❌ Only {len(baseline_results)}/{len(baseline_configs)} baseline benchmarks succeeded")
+                print(
+                    f"  ❌ Only {len(baseline_results)}/{len(baseline_configs)} baseline benchmarks succeeded"
+                )
                 return None
 
             # Store baseline for comparison
             self.baseline_results = baseline_results
-            
+
             # Calculate baseline metrics
-            decode_speeds = [r.decode_tokens_per_sec for r in baseline_results if r.decode_tokens_per_sec > 0]
-            prefill_speeds = [r.prefill_tokens_per_sec for r in baseline_results if r.prefill_tokens_per_sec > 0]
+            decode_speeds = [
+                r.decode_tokens_per_sec for r in baseline_results if r.decode_tokens_per_sec > 0
+            ]
+            prefill_speeds = [
+                r.prefill_tokens_per_sec for r in baseline_results if r.prefill_tokens_per_sec > 0
+            ]
             memories = [r.peak_memory_gb for r in baseline_results if r.peak_memory_gb > 0]
-            
+
             self.baseline_metrics = {
                 "avg_decode_speed": float(np.mean(decode_speeds)),
                 "min_decode_speed": float(np.min(decode_speeds)),
@@ -247,10 +255,14 @@ class FixedCustomGQAEvaluator:
             }
 
             print("  ✅ Baseline measurement complete")
-            print(f"    📊 Average decode speed: {self.baseline_metrics['avg_decode_speed']:.1f} tokens/sec")
-            print(f"    📊 Decode speed range: {self.baseline_metrics['min_decode_speed']:.1f} - {self.baseline_metrics['max_decode_speed']:.1f}")
+            print(
+                f"    📊 Average decode speed: {self.baseline_metrics['avg_decode_speed']:.1f} tokens/sec"
+            )
+            print(
+                f"    📊 Decode speed range: {self.baseline_metrics['min_decode_speed']:.1f} - {self.baseline_metrics['max_decode_speed']:.1f}"
+            )
             print(f"    💾 Average memory: {self.baseline_metrics['avg_memory_gb']:.2f} GB")
-            
+
             return baseline_results
 
         except Exception as e:
@@ -260,58 +272,91 @@ class FixedCustomGQAEvaluator:
 
     def _get_evolution_benchmark_configs(self) -> List[BenchmarkConfig]:
         """Get representative benchmark configs for evolution (subset of full suite for speed)"""
-        
+
         # Get all comprehensive configs
         all_configs = self.benchmark_suite.create_benchmark_configs()
-        
+
         # Select representative subset across all categories for faster evolution
         # while maintaining comprehensive coverage
         representative_configs = []
-        
+
         # Context length variations (4 configs)
         context_configs = [c for c in all_configs if "context" in c.name]
         representative_configs.extend(context_configs)  # All 4 context tests are important
-        
+
         # Generation length patterns (select key ones)
         generation_configs = [c for c in all_configs if "generation" in c.name]
-        representative_configs.extend([
-            c for c in generation_configs 
-            if c.name in ["micro_generation", "short_generation", "long_generation", "very_long_generation"]
-        ])
-        
+        representative_configs.extend(
+            [
+                c
+                for c in generation_configs
+                if c.name
+                in [
+                    "micro_generation",
+                    "short_generation",
+                    "long_generation",
+                    "very_long_generation",
+                ]
+            ]
+        )
+
         # Use case patterns (select most important)
-        use_case_configs = [c for c in all_configs if any(x in c.name for x in ["code", "reasoning", "creative", "technical", "conversational"])]
-        representative_configs.extend([
-            c for c in use_case_configs
-            if c.name in ["code_generation", "step_by_step_reasoning", "conversational_assistant"]
-        ])
-        
+        use_case_configs = [
+            c
+            for c in all_configs
+            if any(
+                x in c.name
+                for x in ["code", "reasoning", "creative", "technical", "conversational"]
+            )
+        ]
+        representative_configs.extend(
+            [
+                c
+                for c in use_case_configs
+                if c.name
+                in ["code_generation", "step_by_step_reasoning", "conversational_assistant"]
+            ]
+        )
+
         # Memory pressure (select key ones)
-        memory_configs = [c for c in all_configs if any(x in c.name for x in ["progressive", "repetitive"])]
-        representative_configs.extend([
-            c for c in memory_configs
-            if c.name in ["progressive_context_building", "repetitive_pattern_generation"]
-        ])
-        
+        memory_configs = [
+            c for c in all_configs if any(x in c.name for x in ["progressive", "repetitive"])
+        ]
+        representative_configs.extend(
+            [
+                c
+                for c in memory_configs
+                if c.name in ["progressive_context_building", "repetitive_pattern_generation"]
+            ]
+        )
+
         # Extended tests (select 1-2 key ones)
-        extended_configs = [c for c in all_configs if any(x in c.name for x in ["extreme", "sustained", "comprehensive", "maximum"])]
-        representative_configs.extend([
-            c for c in extended_configs
-            if c.name in ["extreme_long_generation", "maximum_context_stress_test"]
-        ])
-        
+        extended_configs = [
+            c
+            for c in all_configs
+            if any(x in c.name for x in ["extreme", "sustained", "comprehensive", "maximum"])
+        ]
+        representative_configs.extend(
+            [
+                c
+                for c in extended_configs
+                if c.name in ["extreme_long_generation", "maximum_context_stress_test"]
+            ]
+        )
+
         print(f"  📋 Selected {len(representative_configs)} representative benchmarks:")
         for config in representative_configs:
             print(f"    • {config.name}: {config.description}")
-        
+
         return representative_configs
 
     def _ensure_standard_attention(self):
         """Ensure we're using standard attention (remove any custom hooks)"""
         try:
             import mlx_lm.models.qwen3 as qwen3_module
+
             # If there's a stored original attention, restore it
-            if hasattr(self, '_original_attention') and self._original_attention:
+            if hasattr(self, "_original_attention") and self._original_attention:
                 qwen3_module.Attention = self._original_attention
                 print("  🔄 Restored standard attention")
             else:
@@ -324,7 +369,7 @@ class FixedCustomGQAEvaluator:
         try:
             print("  🔍 Testing custom attention correctness...")
 
-            # Qwen3 configuration  
+            # Qwen3 configuration
             class MockArgs:
                 hidden_size = 5120
                 num_attention_heads = 40
@@ -339,8 +384,8 @@ class FixedCustomGQAEvaluator:
 
             # Test multiple sequence lengths
             test_cases = [
-                (1, 64, 5120),   # Short sequence
-                (1, 256, 5120),  # Medium sequence 
+                (1, 64, 5120),  # Short sequence
+                (1, 256, 5120),  # Medium sequence
                 (1, 512, 5120),  # Long sequence
             ]
 
@@ -348,7 +393,7 @@ class FixedCustomGQAEvaluator:
 
             for B, L, D in test_cases:
                 print(f"    🧪 Testing sequence length {L}...")
-                
+
                 try:
                     # Create test input
                     x = mx.random.normal((B, L, D))
@@ -361,7 +406,9 @@ class FixedCustomGQAEvaluator:
                     # Basic sanity checks
                     expected_shape = (B, L, D)
                     if output.shape != expected_shape:
-                        print(f"    ❌ Wrong output shape: {output.shape}, expected {expected_shape}")
+                        print(
+                            f"    ❌ Wrong output shape: {output.shape}, expected {expected_shape}"
+                        )
                         correctness_scores.append(0.0)
                         continue
 
@@ -376,10 +423,14 @@ class FixedCustomGQAEvaluator:
                     output_std = float(mx.std(output))
 
                     if abs(output_mean) > 2.0 or output_std > 20.0 or output_std < 0.001:
-                        print(f"    ⚠️  Unusual output statistics: mean={output_mean:.6f}, std={output_std:.6f}")
+                        print(
+                            f"    ⚠️  Unusual output statistics: mean={output_mean:.6f}, std={output_std:.6f}"
+                        )
                         correctness_scores.append(0.7)  # Partial credit
                     else:
-                        print(f"    ✅ Sequence length {L}: passed (mean={output_mean:.6f}, std={output_std:.6f})")
+                        print(
+                            f"    ✅ Sequence length {L}: passed (mean={output_mean:.6f}, std={output_std:.6f})"
+                        )
                         correctness_scores.append(1.0)
 
                 except Exception as e:
@@ -388,18 +439,20 @@ class FixedCustomGQAEvaluator:
 
             overall_correctness = np.mean(correctness_scores) if correctness_scores else 0.0
             print(f"  📊 Overall correctness: {overall_correctness:.3f}")
-            
+
             return overall_correctness
 
         except Exception as e:
             print(f"  ❌ Correctness testing failed: {e}")
             return 0.0
 
-    def _benchmark_custom_attention(self, custom_attention_class: Any) -> Optional[List[BenchmarkResult]]:
+    def _benchmark_custom_attention(
+        self, custom_attention_class: Any
+    ) -> Optional[List[BenchmarkResult]]:
         """Benchmark custom attention using the same configs as baseline"""
         try:
             print("  🚀 Applying custom attention hook...")
-            
+
             # Apply custom attention hook
             original_attention = self._apply_custom_attention_hook(custom_attention_class)
             if original_attention is None:
@@ -408,7 +461,7 @@ class FixedCustomGQAEvaluator:
 
             try:
                 print("  🧪 Running custom attention benchmarks...")
-                
+
                 # Use same configs as baseline for fair comparison
                 custom_configs = self._get_evolution_benchmark_configs()
                 custom_results = []
@@ -418,16 +471,22 @@ class FixedCustomGQAEvaluator:
                     try:
                         result = self.benchmark_suite.run_single_benchmark(config)
                         custom_results.append(result)
-                        print(f"    ✅ Custom {config.name}: {result.decode_tokens_per_sec:.1f} tokens/sec")
+                        print(
+                            f"    ✅ Custom {config.name}: {result.decode_tokens_per_sec:.1f} tokens/sec"
+                        )
                     except Exception as e:
                         print(f"    ❌ Failed custom {config.name}: {e}")
                         continue
 
                 if len(custom_results) < len(custom_configs) * 0.8:  # Need 80% success rate
-                    print(f"  ❌ Only {len(custom_results)}/{len(custom_configs)} custom benchmarks succeeded")
+                    print(
+                        f"  ❌ Only {len(custom_results)}/{len(custom_configs)} custom benchmarks succeeded"
+                    )
                     return None
 
-                print(f"  ✅ Custom attention benchmarks complete ({len(custom_results)} successful)")
+                print(
+                    f"  ✅ Custom attention benchmarks complete ({len(custom_results)} successful)"
+                )
                 return custom_results
 
             finally:
@@ -465,6 +524,7 @@ class FixedCustomGQAEvaluator:
         """Remove custom attention hook and restore original"""
         try:
             import mlx_lm.models.qwen3 as qwen3_module
+
             qwen3_module.Attention = original_attention
             print("    ✅ Custom attention hook removed")
         except ImportError:
@@ -476,7 +536,7 @@ class FixedCustomGQAEvaluator:
         self, baseline_results: List[BenchmarkResult], custom_results: List[BenchmarkResult]
     ) -> Dict[str, Any]:
         """Perform statistical comparison between baseline and custom results"""
-        
+
         print("  📈 Analyzing performance comparison...")
 
         # Create lookup for easy comparison
@@ -485,11 +545,11 @@ class FixedCustomGQAEvaluator:
 
         individual_comparisons = []
         improvements = {
-            'decode_speed_improvements': [],
-            'prefill_speed_improvements': [],
-            'total_speed_improvements': [],
-            'memory_improvements': [],
-            'time_improvements': []
+            "decode_speed_improvements": [],
+            "prefill_speed_improvements": [],
+            "total_speed_improvements": [],
+            "memory_improvements": [],
+            "time_improvements": [],
         }
 
         # Compare each benchmark individually
@@ -499,42 +559,77 @@ class FixedCustomGQAEvaluator:
                 custom = custom_dict[name]
 
                 # Calculate improvements (positive = better)
-                decode_improvement = ((custom.decode_tokens_per_sec - baseline.decode_tokens_per_sec) 
-                                    / baseline.decode_tokens_per_sec * 100) if baseline.decode_tokens_per_sec > 0 else 0
+                decode_improvement = (
+                    (
+                        (custom.decode_tokens_per_sec - baseline.decode_tokens_per_sec)
+                        / baseline.decode_tokens_per_sec
+                        * 100
+                    )
+                    if baseline.decode_tokens_per_sec > 0
+                    else 0
+                )
 
-                prefill_improvement = ((custom.prefill_tokens_per_sec - baseline.prefill_tokens_per_sec) 
-                                     / baseline.prefill_tokens_per_sec * 100) if baseline.prefill_tokens_per_sec > 0 else 0
+                prefill_improvement = (
+                    (
+                        (custom.prefill_tokens_per_sec - baseline.prefill_tokens_per_sec)
+                        / baseline.prefill_tokens_per_sec
+                        * 100
+                    )
+                    if baseline.prefill_tokens_per_sec > 0
+                    else 0
+                )
 
-                total_improvement = ((custom.total_tokens_per_sec - baseline.total_tokens_per_sec) 
-                                   / baseline.total_tokens_per_sec * 100) if baseline.total_tokens_per_sec > 0 else 0
+                total_improvement = (
+                    (
+                        (custom.total_tokens_per_sec - baseline.total_tokens_per_sec)
+                        / baseline.total_tokens_per_sec
+                        * 100
+                    )
+                    if baseline.total_tokens_per_sec > 0
+                    else 0
+                )
 
-                memory_improvement = ((baseline.peak_memory_gb - custom.peak_memory_gb) 
-                                    / baseline.peak_memory_gb * 100) if baseline.peak_memory_gb > 0 else 0
+                memory_improvement = (
+                    (
+                        (baseline.peak_memory_gb - custom.peak_memory_gb)
+                        / baseline.peak_memory_gb
+                        * 100
+                    )
+                    if baseline.peak_memory_gb > 0
+                    else 0
+                )
 
-                time_improvement = ((baseline.total_time_sec - custom.total_time_sec) 
-                                  / baseline.total_time_sec * 100) if baseline.total_time_sec > 0 else 0
+                time_improvement = (
+                    (
+                        (baseline.total_time_sec - custom.total_time_sec)
+                        / baseline.total_time_sec
+                        * 100
+                    )
+                    if baseline.total_time_sec > 0
+                    else 0
+                )
 
                 comparison = {
-                    'benchmark_name': name,
-                    'baseline': self._result_to_dict(baseline),
-                    'custom': self._result_to_dict(custom),
-                    'improvements': {
-                        'decode_speed_pct': decode_improvement,
-                        'prefill_speed_pct': prefill_improvement,
-                        'total_speed_pct': total_improvement,
-                        'memory_reduction_pct': memory_improvement,
-                        'time_reduction_pct': time_improvement
-                    }
+                    "benchmark_name": name,
+                    "baseline": self._result_to_dict(baseline),
+                    "custom": self._result_to_dict(custom),
+                    "improvements": {
+                        "decode_speed_pct": decode_improvement,
+                        "prefill_speed_pct": prefill_improvement,
+                        "total_speed_pct": total_improvement,
+                        "memory_reduction_pct": memory_improvement,
+                        "time_reduction_pct": time_improvement,
+                    },
                 }
 
                 individual_comparisons.append(comparison)
 
                 # Collect for aggregate statistics
-                improvements['decode_speed_improvements'].append(decode_improvement)
-                improvements['prefill_speed_improvements'].append(prefill_improvement)
-                improvements['total_speed_improvements'].append(total_improvement)
-                improvements['memory_improvements'].append(memory_improvement)
-                improvements['time_improvements'].append(time_improvement)
+                improvements["decode_speed_improvements"].append(decode_improvement)
+                improvements["prefill_speed_improvements"].append(prefill_improvement)
+                improvements["total_speed_improvements"].append(total_improvement)
+                improvements["memory_improvements"].append(memory_improvement)
+                improvements["time_improvements"].append(time_improvement)
 
                 print(f"    • {name}: {decode_improvement:+.1f}% decode speed")
 
@@ -542,39 +637,62 @@ class FixedCustomGQAEvaluator:
         aggregate_stats = {}
         for key, values in improvements.items():
             if values:
-                aggregate_stats[f'{key}_avg'] = float(np.mean(values))
-                aggregate_stats[f'{key}_median'] = float(np.median(values))
-                aggregate_stats[f'{key}_min'] = float(np.min(values))
-                aggregate_stats[f'{key}_max'] = float(np.max(values))
-                aggregate_stats[f'{key}_std'] = float(np.std(values))
+                aggregate_stats[f"{key}_avg"] = float(np.mean(values))
+                aggregate_stats[f"{key}_median"] = float(np.median(values))
+                aggregate_stats[f"{key}_min"] = float(np.min(values))
+                aggregate_stats[f"{key}_max"] = float(np.max(values))
+                aggregate_stats[f"{key}_std"] = float(np.std(values))
 
         # Calculate overall metrics for custom results
-        custom_decode_speeds = [r.decode_tokens_per_sec for r in custom_results if r.decode_tokens_per_sec > 0]
-        custom_prefill_speeds = [r.prefill_tokens_per_sec for r in custom_results if r.prefill_tokens_per_sec > 0]
+        custom_decode_speeds = [
+            r.decode_tokens_per_sec for r in custom_results if r.decode_tokens_per_sec > 0
+        ]
+        custom_prefill_speeds = [
+            r.prefill_tokens_per_sec for r in custom_results if r.prefill_tokens_per_sec > 0
+        ]
         custom_memories = [r.peak_memory_gb for r in custom_results if r.peak_memory_gb > 0]
 
         aggregate_metrics = {
-            "avg_decode_speed": float(np.mean(custom_decode_speeds)) if custom_decode_speeds else 0.0,
-            "min_decode_speed": float(np.min(custom_decode_speeds)) if custom_decode_speeds else 0.0,
-            "max_decode_speed": float(np.max(custom_decode_speeds)) if custom_decode_speeds else 0.0,
-            "avg_prefill_speed": float(np.mean(custom_prefill_speeds)) if custom_prefill_speeds else 0.0,
+            "avg_decode_speed": (
+                float(np.mean(custom_decode_speeds)) if custom_decode_speeds else 0.0
+            ),
+            "min_decode_speed": (
+                float(np.min(custom_decode_speeds)) if custom_decode_speeds else 0.0
+            ),
+            "max_decode_speed": (
+                float(np.max(custom_decode_speeds)) if custom_decode_speeds else 0.0
+            ),
+            "avg_prefill_speed": (
+                float(np.mean(custom_prefill_speeds)) if custom_prefill_speeds else 0.0
+            ),
             "avg_memory_gb": float(np.mean(custom_memories)) if custom_memories else 0.0,
             "max_memory_gb": float(np.max(custom_memories)) if custom_memories else 0.0,
             "num_successful_tests": len(custom_results),
-            "decode_speed_std": float(np.std(custom_decode_speeds)) if len(custom_decode_speeds) > 1 else 0.0,
+            "decode_speed_std": (
+                float(np.std(custom_decode_speeds)) if len(custom_decode_speeds) > 1 else 0.0
+            ),
         }
 
         # Summary for comparison to baseline
         comparison_summary = {
-            "avg_decode_improvement_pct": aggregate_stats.get('decode_speed_improvements_avg', 0),
-            "avg_decode_improvement_absolute": (aggregate_metrics["avg_decode_speed"] - self.baseline_metrics["avg_decode_speed"]),
-            "memory_change_gb": (aggregate_metrics["avg_memory_gb"] - self.baseline_metrics["avg_memory_gb"]),
-            "target_achieved": aggregate_stats.get('decode_speed_improvements_avg', 0) >= 5.0,  # 5%+ improvement target
-            "num_benchmarks_improved": sum(1 for x in improvements['decode_speed_improvements'] if x > 0),
-            "total_benchmarks": len(improvements['decode_speed_improvements']),
+            "avg_decode_improvement_pct": aggregate_stats.get("decode_speed_improvements_avg", 0),
+            "avg_decode_improvement_absolute": (
+                aggregate_metrics["avg_decode_speed"] - self.baseline_metrics["avg_decode_speed"]
+            ),
+            "memory_change_gb": (
+                aggregate_metrics["avg_memory_gb"] - self.baseline_metrics["avg_memory_gb"]
+            ),
+            "target_achieved": aggregate_stats.get("decode_speed_improvements_avg", 0)
+            >= 5.0,  # 5%+ improvement target
+            "num_benchmarks_improved": sum(
+                1 for x in improvements["decode_speed_improvements"] if x > 0
+            ),
+            "total_benchmarks": len(improvements["decode_speed_improvements"]),
         }
 
-        print(f"  📊 Analysis complete: {comparison_summary['avg_decode_improvement_pct']:+.1f}% average improvement")
+        print(
+            f"  📊 Analysis complete: {comparison_summary['avg_decode_improvement_pct']:+.1f}% average improvement"
+        )
 
         return {
             "individual_comparisons": individual_comparisons,
@@ -583,39 +701,45 @@ class FixedCustomGQAEvaluator:
             "comparison_summary": comparison_summary,
         }
 
-    def _calculate_final_score(self, performance_analysis: Dict[str, Any], correctness: float) -> float:
+    def _calculate_final_score(
+        self, performance_analysis: Dict[str, Any], correctness: float
+    ) -> float:
         """Calculate final optimization score based on real performance improvements"""
 
         if correctness < 0.95:  # Must be correct
             return -1000.0
 
         comparison = performance_analysis["comparison_summary"]
-        
+
         # Primary score: average decode speed improvement
         avg_improvement = comparison["avg_decode_improvement_pct"]
-        
+
         # Memory efficiency factor
         memory_change = comparison["memory_change_gb"]
         memory_factor = max(0, -memory_change * 10)  # Bonus for memory reduction
-        
+
         # Consistency factor (number of benchmarks improved)
-        success_rate = comparison["num_benchmarks_improved"] / max(1, comparison["total_benchmarks"])
+        success_rate = comparison["num_benchmarks_improved"] / max(
+            1, comparison["total_benchmarks"]
+        )
         consistency_factor = success_rate * 10  # Up to 10 points for 100% success rate
-        
+
         # Correctness bonus
         correctness_bonus = correctness * 5  # Up to 5 points for perfect correctness
-        
+
         # Calculate final score
         # Weight heavily on actual performance improvement
         final_score = (
             avg_improvement * 3  # 3x weight on average improvement
             + memory_factor
-            + consistency_factor  
+            + consistency_factor
             + correctness_bonus
         )
 
         print(f"  🎯 Score breakdown:")
-        print(f"    • Avg decode improvement: {avg_improvement:.2f}% × 3 = {avg_improvement * 3:.2f}")
+        print(
+            f"    • Avg decode improvement: {avg_improvement:.2f}% × 3 = {avg_improvement * 3:.2f}"
+        )
         print(f"    • Memory efficiency: {memory_factor:.2f}")
         print(f"    • Consistency: {success_rate:.2f} × 10 = {consistency_factor:.2f}")
         print(f"    • Correctness: {correctness:.3f} × 5 = {correctness_bonus:.2f}")
@@ -628,11 +752,11 @@ class FixedCustomGQAEvaluator:
 
         comparison = performance_analysis["comparison_summary"]
         metrics = performance_analysis["aggregate_metrics"]
-        
+
         avg_improvement = comparison["avg_decode_improvement_pct"]
         current_decode = metrics["avg_decode_speed"]
         baseline_decode = self.baseline_metrics["avg_decode_speed"]
-        
+
         improved_benchmarks = comparison["num_benchmarks_improved"]
         total_benchmarks = comparison["total_benchmarks"]
 
@@ -672,29 +796,37 @@ class FixedCustomGQAEvaluator:
             print(f"")
             print(f"📈 PERFORMANCE COMPARISON:")
             print(f"  • Average Decode Speed: {performance['avg_decode_speed']:.1f} tokens/sec")
-            print(f"  • Baseline Decode Speed: {self.baseline_metrics['avg_decode_speed']:.1f} tokens/sec")
+            print(
+                f"  • Baseline Decode Speed: {self.baseline_metrics['avg_decode_speed']:.1f} tokens/sec"
+            )
             print(f"  • Average Improvement: {comparison['avg_decode_improvement_pct']:+.1f}%")
-            print(f"  • Absolute Improvement: {comparison['avg_decode_improvement_absolute']:+.1f} tokens/sec")
+            print(
+                f"  • Absolute Improvement: {comparison['avg_decode_improvement_absolute']:+.1f} tokens/sec"
+            )
             print(f"")
             print(f"💾 MEMORY USAGE:")
             print(f"  • Average Memory: {performance['avg_memory_gb']:.2f} GB")
-            print(f"  • Baseline Memory: {self.baseline_metrics['avg_memory_gb']:.2f} GB") 
+            print(f"  • Baseline Memory: {self.baseline_metrics['avg_memory_gb']:.2f} GB")
             print(f"  • Memory Change: {comparison['memory_change_gb']:+.2f} GB")
             print(f"")
             print(f"✓ RELIABILITY:")
             print(f"  • Correctness Score: {result['correctness_score']:.1%}")
             print(f"  • Successful Tests: {performance['num_successful_tests']}")
-            print(f"  • Benchmarks Improved: {comparison['num_benchmarks_improved']}/{comparison['total_benchmarks']}")
-            print(f"  • Success Rate: {comparison['num_benchmarks_improved']/comparison['total_benchmarks']:.1%}")
+            print(
+                f"  • Benchmarks Improved: {comparison['num_benchmarks_improved']}/{comparison['total_benchmarks']}"
+            )
+            print(
+                f"  • Success Rate: {comparison['num_benchmarks_improved']/comparison['total_benchmarks']:.1%}"
+            )
 
             if comparison["target_achieved"]:
                 print(f"\n🎯 TARGET ACHIEVED: Significant improvement demonstrated!")
-            
+
             # Show individual benchmark results
             print(f"\n📋 INDIVIDUAL BENCHMARK RESULTS:")
             for comp in result["individual_comparisons"]:
-                name = comp['benchmark_name']
-                decode_imp = comp['improvements']['decode_speed_pct']
+                name = comp["benchmark_name"]
+                decode_imp = comp["improvements"]["decode_speed_pct"]
                 symbol = "✅" if decode_imp > 0 else "❌" if decode_imp < -1 else "➖"
                 print(f"  {symbol} {name:<30} {decode_imp:+6.1f}%")
 
@@ -736,15 +868,15 @@ def evaluate(program_text: str) -> Dict[str, Any]:
 def test_fixed_evaluator():
     """Test the fixed evaluator with the initial program"""
     print("🧪 Testing Fixed Custom GQA Evaluator")
-    print("="*80)
+    print("=" * 80)
 
     # Load initial program for testing
     initial_program_path = os.path.join(os.path.dirname(__file__), "initial_program_cycle2.py")
-    
+
     if not os.path.exists(initial_program_path):
         print(f"❌ Initial program not found: {initial_program_path}")
         return
-        
+
     print(f"📁 Loading initial program: {initial_program_path}")
 
     # Test evaluation
@@ -755,8 +887,10 @@ def test_fixed_evaluator():
     print(f"{'='*80}")
     print(f"Success: {result['success']}")
     print(f"Final Score: {result.get('final_score', 'N/A')}")
-    if result.get('baseline_comparison'):
-        print(f"Average Improvement: {result['baseline_comparison'].get('avg_decode_improvement_pct', 0):+.1f}%")
+    if result.get("baseline_comparison"):
+        print(
+            f"Average Improvement: {result['baseline_comparison'].get('avg_decode_improvement_pct', 0):+.1f}%"
+        )
     print(f"Summary: {result.get('summary', 'N/A')}")
 
     return result

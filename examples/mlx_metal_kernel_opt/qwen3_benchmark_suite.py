@@ -355,7 +355,7 @@ analysis of optimization strategies specifically for Apple Silicon devices,
 considering unified memory architecture, Metal Performance Shaders, and the 
 specific computational characteristics of M-series chips."""
         )
-        
+
         return extended_context
 
     def _create_progressive_context_prompt(self) -> str:
@@ -400,7 +400,7 @@ breakthrough applications, and current challenges in the field."""
     def _create_maximum_context_prompt(self) -> str:
         """Create maximum length context prompt for stress testing"""
         base_context = self._create_very_long_context_prompt()
-        
+
         extended_context = (
             base_context
             + """
@@ -543,7 +543,7 @@ The field continues to advance rapidly with several promising directions:
 
 Given this comprehensive overview of the current state and future directions of large language model optimization, provide a detailed analysis of how these various optimization techniques specifically apply to Apple Silicon hardware, particularly focusing on the M4 chip architecture, unified memory advantages, and how developers can best leverage these capabilities for maximum performance in LLM inference workloads."""
         )
-        
+
         return extended_context
 
     def run_single_benchmark(self, config: BenchmarkConfig) -> BenchmarkResult:
@@ -580,45 +580,41 @@ Given this comprehensive overview of the current state and future directions of 
             # Clear MLX cache before starting
             print(f"🧹 Clearing MLX cache...")
             mx.clear_cache()
-            
+
             # Warmup runs - don't measure these
             print(f"🔥 Running {WARMUP_RUNS} warmup runs to eliminate cold start effects...")
             for i in range(WARMUP_RUNS):
                 try:
                     print(f"   Warmup run {i+1}/{WARMUP_RUNS}...")
-                    warmup_result = subprocess.run(
-                        cmd, capture_output=True, text=True, timeout=300
-                    )
+                    warmup_result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
                     if warmup_result.returncode != 0:
                         print(f"   ⚠️  Warmup run {i+1} failed: {warmup_result.stderr[:100]}...")
                     else:
                         print(f"   ✅ Warmup run {i+1} completed")
-                        
+
                     # Clear cache between warmup runs
                     mx.clear_cache()
-                    
+
                 except subprocess.TimeoutExpired:
                     print(f"   ⏰ Warmup run {i+1} timed out")
                 except Exception as e:
                     print(f"   ❌ Warmup run {i+1} error: {e}")
 
             print(f"📊 Running {MEASUREMENT_RUNS} measurement runs...")
-            
+
             # Measurement runs
             successful_results = []
             for run_idx in range(MEASUREMENT_RUNS):
                 try:
                     print(f"   Measurement run {run_idx+1}/{MEASUREMENT_RUNS}...")
-                    
+
                     # Clear cache before each measurement run for consistency
                     mx.clear_cache()
                     initial_memory = mx.get_active_memory()
 
                     # Run benchmark
                     start_time = time.perf_counter()
-                    result = subprocess.run(
-                        cmd, capture_output=True, text=True, timeout=300
-                    )
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
                     end_time = time.perf_counter()
 
                     if result.returncode != 0:
@@ -629,13 +625,15 @@ Given this comprehensive overview of the current state and future directions of 
                     parsed_result = self._parse_benchmark_output(
                         result.stdout, config, end_time - start_time
                     )
-                    
+
                     if parsed_result:
                         successful_results.append(parsed_result)
-                        print(f"   ✅ Run {run_idx+1}: {parsed_result.decode_tokens_per_sec:.1f} tokens/sec")
+                        print(
+                            f"   ✅ Run {run_idx+1}: {parsed_result.decode_tokens_per_sec:.1f} tokens/sec"
+                        )
                     else:
                         print(f"   ❌ Run {run_idx+1}: Failed to parse output")
-                        
+
                 except subprocess.TimeoutExpired:
                     print(f"   ⏰ Measurement run {run_idx+1} timed out")
                 except Exception as e:
@@ -643,16 +641,20 @@ Given this comprehensive overview of the current state and future directions of 
 
             # Require at least 2 successful runs for reliable results
             if len(successful_results) < 2:
-                print(f"❌ Only {len(successful_results)}/{MEASUREMENT_RUNS} measurement runs succeeded")
+                print(
+                    f"❌ Only {len(successful_results)}/{MEASUREMENT_RUNS} measurement runs succeeded"
+                )
                 print(f"❌ Need at least 2 successful runs for reliable results")
-                raise RuntimeError(f"Insufficient successful runs: {len(successful_results)}/{MEASUREMENT_RUNS}")
+                raise RuntimeError(
+                    f"Insufficient successful runs: {len(successful_results)}/{MEASUREMENT_RUNS}"
+                )
 
             # Calculate statistics from multiple runs
             decode_speeds = [r.decode_tokens_per_sec for r in successful_results]
             prefill_speeds = [r.prefill_tokens_per_sec for r in successful_results]
             memories = [r.peak_memory_gb for r in successful_results]
             times = [r.total_time_sec for r in successful_results]
-            
+
             # Use median for more robust results (less sensitive to outliers)
             final_result = BenchmarkResult(
                 name=config.name,
@@ -660,7 +662,9 @@ Given this comprehensive overview of the current state and future directions of 
                 generated_tokens=int(np.median([r.generated_tokens for r in successful_results])),
                 prefill_tokens_per_sec=float(np.median(prefill_speeds)),
                 decode_tokens_per_sec=float(np.median(decode_speeds)),
-                total_tokens_per_sec=float(np.median([r.total_tokens_per_sec for r in successful_results])),
+                total_tokens_per_sec=float(
+                    np.median([r.total_tokens_per_sec for r in successful_results])
+                ),
                 peak_memory_gb=float(np.median(memories)),
                 total_time_sec=float(np.median(times)),
                 prompt=config.prompt[:200] + "..." if len(config.prompt) > 200 else config.prompt,
@@ -672,13 +676,17 @@ Given this comprehensive overview of the current state and future directions of 
             print(f"  Prompt tokens: {final_result.prompt_tokens}")
             print(f"  Generated tokens: {final_result.generated_tokens}")
             print(f"  Prefill speed: {final_result.prefill_tokens_per_sec:.2f} tokens/sec")
-            print(f"  Decode speed: {final_result.decode_tokens_per_sec:.2f} tokens/sec (σ={np.std(decode_speeds):.2f})")
+            print(
+                f"  Decode speed: {final_result.decode_tokens_per_sec:.2f} tokens/sec (σ={np.std(decode_speeds):.2f})"
+            )
             print(f"  Overall speed: {final_result.total_tokens_per_sec:.2f} tokens/sec")
             print(f"  Peak memory: {final_result.peak_memory_gb:.3f} GB")
             print(f"  Total time: {final_result.total_time_sec:.2f} seconds")
-            
+
             if len(decode_speeds) > 1:
-                print(f"  Performance consistency: {np.std(decode_speeds)/np.mean(decode_speeds)*100:.1f}% CV")
+                print(
+                    f"  Performance consistency: {np.std(decode_speeds)/np.mean(decode_speeds)*100:.1f}% CV"
+                )
 
             return final_result
 
@@ -703,7 +711,7 @@ Given this comprehensive overview of the current state and future directions of 
         peak_memory_str = ""
 
         for line in output_lines:
-            if line.strip() == "==========":  
+            if line.strip() == "==========":
                 in_generation = not in_generation
             elif in_generation:
                 generated_text += line + "\n"
@@ -949,7 +957,7 @@ def main():
     # No need to change directories - mlx-lm is installed as a package
     print("Running Qwen3-0.6B Comprehensive Benchmark Suite")
     print("Ensure mlx-lm is installed: pip install mlx-lm")
-    
+
     benchmark_suite = Qwen3BenchmarkSuite()
     results = benchmark_suite.run_full_benchmark_suite()
     benchmark_suite.print_summary_table()
