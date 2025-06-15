@@ -25,8 +25,7 @@ import traceback
 from typing import Dict, List, Tuple, Any, Optional
 import numpy as np
 
-# Add paths for imports
-sys.path.insert(0, "/Users/asankhaya/Documents/GitHub/mlx-lm")
+# Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import mlx.core as mx
@@ -41,7 +40,6 @@ class CustomGQAEvaluator:
 
     def __init__(self):
         self.model_path = "mlx-community/Qwen3-0.6B-bf16"
-        self.mlx_lm_dir = "/Users/asankhaya/Documents/GitHub/mlx-lm"
 
         # Baseline performance from comprehensive benchmark
         self.baseline_metrics = {
@@ -99,12 +97,13 @@ Technical Details: In Qwen3-0.6B, we have 40 query heads and 8 key-value heads, 
 Question: Analyze the computational and memory efficiency benefits of GQA compared to standard multi-head attention."""
 
     def evaluate(self, program_text: str) -> Dict[str, Any]:
-        """
-        Evaluate an evolved custom GQA implementation by:
+        """Evaluate an evolved custom GQA implementation by:
         1. Executing the program to extract CustomGQAAttention
         2. Testing correctness vs standard implementation
         3. Hooking into mlx-lm for real inference testing
         4. Measuring performance improvements
+        
+        Note: Requires mlx-lm to be installed (pip install mlx-lm)
         """
 
         print("\n" + "=" * 80)
@@ -190,7 +189,6 @@ Question: Analyze the computational and memory efficiency benefits of GQA compar
 
             # Add mlx_lm imports for RoPE
             try:
-                sys.path.insert(0, self.mlx_lm_dir)
                 exec_globals["mlx_lm"] = __import__("mlx_lm")
             except ImportError:
                 print("⚠️  Could not import mlx_lm, RoPE may not work")
@@ -335,9 +333,6 @@ CUSTOM_ATTENTION_ACTIVE = True
         MEASUREMENT_RUNS = 7  # Statistical significance (odd number for median)
 
         try:
-            original_dir = os.getcwd()
-            os.chdir(self.mlx_lm_dir)
-
             # Build mlx-lm command
             cmd = [
                 "python",
@@ -486,8 +481,6 @@ CUSTOM_ATTENTION_ACTIVE = True
         except Exception as e:
             print(f"    ❌ Benchmark error: {e}")
             return None
-        finally:
-            os.chdir(original_dir)
 
     def _parse_mlx_lm_output(
         self, stdout: str, config: BenchmarkConfig, total_time: float
