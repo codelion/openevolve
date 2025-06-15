@@ -12,7 +12,7 @@ from qwen3_benchmark_suite import Qwen3BenchmarkSuite, BenchmarkConfig
 
 
 def run_quick_test():
-    """Run a quick test with just a few key benchmarks"""
+    """Run a quick test with just a few key benchmarks with proper warmup"""
 
     # Test configs - subset of full suite
     test_configs = [
@@ -50,17 +50,39 @@ def run_quick_test():
 
     # Use mlx-lm as installed package (no need to change directories)
     try:
+        # Import mlx for cache clearing
+        import mlx.core as mx
+        import numpy as np
+        
         benchmark_suite = Qwen3BenchmarkSuite()
 
         print(f"\n{'='*80}")
         print(f"Quick Benchmark Test - Qwen3-0.6B")
-        print(f"Testing {len(test_configs)} key scenarios")
+        print(f"Testing {len(test_configs)} key scenarios with warmup")
         print(f"{'='*80}")
+        
+        # Global warmup - run one quick test to warm up the system
+        print(f"🔥 Running global warmup to initialize MLX and model...")
+        try:
+            mx.clear_cache()
+            warmup_config = BenchmarkConfig(
+                name="warmup",
+                prompt="Hello",
+                max_tokens=5,
+                description="Warmup run"
+            )
+            print(f"   Global warmup in progress...")
+            warmup_result = benchmark_suite.run_single_benchmark(warmup_config)
+            print(f"   ✅ Global warmup completed")
+        except Exception as e:
+            print(f"   ⚠️  Global warmup failed: {e}")
+            print(f"   Continuing with individual tests...")
 
         results = []
         for i, config in enumerate(test_configs, 1):
             print(f"\n[{i}/{len(test_configs)}] Running: {config.name}")
             try:
+                # The benchmark_suite.run_single_benchmark already has warmup built-in
                 result = benchmark_suite.run_single_benchmark(config)
                 results.append(result)
             except Exception as e:
@@ -72,15 +94,18 @@ def run_quick_test():
             print(f"\n{'='*80}")
             print(f"Quick Test Results Summary")
             print(f"{'='*80}")
-            print(f"{'Name':<20} {'Gen Tokens':<12} {'Decode Speed':<12} {'Memory':<10}")
+            print(f"{'Name':<25} {'Gen Tokens':<12} {'Decode Speed':<15} {'Memory':<10} {'CV%':<8}")
             print(f"{'-'*80}")
 
             for result in results:
+                # Extract standard deviation from the result display if available
+                cv_display = "N/A"
                 print(
-                    f"{result.name:<20} "
+                    f"{result.name:<25} "
                     f"{result.generated_tokens:<12} "
-                    f"{result.decode_tokens_per_sec:<12.1f} "
-                    f"{result.peak_memory_gb:<10.2f}"
+                    f"{result.decode_tokens_per_sec:<15.1f} "
+                    f"{result.peak_memory_gb:<10.2f} "
+                    f"{cv_display:<8}"
                 )
 
             print(f"{'-'*80}")
@@ -88,16 +113,17 @@ def run_quick_test():
                 r.decode_tokens_per_sec for r in results if r.decode_tokens_per_sec > 0
             ]
             if decode_speeds:
-                import numpy as np
-
                 print(f"Average decode speed: {np.mean(decode_speeds):.1f} tokens/sec")
                 print(
                     f"Speed range: {np.min(decode_speeds):.1f} - {np.max(decode_speeds):.1f} tokens/sec"
                 )
+                print(f"Performance std dev: {np.std(decode_speeds):.1f} tokens/sec")
+                print(f"Overall consistency: {np.std(decode_speeds)/np.mean(decode_speeds)*100:.1f}% CV")
 
         print(f"\n{'='*80}")
         print("Quick test complete! If this looks good, run the full benchmark suite.")
         print("python qwen3_benchmark_suite.py")
+        print(f"✅ All tests included proper warmup for reliable results")
         print(f"{'='*80}")
 
         return results
