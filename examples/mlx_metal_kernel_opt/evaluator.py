@@ -1,18 +1,18 @@
-"""
+"""    
 Qwen3 Custom GQA Attention Evaluator
 
 This evaluator tests evolved custom GQA attention implementations by:
 1. Extracting the evolved CustomGQAAttention class
 2. Hooking it into mlx-lm's Qwen3 model to replace standard attention
 3. Running benchmark tests on real text generation
-4. Measuring performance improvements vs baseline (70.3 tokens/sec)
+4. Measuring actual performance improvements vs baseline
 5. Ensuring numerical correctness
 
 Evolution Target:
 - Custom GQA implementation using MLX primitives
-- 40:8 query-to-KV head pattern optimization
+- 40:8 query-to-KV head pattern optimization  
 - Apple M4 unified memory optimizations
-- Goal: 80+ tokens/sec (14%+ improvement)
+- Goal: Improve upon current 2.12% average baseline improvement
 """
 
 import os
@@ -447,14 +447,8 @@ CUSTOM_ATTENTION_ACTIVE = True
             print(f"         Median: {median_decode:.1f} tokens/sec")
             print(f"         95% CI: [{confidence_interval[0]:.1f}, {confidence_interval[1]:.1f}]")
 
-            # Apply simulated improvement for custom implementation
-            # In reality, this would be the actual performance difference
-            if config.name == "primary_test":  # Only apply to main test
-                # Simulate realistic improvement with some variance
-                improvement_factor = np.random.normal(1.05, 0.02)  # 5% ± 2% improvement
-                mean_decode *= improvement_factor
-                median_decode *= improvement_factor
-                print(f"      🔧 Simulated custom improvement: {(improvement_factor-1)*100:.1f}%")
+            # Real performance measurement - no simulation needed
+            # The custom attention implementation should show its actual performance
 
             # Create result with statistical information
             benchmark_result = BenchmarkResult(
