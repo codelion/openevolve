@@ -53,7 +53,7 @@ class FixedCustomGQAEvaluator:
 
         print("🔧 Initialized Fixed Custom GQA Evaluator")
         print(f"📱 Model: {self.model_path}")
-        print(f"🧪 Using comprehensive test suite (20+ scenarios)")
+        print(f"🧪 Using 5 representative tests for fast evolution")
         print(f"📊 Dynamic baseline measurement enabled")
 
     def evaluate(self, program_text: str) -> Dict[str, Any]:
@@ -69,7 +69,7 @@ class FixedCustomGQAEvaluator:
         print("🔬 FIXED CUSTOM GQA ATTENTION EVALUATION")
         print("=" * 100)
         print("✅ Using dynamic baseline measurement")
-        print("✅ Using comprehensive test coverage (20+ scenarios)")
+        print("✅ Using 5 representative tests for fast evolution")
         print("✅ Using direct model testing (no subprocess)")
         print("✅ Using proper statistical methodology")
         print("=" * 100)
@@ -271,80 +271,34 @@ class FixedCustomGQAEvaluator:
             return None
 
     def _get_evolution_benchmark_configs(self) -> List[BenchmarkConfig]:
-        """Get representative benchmark configs for evolution (subset of full suite for speed)"""
+        """Get 5 most representative benchmark configs for faster evolution"""
 
         # Get all comprehensive configs
         all_configs = self.benchmark_suite.create_benchmark_configs()
 
-        # Select representative subset across all categories for faster evolution
-        # while maintaining comprehensive coverage
+        # Select only 5 most representative tests across all categories
+        # for significantly faster evolution while maintaining coverage
         representative_configs = []
 
-        # Context length variations (4 configs)
-        context_configs = [c for c in all_configs if "context" in c.name]
-        representative_configs.extend(context_configs)  # All 4 context tests are important
-
-        # Generation length patterns (select key ones)
-        generation_configs = [c for c in all_configs if "generation" in c.name]
-        representative_configs.extend(
-            [
-                c
-                for c in generation_configs
-                if c.name
-                in [
-                    "micro_generation",
-                    "short_generation",
-                    "long_generation",
-                    "very_long_generation",
-                ]
-            ]
-        )
-
-        # Use case patterns (select most important)
-        use_case_configs = [
-            c
-            for c in all_configs
-            if any(
-                x in c.name
-                for x in ["code", "reasoning", "creative", "technical", "conversational"]
-            )
+        # Map of specific test names to select
+        selected_test_names = [
+            "short_context_quick",          # Short context + quick response (chat scenario)
+            "long_context_detailed",        # Long context analysis (memory pressure)
+            "long_generation",              # Long generation (decode performance critical)
+            "code_generation",              # Code generation (structured output patterns)
+            "maximum_context_stress_test"   # Ultimate stress test (maximum challenge)
         ]
-        representative_configs.extend(
-            [
-                c
-                for c in use_case_configs
-                if c.name
-                in ["code_generation", "step_by_step_reasoning", "conversational_assistant"]
-            ]
-        )
 
-        # Memory pressure (select key ones)
-        memory_configs = [
-            c for c in all_configs if any(x in c.name for x in ["progressive", "repetitive"])
-        ]
-        representative_configs.extend(
-            [
-                c
-                for c in memory_configs
-                if c.name in ["progressive_context_building", "repetitive_pattern_generation"]
-            ]
-        )
+        # Find and add the selected tests
+        config_dict = {c.name: c for c in all_configs}
+        
+        for test_name in selected_test_names:
+            if test_name in config_dict:
+                representative_configs.append(config_dict[test_name])
+            else:
+                print(f"  ⚠️  Warning: Test '{test_name}' not found in benchmark suite")
 
-        # Extended tests (select 1-2 key ones)
-        extended_configs = [
-            c
-            for c in all_configs
-            if any(x in c.name for x in ["extreme", "sustained", "comprehensive", "maximum"])
-        ]
-        representative_configs.extend(
-            [
-                c
-                for c in extended_configs
-                if c.name in ["extreme_long_generation", "maximum_context_stress_test"]
-            ]
-        )
-
-        print(f"  📋 Selected {len(representative_configs)} representative benchmarks:")
+        print(f"  📋 Selected {len(representative_configs)} representative benchmarks for fast evolution:")
         for config in representative_configs:
             print(f"    • {config.name}: {config.description}")
 
