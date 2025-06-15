@@ -210,6 +210,36 @@ Provide a detailed, helpful response:""",
             ]
         )
 
+        # 5. Extended Long Generation Tests (for sustained decode performance)
+        configs.extend(
+            [
+                BenchmarkConfig(
+                    name="extreme_long_generation",
+                    prompt="Write a complete tutorial on deep learning from basics to advanced topics, including mathematical foundations, architectures, training techniques, and real-world applications:",
+                    max_tokens=8000,
+                    description="Extreme long generation - maximum decode performance test",
+                ),
+                BenchmarkConfig(
+                    name="sustained_dialogue_generation",
+                    prompt="Create a detailed dialogue between an AI researcher and a software engineer discussing the future of artificial intelligence, covering topics like AGI, safety, ethics, and technological implications. Make it engaging and informative:",
+                    max_tokens=6000,
+                    description="Sustained dialogue - consistent long-form generation",
+                ),
+                BenchmarkConfig(
+                    name="comprehensive_analysis_generation",
+                    prompt="Analyze the evolution of computer programming languages from assembly to modern high-level languages. Discuss paradigms, performance considerations, developer productivity, and future trends:",
+                    max_tokens=7000,
+                    description="Comprehensive analysis - complex reasoning with long output",
+                ),
+                BenchmarkConfig(
+                    name="maximum_context_stress_test",
+                    prompt=self._create_maximum_context_prompt(),
+                    max_tokens=10000,
+                    description="Maximum context stress test - ultimate performance challenge",
+                ),
+            ]
+        )
+
         return configs
 
     def _create_medium_context_prompt(self) -> str:
@@ -366,6 +396,155 @@ in games like Go and Chess.
 Now, continue this historical narrative by writing Chapter 6, focusing on the 
 transformer era and large language models. Discuss the key innovations, 
 breakthrough applications, and current challenges in the field."""
+
+    def _create_maximum_context_prompt(self) -> str:
+        """Create maximum length context prompt for stress testing"""
+        base_context = self._create_very_long_context_prompt()
+        
+        extended_context = (
+            base_context
+            + """
+
+Further Technical Deep Dive:
+
+Advanced Optimization Techniques:
+Modern LLM optimization goes beyond basic training approaches. Key areas include:
+
+1. Memory Optimization:
+   - Gradient checkpointing to trade compute for memory
+   - Model parallelism across multiple devices
+   - ZeRO optimizer states for distributed training
+   - Mixed precision training with automatic loss scaling
+   - Activation recomputation strategies
+
+2. Computational Efficiency:
+   - Flash Attention for memory-efficient attention computation
+   - Gradient accumulation for effective large batch sizes
+   - Dynamic loss scaling for stable mixed precision training
+   - Automatic mixed precision (AMP) for optimal performance
+   - Custom CUDA kernels for specific operations
+
+3. Distributed Training Strategies:
+   - Data parallelism with all-reduce communication
+   - Model parallelism for very large models
+   - Pipeline parallelism for sequential processing
+   - 3D parallelism combining all approaches
+   - Efficient communication backends (NCCL, Gloo)
+
+4. Apple Silicon Specific Optimizations:
+   - Unified memory architecture advantages
+   - Metal Performance Shaders (MPS) acceleration
+   - Neural Engine utilization for specific operations
+   - Memory bandwidth optimization for M-series chips
+   - Custom MLX primitives for Apple hardware
+
+Inference Optimization Deep Dive:
+Optimizing LLM inference requires different strategies than training:
+
+1. Model Compression:
+   - Quantization to 8-bit or 4-bit precision
+   - Pruning redundant parameters
+   - Knowledge distillation to smaller models
+   - Low-rank approximations
+   - Sparsity-aware inference engines
+
+2. Runtime Optimization:
+   - KV cache management for autoregressive generation
+   - Batch processing for multiple requests
+   - Dynamic batching for variable sequence lengths
+   - Speculative decoding for faster generation
+   - Continuous batching for improved throughput
+
+3. Hardware-Specific Optimization:
+   - GPU kernel fusion for reduced memory transfers
+   - CPU optimization with vectorized operations
+   - Mobile optimization for edge deployment
+   - FPGA acceleration for specific use cases
+   - Neuromorphic computing for ultra-low power
+
+4. Serving Infrastructure:
+   - Model serving frameworks (TensorRT, TorchServe)
+   - Load balancing across multiple instances
+   - Auto-scaling based on demand
+   - Caching strategies for common requests
+   - Request prioritization and queuing
+
+Emerging Paradigms:
+The field continues to evolve with new approaches:
+
+1. Architecture Innovations:
+   - Mixture of Experts (MoE) for conditional computation
+   - State Space Models for long sequence modeling
+   - Retrieval-augmented generation (RAG) systems
+   - Multi-modal models combining text, vision, and audio
+   - Constitutional AI for aligned behavior
+
+2. Training Innovations:
+   - Reinforcement Learning from Human Feedback (RLHF)
+   - Constitutional AI training approaches
+   - Curriculum learning for improved convergence
+   - Meta-learning for few-shot adaptation
+   - Continual learning to avoid catastrophic forgetting
+
+3. Evaluation and Safety:
+   - Comprehensive benchmark suites
+   - Adversarial testing for robustness
+   - Bias detection and mitigation
+   - Interpretability and explainability
+   - Safety alignment techniques
+
+Real-World Deployment Challenges:
+Deploying LLMs in production involves numerous considerations:
+
+1. Scalability:
+   - Handling millions of concurrent users
+   - Geographic distribution for low latency
+   - Cost optimization for sustainable operations
+   - Resource allocation and scheduling
+   - Auto-scaling based on demand patterns
+
+2. Reliability:
+   - Fault tolerance and error recovery
+   - Monitoring and alerting systems
+   - A/B testing for model updates
+   - Gradual rollouts for risk mitigation
+   - Backup systems for high availability
+
+3. Security and Privacy:
+   - Data protection and encryption
+   - Secure model serving environments
+   - Privacy-preserving inference techniques
+   - Audit trails and compliance
+   - Protection against adversarial attacks
+
+Future Directions:
+The field continues to advance rapidly with several promising directions:
+
+1. Efficiency Improvements:
+   - Novel architectures with better scaling properties
+   - More efficient training algorithms
+   - Better hardware-software co-design
+   - Energy-efficient computing approaches
+   - Sustainable AI development practices
+
+2. Capability Enhancement:
+   - Improved reasoning and planning abilities
+   - Better multi-modal understanding
+   - Enhanced code generation capabilities
+   - Scientific discovery applications
+   - Creative and artistic applications
+
+3. Democratization:
+   - Open-source model development
+   - Accessible training and inference tools
+   - Educational resources and tutorials
+   - Community-driven improvements
+   - Ethical AI development practices
+
+Given this comprehensive overview of the current state and future directions of large language model optimization, provide a detailed analysis of how these various optimization techniques specifically apply to Apple Silicon hardware, particularly focusing on the M4 chip architecture, unified memory advantages, and how developers can best leverage these capabilities for maximum performance in LLM inference workloads."""
+        )
+        
+        return extended_context
 
     def run_single_benchmark(self, config: BenchmarkConfig) -> BenchmarkResult:
         """Run a single benchmark configuration"""

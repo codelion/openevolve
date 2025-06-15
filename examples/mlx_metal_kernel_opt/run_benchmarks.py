@@ -24,7 +24,7 @@ from quick_benchmark_test import run_quick_test
 def run_compare_benchmarks(args):
     """
     Run comprehensive comparison between standard and optimized attention.
-    Uses the full benchmark suite (17 comprehensive tests) for thorough analysis.
+    Uses the full benchmark suite for thorough analysis.
     """
     print(f"\n🔬 Running Comparison Benchmark Mode")
     print(f"📊 Comparing Standard vs OpenEvolve Optimized Attention")
@@ -42,7 +42,12 @@ def run_compare_benchmarks(args):
         # Run standard benchmark (baseline)
         print("\n🏃‍♂️ Phase 1: Running Standard Attention Benchmark...")
         print("⏱️  This establishes our baseline performance across all scenarios")
-        print("📊 Running full benchmark suite (17 comprehensive tests)")
+        
+        # Get dynamic test count
+        temp_suite = Qwen3BenchmarkSuite(args.model)
+        test_count = len(temp_suite.create_benchmark_configs())
+        
+        print(f"📊 Running full benchmark suite ({test_count} comprehensive tests)")
         print("⏳ This will take 15-30 minutes depending on your hardware...")
         
         standard_suite = Qwen3BenchmarkSuite(args.model)
@@ -357,7 +362,7 @@ def main():
         "--mode",
         choices=["quick", "full", "compare"],
         default="quick",
-        help="Benchmark mode: quick (4 tests), full (17 tests), or compare (standard vs optimized)",
+        help="Benchmark mode: quick (5 tests), full (20 tests), or compare (standard vs optimized)",
     )
     parser.add_argument(
         "--model", default="mlx-community/Qwen3-0.6B-bf16", help="Model path or name"
@@ -370,7 +375,7 @@ def main():
     print(f"Output directory: {args.output_dir}")
 
     if args.mode == "quick":
-        print("\n🚀 Running Quick Benchmark (4 key tests)...")
+        print("\n🚀 Running Quick Benchmark (5 key tests)...")
         results = run_quick_test()
         print("\n✅ Quick benchmark complete!")
 
@@ -378,7 +383,11 @@ def main():
         return run_compare_benchmarks(args)
 
     else:  # full
-        print("\n🚀 Running Full Benchmark Suite (17 comprehensive tests)...")
+        # Get dynamic test count for display
+        temp_suite = Qwen3BenchmarkSuite(args.model)
+        test_count = len(temp_suite.create_benchmark_configs())
+        
+        print(f"\n🚀 Running Full Benchmark Suite ({test_count} comprehensive tests)...")
         print("⏱️  This may take 15-30 minutes depending on your hardware...")
 
         # Change to output directory

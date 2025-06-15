@@ -40,6 +40,12 @@ def run_quick_test():
             max_tokens=500,
             description="Longer generation test",
         ),
+        BenchmarkConfig(
+            name="memory_efficiency_test",
+            prompt="Write a comprehensive guide on optimizing memory usage in large-scale machine learning systems, covering techniques for both training and inference:",
+            max_tokens=800,
+            description="Memory efficiency stress test",
+        ),
     ]
 
     # Use mlx-lm as installed package (no need to change directories)
