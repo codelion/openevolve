@@ -1,7 +1,10 @@
-# Requirements for MLX SPDA Optimization Example
+# Requirements for MLX Metal Kernel Optimization Example
 
 # Core MLX framework for Apple Silicon
 mlx>=0.12.0
+
+# MLX language models library
+mlx-lm>=0.18.0
 
 # For numerical computations and comparisons
 numpy>=1.21.0

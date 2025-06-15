@@ -680,33 +680,21 @@ breakthrough applications, and current challenges in the field."""
 
 def main():
     """Run the complete benchmark suite"""
-    # Change to mlx-lm directory
-    original_dir = os.getcwd()
-    mlx_lm_dir = "/Users/asankhaya/Documents/GitHub/mlx-lm"
+    # No need to change directories - mlx-lm is installed as a package
+    print("Running Qwen3-0.6B Comprehensive Benchmark Suite")
+    print("Ensure mlx-lm is installed: pip install mlx-lm")
+    
+    benchmark_suite = Qwen3BenchmarkSuite()
+    results = benchmark_suite.run_full_benchmark_suite()
+    benchmark_suite.print_summary_table()
 
-    if os.path.exists(mlx_lm_dir):
-        os.chdir(mlx_lm_dir)
-        print(f"Changed to mlx-lm directory: {mlx_lm_dir}")
-    else:
-        print(f"Warning: mlx-lm directory not found at {mlx_lm_dir}")
-        print("Please ensure mlx-lm is installed and accessible")
+    print(f"\n{'='*80}")
+    print("Benchmark Suite Complete!")
+    print("These results will serve as baseline for kernel optimization.")
+    print("Target: Improve decode speed by 20%+ through evolved GQA attention kernel")
+    print(f"{'='*80}")
 
-    try:
-        benchmark_suite = Qwen3BenchmarkSuite()
-        results = benchmark_suite.run_full_benchmark_suite()
-        benchmark_suite.print_summary_table()
-
-        print(f"\n{'='*80}")
-        print("Benchmark Suite Complete!")
-        print("These results will serve as baseline for kernel optimization.")
-        print("Target: Improve decode speed by 20%+ through evolved GQA attention kernel")
-        print(f"{'='*80}")
-
-        return results
-
-    finally:
-        # Return to original directory
-        os.chdir(original_dir)
+    return results
 
 
 if __name__ == "__main__":
