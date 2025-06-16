@@ -36,7 +36,7 @@ export function showSidebarContent(d, fromHover = false) {
     const children = allNodeData.filter(n => n.parent_id === d.id);
     if (children.length > 0) tabNames.push('Children');
 
-    // --- CLONES TAB LOGIC ---
+    // Handle nodes with "-copyN" IDs
     function getBaseId(id) {
         return id.includes('-copy') ? id.split('-copy')[0] : id;
     }
@@ -52,10 +52,9 @@ export function showSidebarContent(d, fromHover = false) {
             return `<pre class="sidebar-code-pre">${d.code}</pre>`;
         }
         if (tabName === 'Prompts') {
-            // --- Prompt select logic ---
+            // Prompt select logic
             let promptOptions = [];
             let promptMap = {};
-            // Prompts
             if (d.prompts && typeof d.prompts === 'object') {
                 for (const [k, v] of Object.entries(d.prompts)) {
                     if (v && typeof v === 'object' && !Array.isArray(v)) {
