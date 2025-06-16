@@ -152,11 +152,17 @@ class FixedCustomGQAEvaluator:
                 actual_program_text = program_text
 
             # Create execution environment
+            import math
+            import numpy as np
+            import time
+            from typing import Optional, Tuple, Any
+            
             exec_globals = {
                 "__builtins__": __builtins__,
                 "mx": mx,
                 "nn": nn,
                 "np": np,
+                "math": math,
                 "time": time,
                 "Optional": Optional,
                 "Tuple": Tuple,
