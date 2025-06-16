@@ -1,200 +1,233 @@
-max_iterations: 50
-checkpoint_interval: 10
+max_iterations: 35
+checkpoint_interval: 7
 log_level: "INFO"
 
-# LLM configuration - proven models for kernel optimization
+# LLM configuration for Metal kernel optimization
 llm:
   primary_model: "gemini-2.5-flash-preview-05-20"
   primary_model_weight: 0.6
   secondary_model: "gemini-2.5-pro-preview-06-05"
   secondary_model_weight: 0.4
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
-  temperature: 0.8
+  temperature: 0.6
   top_p: 0.95
   max_tokens: 32000
-  timeout: 600
+  timeout: 900
 
-# Focused prompt for genuine MLX Qwen3 optimization
+# Specialized prompt for Metal kernel optimization
 prompt:
   system_message: |
-    You are an expert in optimizing attention kernels using MLX primitives for Apple Silicon.
+    You are an expert Metal GPU programmer specializing in custom attention kernels for Apple Silicon.
     
-    # SPECIFIC TARGET: MLX Qwen3 Attention Optimization
-    # BASELINE: Standard MLX-LM implementation using mx.fast.scaled_dot_product_attention
-    # GOAL: 10-20% improvement through genuine kernel-level innovations
-    # HARDWARE: Apple M4 24GB unified memory
+    # TARGET: Optimize Metal Kernel for Qwen3 Grouped Query Attention (GQA)
+    # HARDWARE: Apple M-series GPUs with unified memory architecture
+    # BASELINE: Standard MLX scaled_dot_product_attention
+    # ARCHITECTURE: 40 query heads : 8 KV heads (5:1 ratio), 128 head dimension
+    # GOAL: 5-15% performance improvement through Metal kernel optimization
     
-    # ARCHITECTURE DETAILS:
-    - Qwen3-0.6B: 40 query heads : 8 key/value heads (5:1 GQA ratio)
-    - Head dimension: 128, Hidden size: 5120
-    - Sequence lengths: 128-2048 tokens, Precision: bfloat16
-    
-    # CURRENT BASELINE (MLX-LM Standard Implementation):
-    ```python
-    # This is already highly optimized - your starting point
-    from mlx_lm.models.base import scaled_dot_product_attention
-    output = scaled_dot_product_attention(
-        queries, keys, values, cache=cache, scale=self.scale, mask=mask
-    )
-    
-    # Which internally uses:
-    # mx.fast.scaled_dot_product_attention(queries, keys, values, scale=scale, mask=mask)
-    ```
-    
-    # GENUINE OPTIMIZATION OPPORTUNITIES:
-    
-    **1. Beyond Standard SDPA:**
-    MLX's mx.fast.scaled_dot_product_attention is already optimized, but you can potentially improve by:
-    - Custom implementations that leverage the specific 40:8 GQA pattern
-    - Memory layout optimizations for Apple Silicon unified memory
-    - Novel computation ordering for better cache locality
-    - Specialized handling of sequence length patterns
-    
-    **2. Apple Silicon Specific Optimizations:**
-    - Leverage bfloat16 native operations more effectively
-    - Optimize for unified memory bandwidth patterns
-    - Use SIMD-friendly computation layouts
-    - Minimize memory allocation/deallocation overhead
-    
-    **3. GQA Pattern Optimizations:**
-    Instead of relying on MLX's general GQA handling, create custom implementations:
-    ```python
-    # Example: Process in 8-head chunks to match KV heads exactly
-    chunk_size = self.n_kv_heads  # 8
-    outputs = []
-    for i in range(0, self.n_heads, chunk_size):
-        q_chunk = queries[:, i:i+chunk_size, :, :]  # [B, 8, L, 128]
-        k_chunk = keys[:, i//5, :, :].unsqueeze(1)  # Corresponding KV head
-        v_chunk = values[:, i//5, :, :].unsqueeze(1)
+    # CURRENT METAL KERNEL STRUCTURE:
+    ```metal
+    kernel void qwen3_gqa_attention_kernel() {
+        // Thread mapping: each thread handles one query position
+        uint query_pos = thread_position_in_grid.x;
+        uint head_idx = thread_position_in_grid.y; 
+        uint batch_idx = thread_position_in_grid.z;
         
-        # Custom attention computation for this chunk
-        chunk_output = custom_attention(q_chunk, k_chunk, v_chunk)
-        outputs.append(chunk_output)
-    
-    output = mx.concatenate(outputs, axis=1)
+        // GQA mapping: 5 query heads per KV head
+        uint kv_head_idx = head_idx / HEADS_PER_KV;
+        
+        // Current algorithm:
+        // 1. Load query vector
+        // 2. First pass: compute scores and find max
+        // 3. Second pass: compute softmax denominator  
+        // 4. Third pass: compute weighted value sum
+    }
     ```
     
-    **4. Memory Access Pattern Optimization:**
-    ```python
-    # Example: Reorder operations for better memory locality
-    # Instead of: Q @ K^T → softmax → @ V
-    # Try: Chunked computation with better cache usage
+    # OPTIMIZATION OPPORTUNITIES IN THE EVOLVE-BLOCK:
     
-    # Tile-based computation
-    tile_size = 64  # Optimize for L1 cache
-    for i in range(0, L, tile_size):
-        for j in range(0, L, tile_size):
-            # Process attention in tiles for better memory locality
+    **1. Memory Access Pattern Optimization:**
+    ```metal
+    // CURRENT: Linear memory access
+    // OPTIMIZE: Coalesced access patterns for Apple Silicon
+    
+    // Example: Vectorized loading
+    for (uint d = 0; d < HEAD_DIM; d += 4) {
+        // Load 4 elements at once using SIMD
+        query_vec[d] = queries[q_base + d];
+        query_vec[d+1] = queries[q_base + d+1];
+        query_vec[d+2] = queries[q_base + d+2];  
+        query_vec[d+3] = queries[q_base + d+3];
+    }
+    
+    // Example: Pre-compute and cache frequently used indices
     ```
     
-    **5. Operation Fusion Beyond Standard:**
-    ```python
-    # Custom fused operations that MLX might not provide
-    # Combine scaling, masking, and computation in single kernels
-    # Fuse RoPE application with attention computation
-    # Integrate KV cache operations more efficiently
+    **2. Computation Algorithm Optimization:**
+    ```metal
+    // CURRENT: 3-pass attention (find max, softmax, weighted sum)
+    // OPTIMIZE: Fused operations, online algorithms
+    
+    // Example: Online softmax to reduce passes
+    // Example: Fused score computation and max finding
+    // Example: Reduce redundant index calculations
     ```
     
-    **6. Sequence Length Specific Optimizations:**
-    ```python
-    # Different strategies for different sequence lengths
-    if L <= 512:
-        # Use memory-intensive but fast approach
-        return fast_short_sequence_attention(...)
-    elif L <= 2048:
-        # Balanced approach
-        return balanced_attention(...)
-    else:
-        # Memory-efficient approach for long sequences
-        return memory_efficient_attention(...)
+    **3. GQA-Specific Optimizations:**
+    ```metal
+    // CURRENT: Basic kv_head_idx = head_idx / HEADS_PER_KV
+    // OPTIMIZE: Leverage the specific 5:1 ratio pattern
+    
+    // Example: Process 5 query heads together for each KV head
+    // Example: Optimize memory layout for the 40:8 pattern
+    // Example: Reduce broadcast overhead through clever indexing
     ```
     
-    # EVOLUTION CONSTRAINTS:
-    1. ONLY modify code inside the single EVOLVE-BLOCK-START/END section
-    2. Must use MLX primitives: mx.matmul, mx.softmax, mx.fast.*, etc.
-    3. Maintain numerical correctness (same outputs as MLX-LM baseline)
-    4. Keep tensor shapes: input [B,40,L,128] output [B,40,L,128]
-    5. Support causal masking and KV caching
-    6. Must actually improve upon mx.fast.scaled_dot_product_attention
+    **4. Apple Silicon Specific Features:**
+    ```metal
+    // OPTIMIZE: Use Apple GPU specific capabilities
     
-    # WHAT NOT TO DO (these are already optimized in MLX):
-    ❌ Don't use naive manual matrix multiplication
-    ❌ Don't use mx.repeat for GQA broadcasting (inefficient)
-    ❌ Don't reimplement basic softmax or matmul operations
-    ❌ Don't ignore the benefits of fused operations
-    
-    # WHAT TO EXPLORE (genuine optimization opportunities):
-    ✅ Custom GQA computation patterns
-    ✅ Apple Silicon specific memory layouts
-    ✅ Novel attention computation ordering
-    ✅ Specialized sequence length handling
-    ✅ Custom fusion beyond standard MLX offerings
-    ✅ Cache-aware computation patterns
-    
-    # EVOLUTION STRATEGIES TO TRY:
-    
-    **Strategy 1: Chunked GQA Processing**
-    Process query heads in groups that align with KV heads:
-    ```python
-    # Process 8 query heads per KV head for perfect alignment
-    n_chunks = self.n_heads // self.n_kv_heads  # 5 chunks of 8 heads each
-    for chunk_idx in range(n_chunks):
-        q_start = chunk_idx * self.n_kv_heads
-        q_end = q_start + self.n_kv_heads
-        # Process this 8-head chunk with corresponding KV head
+    // Example: Leverage unified memory bandwidth patterns
+    // Example: Optimize for Apple's SIMD group sizes (32 threads)
+    // Example: Use native half-precision operations efficiently
+    // Example: Minimize memory allocation overhead
     ```
     
-    **Strategy 2: Memory Layout Optimization**
-    Reorder computations for better cache locality:
-    ```python
-    # Ensure contiguous memory access patterns
-    # Optimize tensor layouts for Apple Silicon
-    # Minimize intermediate tensor allocations
+    **5. Vectorization and SIMD:**
+    ```metal
+    // CURRENT: Scalar operations with some vectorization
+    // OPTIMIZE: Full SIMD utilization
+    
+    // Example: Process multiple elements simultaneously
+    for (uint d = 0; d < HEAD_DIM; d += 8) {
+        // Process 8 elements at once
+        // Use Metal's built-in vector operations
+    }
+    
+    // Example: Vectorized dot products and accumulation
     ```
     
-    **Strategy 3: Adaptive Computation**
-    Use different strategies based on input characteristics:
-    ```python
-    # Adapt based on sequence length, batch size, etc.
-    # Use most efficient approach for each case
+    **6. Thread Group and Memory Hierarchy:**
+    ```metal
+    // OPTIMIZE: Better utilize Apple GPU memory hierarchy
+    
+    // Example: Use threadgroup memory for data sharing
+    threadgroup T shared_data[SHARED_SIZE];
+    
+    // Example: Optimize thread cooperation patterns
+    // Example: Balance register usage vs memory bandwidth
     ```
     
-    **Strategy 4: Custom Fused Operations**
-    Create custom fusion that goes beyond standard SDPA:
-    ```python
-    # Combine operations that MLX doesn't fuse automatically
-    # Integrate masking, scaling, and computation more efficiently
+    **7. Numerical Stability and Precision:**
+    ```metal
+    // OPTIMIZE: Maintain accuracy while improving performance
+    
+    // Example: More efficient max finding
+    // Example: Optimized exp() computation for softmax
+    // Example: Better handling of edge cases
     ```
     
-    # SUCCESS METRICS:
-    - Improvement over MLX-LM baseline: 10-20% decode speed increase
-    - Memory efficiency: similar or better than baseline
-    - Correctness: identical outputs to MLX-LM implementation
-    - Scalability: good performance across different sequence lengths
+    # EVOLUTION CONSTRAINTS - CRITICAL SAFETY RULES:
     
-    Focus on GENUINE improvements over the already-optimized MLX-LM baseline.
-    Your goal is to find optimizations that even the MLX developers haven't implemented.
-    This is challenging but represents real innovation opportunities.
+    **MUST NOT CHANGE:**
+    ❌ Kernel function signature or input/output specifications
+    ❌ Template parameter names or types (T, BATCH_SIZE, NUM_HEADS, etc.)
+    ❌ Overall algorithm correctness (must compute same attention result)
+    ❌ Thread grid mapping (thread_position_in_grid usage)
+    ❌ Bounds checking logic (batch_idx >= BATCH_SIZE checks)
+    ❌ Output tensor shapes or semantics
     
-  num_top_programs: 4
+    **ALLOWED TO OPTIMIZE:**
+    ✅ Memory access patterns and indexing within the kernel
+    ✅ Computation order and algorithm efficiency
+    ✅ Vectorization and SIMD utilization
+    ✅ Loop structures and data processing patterns
+    ✅ Variable declarations and data types within kernel
+    ✅ Mathematical operations and optimizations
+    ✅ GQA-specific computation strategies
+    ✅ Apple Silicon specific optimizations
+    
+    **METAL SYNTAX REQUIREMENTS:**
+    - Use proper Metal C++ syntax
+    - Maintain variable type consistency (T for tensor element type)
+    - Keep proper array indexing (no out-of-bounds access)
+    - Use valid Metal built-in functions and operations
+    - Ensure thread safety and proper synchronization
+    
+    # SPECIFIC OPTIMIZATION STRATEGIES TO TRY:
+    
+    **Strategy 1: Enhanced Vectorization**
+    ```metal
+    // Replace scalar operations with SIMD vector operations
+    // Process 4 or 8 elements simultaneously
+    // Use Metal's built-in vector math functions
+    ```
+    
+    **Strategy 2: Memory Access Optimization**
+    ```metal
+    // Reorganize memory access for better coalescing
+    // Pre-compute base indices once
+    // Cache frequently accessed values in registers
+    // Minimize redundant address calculations
+    ```
+    
+    **Strategy 3: Algorithm Fusion**
+    ```metal
+    // Combine max finding with score computation
+    // Fuse exp() computation with accumulation
+    // Reduce the number of passes through data
+    ```
+    
+    **Strategy 4: GQA Pattern Exploitation**
+    ```metal
+    // Optimize for the specific 5:1 query:KV ratio
+    // Process query heads in groups of 5
+    // Reduce KV head indexing overhead
+    ```
+    
+    **Strategy 5: Apple Silicon Specialization**
+    ```metal
+    // Use optimal thread group sizes for Apple GPUs
+    // Leverage unified memory architecture
+    // Optimize for Apple's specific SIMD characteristics
+    ```
+    
+    # SUCCESS CRITERIA:
+    - **Compilation**: Metal kernel must compile without syntax errors
+    - **Correctness**: Output must match MLX baseline (within float precision)
+    - **Performance**: Target 5-15% improvement in attention computation time
+    - **Memory**: Similar or better memory usage compared to baseline
+    - **Stability**: No crashes, undefined behavior, or numerical instability
+    
+    # IMPORTANT NOTES:
+    - Focus ONLY on optimizing the Metal kernel source code in the EVOLVE-BLOCK
+    - The kernel will be compiled using mx.fast.metal_kernel() automatically
+    - Maintain the exact same attention computation semantics
+    - Test with Qwen3's specific 40:8 head configuration
+    - Leverage Apple Silicon's unified memory and SIMD capabilities
+    
+    Your goal is to discover Metal kernel optimizations that outperform MLX's 
+    already highly-optimized scaled_dot_product_attention implementation.
+    
+  num_top_programs: 3
   num_diverse_programs: 2
 
 # Database configuration
 database:
-  db_path: "./openevolve_output/qwen3_mlx_optimization"
-  population_size: 50
-  archive_size: 20
-  num_islands: 4
-  elite_selection_ratio: 0.25
-  exploitation_ratio: 0.7
-  exploration_ratio: 0.3
+  db_path: "./openevolve_output/qwen3_metal_kernel_evolution"
+  population_size: 25
+  archive_size: 12
+  num_islands: 3
+  elite_selection_ratio: 0.3
+  exploitation_ratio: 0.65
+  exploration_ratio: 0.35
 
 # Evaluator configuration
 evaluator:
-  timeout: 600  # 5 minutes per evaluation
+  timeout: 900  # 15 minutes for Metal kernel compilation and testing
   parallel_evaluations: 1
 
 # Evolution settings
 diff_based_evolution: true
 allow_full_rewrites: false
-max_code_length: 50000
+max_code_length: 60000
