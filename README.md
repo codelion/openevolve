@@ -29,6 +29,17 @@ OpenEvolve follows an evolutionary approach with the following components:
 
 The controller orchestrates interactions between these components in an asynchronous pipeline, maximizing throughput to evaluate as many candidate solutions as possible.
 
+## System Design Principles
+- **Modularity**: The system is divided into distinct components (Controller, Database, Evaluator, LLMEnsemble, PromptSampler) with clear responsibilities. This promotes separation of concerns and makes the system easier to understand, maintain, and extend.
+- **Abstraction**: Each component hides its internal implementation details and exposes a well-defined interface. For example, the Controller interacts with the LLMEnsemble without needing to know the specifics of how LLMs are invoked.
+- **Extensibility**: The system is designed to be extensible. For example, new LLMs can be added to the LLMEnsemble, and new evaluation methods can be implemented in the Evaluator.
+- **Configuration**: The system is highly configurable through YAML files, allowing users to customize various aspects of the evolution process.
+- **Asynchronous Processing**: The use of `asyncio` and `TaskPool` suggests that the system is designed for asynchronous processing, which can improve performance by allowing multiple tasks to run concurrently.
+- **Fault Tolerance**: The Evaluator includes retry logic for evaluations, which helps to make the system more resilient to transient errors.
+- **Evolutionary Algorithm**: The core of the system is based on an evolutionary algorithm, which is a common approach for optimization and search problems. This involves concepts like population, selection, variation (mutation/crossover), and fitness evaluation.
+- **MAP-Elites**: The use of MAP-Elites in the ProgramDatabase helps to maintain diversity in the population by exploring different regions of the feature space.
+- **Island Model**: The island-based population model further promotes diversity by evolving multiple populations in parallel and periodically migrating individuals between them.
+
 ## Getting Started
 
 ### Installation
