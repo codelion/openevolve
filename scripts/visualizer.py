@@ -37,12 +37,30 @@ def load_evolution_data(checkpoint_folder):
 
     nodes = []
     id_to_program = {}
+    pids = set()
     for island_idx, id_list in enumerate(meta.get("islands", [])):
         for pid in id_list:
             prog_path = os.path.join(programs_dir, f"{pid}.json")
+
+            # Keep track of PIDs and if one is double, append "-copyN" to the PID
+            if pid in pids:
+                base_pid = pid
+
+                # If base_pid already has a "-copyN" suffix, strip it
+                if "-copy" in base_pid:
+                    base_pid = base_pid.rsplit("-copy", 1)[0]
+
+                # Find the next available copy number
+                copy_num = 1
+                while f"{base_pid}-copy{copy_num}" in pids:
+                    copy_num += 1
+                pid = f"{base_pid}-copy{copy_num}"
+            pids.add(pid)
+
             if os.path.exists(prog_path):
                 with open(prog_path) as pf:
                     prog = json.load(pf)
+                prog["id"] = pid
                 prog["island"] = island_idx
                 nodes.append(prog)
                 id_to_program[pid] = prog

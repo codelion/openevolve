@@ -35,6 +35,15 @@ export function showSidebarContent(d, fromHover = false) {
     if ((d.prompts && typeof d.prompts === 'object' && Object.keys(d.prompts).length > 0) || (d.artifacts_json && typeof d.artifacts_json === 'object' && Object.keys(d.artifacts_json).length > 0)) tabNames.push('Prompts');
     const children = allNodeData.filter(n => n.parent_id === d.id);
     if (children.length > 0) tabNames.push('Children');
+
+    // --- CLONES TAB LOGIC ---
+    function getBaseId(id) {
+        return id.includes('-copy') ? id.split('-copy')[0] : id;
+    }
+    const baseId = getBaseId(d.id);
+    const clones = allNodeData.filter(n => getBaseId(n.id) === baseId && n.id !== d.id);
+    if (clones.length > 0) tabNames.push('Clones');
+
     let activeTab = lastSidebarTab && tabNames.includes(lastSidebarTab) ? lastSidebarTab : tabNames[0];
 
     // Helper to render tab content
@@ -97,6 +106,13 @@ export function showSidebarContent(d, fromHover = false) {
                     let bar = (child.metrics && typeof child.metrics[metric] === 'number') ? renderMetricBar(child.metrics[metric], min, max) : '';
                     return `<li style='margin-bottom:0.3em;'><a href="#" class="child-link" data-child="${child.id}">${child.id}</a><br /><br /> <span style='margin-left:0.5em;'>${val}</span> ${bar}</li>`;
                 }).join('') +
+                `</ul></div>`;
+        }
+        if (tabName === 'Clones') {
+            return `<div><ul style='margin:0.5em 0 0 1em;padding:0;'>` +
+                clones.map(clone =>
+                    `<li style='margin-bottom:0.3em;'><a href="#" class="clone-link" data-clone="${clone.id}">${clone.id}</a></li>`
+                ).join('') +
                 `</ul></div>`;
         }
         return '';
@@ -178,6 +194,25 @@ export function showSidebarContent(d, fromHover = false) {
                             }
                         };
                     });
+                    document.querySelectorAll('.clone-link').forEach(link => {
+                        link.onclick = function(e) {
+                            e.preventDefault();
+                            const cloneNode = allNodeData.find(n => n.id == link.dataset.clone);
+                            if (cloneNode) {
+                                window._lastSelectedNodeData = cloneNode;
+                                const perfTabBtn = document.getElementById('tab-performance');
+                                const perfTabView = document.getElementById('view-performance');
+                                if ((perfTabBtn && perfTabBtn.classList.contains('active')) || (perfTabView && perfTabView.classList.contains('active'))) {
+                                    import('./performance.js').then(mod => {
+                                        mod.selectPerformanceNodeById(cloneNode.id);
+                                        showSidebar();
+                                    });
+                                } else {
+                                    scrollAndSelectNodeById(cloneNode.id);
+                                }
+                            }
+                        };
+                    });
                 }, 0);
             };
         });
@@ -200,6 +235,25 @@ export function showSidebarContent(d, fromHover = false) {
                         });
                     } else {
                         scrollAndSelectNodeById(childNode.id);
+                    }
+                }
+            };
+        });
+        document.querySelectorAll('.clone-link').forEach(link => {
+            link.onclick = function(e) {
+                e.preventDefault();
+                const cloneNode = allNodeData.find(n => n.id == link.dataset.clone);
+                if (cloneNode) {
+                    window._lastSelectedNodeData = cloneNode;
+                    const perfTabBtn = document.getElementById('tab-performance');
+                    const perfTabView = document.getElementById('view-performance');
+                    if ((perfTabBtn && perfTabBtn.classList.contains('active')) || (perfTabView && perfTabView.classList.contains('active'))) {
+                        import('./performance.js').then(mod => {
+                            mod.selectPerformanceNodeById(cloneNode.id);
+                            showSidebar();
+                        });
+                    } else {
+                        scrollAndSelectNodeById(cloneNode.id);
                     }
                 }
             };
