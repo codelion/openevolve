@@ -14,14 +14,14 @@ llm:
   max_tokens: 32000
   timeout: 600
 
-# Focused prompt for custom GQA kernel evolution
+# Focused prompt for genuine MLX Qwen3 optimization
 prompt:
   system_message: |
     You are an expert in optimizing attention kernels using MLX primitives for Apple Silicon.
     
-    # SPECIFIC TARGET: Custom GQA Attention Kernel Evolution
-    # CURRENT PERFORMANCE: 70.3 tokens/sec average decode speed
-    # GOAL: 80+ tokens/sec (14%+ improvement) through kernel-level optimizations
+    # SPECIFIC TARGET: MLX Qwen3 Attention Optimization
+    # BASELINE: Standard MLX-LM implementation using mx.fast.scaled_dot_product_attention
+    # GOAL: 10-20% improvement through genuine kernel-level innovations
     # HARDWARE: Apple M4 24GB unified memory
     
     # ARCHITECTURE DETAILS:
@@ -29,116 +29,159 @@ prompt:
     - Head dimension: 128, Hidden size: 5120
     - Sequence lengths: 128-2048 tokens, Precision: bfloat16
     
-    # CURRENT CUSTOM IMPLEMENTATION (Baseline to Evolve):
+    # CURRENT BASELINE (MLX-LM Standard Implementation):
     ```python
-    # Manual GQA broadcasting approach (can be optimized)
-    keys_expanded = mx.repeat(keys, self.gqa_ratio, axis=1)     # [B, 40, L, 128]
-    values_expanded = mx.repeat(values, self.gqa_ratio, axis=1) # [B, 40, L, 128]
+    # This is already highly optimized - your starting point
+    from mlx_lm.models.base import scaled_dot_product_attention
+    output = scaled_dot_product_attention(
+        queries, keys, values, cache=cache, scale=self.scale, mask=mask
+    )
     
-    # Standard attention computation (room for optimization)
-    scores = mx.matmul(queries, keys_expanded.transpose(0, 1, 3, 2)) * self.scale
-    attn_weights = mx.softmax(scores, axis=-1, precise=True)
-    output = mx.matmul(attn_weights, values_expanded)
+    # Which internally uses:
+    # mx.fast.scaled_dot_product_attention(queries, keys, values, scale=scale, mask=mask)
     ```
     
-    # KEY OPTIMIZATION OPPORTUNITIES:
+    # GENUINE OPTIMIZATION OPPORTUNITIES:
     
-    **1. GQA Broadcasting Strategies:**
-    Current: `mx.repeat` creates explicit copies of KV tensors
-    Alternatives:
-    - Chunked computation: Process 5 query heads per KV head separately
-    - On-demand broadcasting: Avoid materialized copies
-    - Strided access patterns: Direct indexing instead of repeat
-    - Memory-efficient reshaping: Better tensor layouts
+    **1. Beyond Standard SDPA:**
+    MLX's mx.fast.scaled_dot_product_attention is already optimized, but you can potentially improve by:
+    - Custom implementations that leverage the specific 40:8 GQA pattern
+    - Memory layout optimizations for Apple Silicon unified memory
+    - Novel computation ordering for better cache locality
+    - Specialized handling of sequence length patterns
     
-    **2. Computation Fusion:**
-    Current: Separate matmul → softmax → matmul operations
-    Opportunities:
-    - Fused attention kernels using mx.fast primitives
-    - Combined operations to reduce memory transfers
-    - Optimized scaling and masking integration
+    **2. Apple Silicon Specific Optimizations:**
+    - Leverage bfloat16 native operations more effectively
+    - Optimize for unified memory bandwidth patterns
+    - Use SIMD-friendly computation layouts
+    - Minimize memory allocation/deallocation overhead
     
-    **3. Memory Access Optimization:**
-    Apple Silicon unified memory allows specific optimizations:
-    - Coalesced memory access for 40-head query tensor
-    - Cache-friendly KV head access patterns
-    - Reduced intermediate tensor allocations
-    - Better transpose operation ordering
-    
-    **4. Apple Silicon Specific Optimizations:**
-    - bfloat16 native operations
-    - Metal Performance Shaders integration
-    - Unified memory bandwidth optimization
-    - SIMD-friendly computation patterns
-    
-    **5. Sequence Length Scaling:**
-    Current performance degrades with longer contexts
-    Opportunities:
-    - Better attention computation chunking
-    - Optimized causal mask application
-    - Memory-efficient large sequence handling
-    
-    # EVOLUTION CONSTRAINTS:
-    1. ONLY modify code inside the single EVOLVE-BLOCK-START/END section
-    2. Use MLX primitives: mx.matmul, mx.softmax, mx.repeat, mx.where, etc.
-    3. Maintain numerical correctness (same output as baseline)
-    4. Keep tensor shapes compatible: input [B,40,L,128] output [B,40,L,128]
-    5. Support causal masking for autoregressive generation
-    
-    # SPECIFIC EVOLUTION STRATEGIES TO EXPLORE:
-    
-    **Strategy 1: Chunked GQA Computation**
-    Instead of broadcasting, process query heads in groups:
+    **3. GQA Pattern Optimizations:**
+    Instead of relying on MLX's general GQA handling, create custom implementations:
     ```python
+    # Example: Process in 8-head chunks to match KV heads exactly
+    chunk_size = self.n_kv_heads  # 8
     outputs = []
-    for i in range(self.gqa_ratio):  # 5 iterations
-        q_chunk = queries[:, i*8:(i+1)*8, :, :]  # [B, 8, L, 128]
-        scores = mx.matmul(q_chunk, keys.transpose(0, 1, 3, 2)) * self.scale
-        attn_weights = mx.softmax(scores, axis=-1)
-        output_chunk = mx.matmul(attn_weights, values)
-        outputs.append(output_chunk)
+    for i in range(0, self.n_heads, chunk_size):
+        q_chunk = queries[:, i:i+chunk_size, :, :]  # [B, 8, L, 128]
+        k_chunk = keys[:, i//5, :, :].unsqueeze(1)  # Corresponding KV head
+        v_chunk = values[:, i//5, :, :].unsqueeze(1)
+        
+        # Custom attention computation for this chunk
+        chunk_output = custom_attention(q_chunk, k_chunk, v_chunk)
+        outputs.append(chunk_output)
+    
     output = mx.concatenate(outputs, axis=1)
     ```
     
-    **Strategy 2: Optimized Broadcasting**
-    Use reshape and tile operations instead of repeat:
+    **4. Memory Access Pattern Optimization:**
     ```python
-    # More memory-efficient broadcasting
-    keys_reshaped = keys[:, :, None, :, :].repeat(self.gqa_ratio, axis=2)
-    keys_expanded = keys_reshaped.reshape(B, -1, L, 128)
+    # Example: Reorder operations for better memory locality
+    # Instead of: Q @ K^T → softmax → @ V
+    # Try: Chunked computation with better cache usage
+    
+    # Tile-based computation
+    tile_size = 64  # Optimize for L1 cache
+    for i in range(0, L, tile_size):
+        for j in range(0, L, tile_size):
+            # Process attention in tiles for better memory locality
     ```
     
-    **Strategy 3: Fused Operations**
-    Combine multiple operations to reduce memory transfers:
+    **5. Operation Fusion Beyond Standard:**
     ```python
-    # Fused scaled dot-product attention using mx.fast primitives
-    # This might leverage optimized Metal kernels
+    # Custom fused operations that MLX might not provide
+    # Combine scaling, masking, and computation in single kernels
+    # Fuse RoPE application with attention computation
+    # Integrate KV cache operations more efficiently
     ```
     
-    **Strategy 4: Memory Layout Optimization**
-    Optimize tensor layouts for Apple Silicon:
+    **6. Sequence Length Specific Optimizations:**
     ```python
-    # Ensure contiguous memory layouts
-    # Optimize transpose operations
-    # Reduce intermediate allocations
+    # Different strategies for different sequence lengths
+    if L <= 512:
+        # Use memory-intensive but fast approach
+        return fast_short_sequence_attention(...)
+    elif L <= 2048:
+        # Balanced approach
+        return balanced_attention(...)
+    else:
+        # Memory-efficient approach for long sequences
+        return memory_efficient_attention(...)
     ```
     
-    # SUCCESS METRICS (from benchmark suite):
-    - Average decode speed: 70.3 → 80+ tokens/sec (14%+ improvement)
-    - Memory efficiency: maintain <2GB usage
-    - Scaling: reduce performance drop with longer contexts
-    - Correctness: identical outputs to baseline implementation
+    # EVOLUTION CONSTRAINTS:
+    1. ONLY modify code inside the single EVOLVE-BLOCK-START/END section
+    2. Must use MLX primitives: mx.matmul, mx.softmax, mx.fast.*, etc.
+    3. Maintain numerical correctness (same outputs as MLX-LM baseline)
+    4. Keep tensor shapes: input [B,40,L,128] output [B,40,L,128]
+    5. Support causal masking and KV caching
+    6. Must actually improve upon mx.fast.scaled_dot_product_attention
     
-    Focus on CONCRETE kernel optimizations using MLX primitives.
-    Test different GQA computation strategies systematically.
-    Prioritize memory bandwidth efficiency and computation fusion.
+    # WHAT NOT TO DO (these are already optimized in MLX):
+    ❌ Don't use naive manual matrix multiplication
+    ❌ Don't use mx.repeat for GQA broadcasting (inefficient)
+    ❌ Don't reimplement basic softmax or matmul operations
+    ❌ Don't ignore the benefits of fused operations
+    
+    # WHAT TO EXPLORE (genuine optimization opportunities):
+    ✅ Custom GQA computation patterns
+    ✅ Apple Silicon specific memory layouts
+    ✅ Novel attention computation ordering
+    ✅ Specialized sequence length handling
+    ✅ Custom fusion beyond standard MLX offerings
+    ✅ Cache-aware computation patterns
+    
+    # EVOLUTION STRATEGIES TO TRY:
+    
+    **Strategy 1: Chunked GQA Processing**
+    Process query heads in groups that align with KV heads:
+    ```python
+    # Process 8 query heads per KV head for perfect alignment
+    n_chunks = self.n_heads // self.n_kv_heads  # 5 chunks of 8 heads each
+    for chunk_idx in range(n_chunks):
+        q_start = chunk_idx * self.n_kv_heads
+        q_end = q_start + self.n_kv_heads
+        # Process this 8-head chunk with corresponding KV head
+    ```
+    
+    **Strategy 2: Memory Layout Optimization**
+    Reorder computations for better cache locality:
+    ```python
+    # Ensure contiguous memory access patterns
+    # Optimize tensor layouts for Apple Silicon
+    # Minimize intermediate tensor allocations
+    ```
+    
+    **Strategy 3: Adaptive Computation**
+    Use different strategies based on input characteristics:
+    ```python
+    # Adapt based on sequence length, batch size, etc.
+    # Use most efficient approach for each case
+    ```
+    
+    **Strategy 4: Custom Fused Operations**
+    Create custom fusion that goes beyond standard SDPA:
+    ```python
+    # Combine operations that MLX doesn't fuse automatically
+    # Integrate masking, scaling, and computation more efficiently
+    ```
+    
+    # SUCCESS METRICS:
+    - Improvement over MLX-LM baseline: 10-20% decode speed increase
+    - Memory efficiency: similar or better than baseline
+    - Correctness: identical outputs to MLX-LM implementation
+    - Scalability: good performance across different sequence lengths
+    
+    Focus on GENUINE improvements over the already-optimized MLX-LM baseline.
+    Your goal is to find optimizations that even the MLX developers haven't implemented.
+    This is challenging but represents real innovation opportunities.
     
   num_top_programs: 4
   num_diverse_programs: 2
 
 # Database configuration
 database:
-  db_path: "./openevolve_output/qwen3_custom_gqa"
+  db_path: "./openevolve_output/qwen3_mlx_optimization"
   population_size: 50
   archive_size: 20
   num_islands: 4
