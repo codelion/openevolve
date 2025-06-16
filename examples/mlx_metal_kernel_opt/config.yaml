@@ -1,5 +1,5 @@
-max_iterations: 35
-checkpoint_interval: 7
+max_iterations: 50
+checkpoint_interval: 10
 log_level: "INFO"
 
 # LLM configuration for Metal kernel optimization
