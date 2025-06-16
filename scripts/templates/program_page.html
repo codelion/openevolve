@@ -31,5 +31,9 @@
             <li><strong>{{ key }}:</strong> <pre style="white-space: pre-wrap; word-break: break-word;">{{ value }}</pre></li>
         {% endfor %}
     </ul>
+    {% if artifacts_json %}
+    <h2>Artifacts:</h2>
+    <pre style="white-space: pre-wrap; word-break: break-word;">{{ artifacts_json }}</pre>
+    {% endif %}
 </body>
 </html>

@@ -104,6 +104,9 @@ class ProgramDatabase:
         if config.db_path and os.path.exists(config.db_path):
             self.load(config.db_path)
 
+        # Prompt log
+        self.prompts_by_program: Dict[str, Dict[str, Dict[str, str]]] = None
+
         # Set random seed for reproducible sampling if specified
         if config.random_seed is not None:
             import random
@@ -314,7 +317,14 @@ class ProgramDatabase:
 
         # Save each program
         for program in self.programs.values():
-            self._save_program(program, save_path)
+            prompts = None
+            if (
+                self.config.log_prompts
+                and self.prompts_by_program
+                and program.id in self.prompts_by_program
+            ):
+                prompts = self.prompts_by_program[program.id]
+            self._save_program(program, save_path, prompts=prompts)
 
         # Save metadata
         metadata = {
@@ -382,13 +392,19 @@ class ProgramDatabase:
 
         logger.info(f"Loaded database with {len(self.programs)} programs from {path}")
 
-    def _save_program(self, program: Program, base_path: Optional[str] = None) -> None:
+    def _save_program(
+        self,
+        program: Program,
+        base_path: Optional[str] = None,
+        prompts: Optional[Dict[str, Dict[str, str]]] = None,
+    ) -> None:
         """
         Save a program to disk
 
         Args:
             program: Program to save
             base_path: Base path to save to (uses config.db_path if None)
+            prompts: Optional prompts to save with the program, in the format {template_key: { 'system': str, 'user': str }}
         """
         save_path = base_path or self.config.db_path
         if not save_path:
@@ -399,9 +415,13 @@ class ProgramDatabase:
         os.makedirs(programs_dir, exist_ok=True)
 
         # Save program
+        program_dict = program.to_dict()
+        if prompts:
+            program_dict["prompts"] = prompts
         program_path = os.path.join(programs_dir, f"{program.id}.json")
+
         with open(program_path, "w") as f:
-            json.dump(program.to_dict(), f)
+            json.dump(program_dict, f)
 
     def _calculate_feature_coords(self, program: Program) -> List[int]:
         """
@@ -1079,3 +1099,35 @@ class ProgramDatabase:
             logger.warning(f"Failed to list artifact directory {artifact_dir}: {e}")
 
         return artifacts
+
+    def log_prompt(
+        self,
+        program_id: str,
+        template_key: str,
+        prompt: Dict[str, str],
+        responses: Optional[List[str]] = None,
+    ) -> None:
+        """
+        Log a prompt for a program.
+        Only logs if self.config.log_prompts is True.
+
+        Args:
+        program_id: ID of the program to log the prompt for
+        template_key: Key for the prompt template
+        prompt: Prompts in the format {template_key: { 'system': str, 'user': str }}.
+        responses: Optional list of responses to the prompt, if available.
+        """
+
+        if not self.config.log_prompts:
+            return
+
+        if responses is None:
+            responses = []
+        prompt["responses"] = responses
+
+        if self.prompts_by_program is None:
+            self.prompts_by_program = {}
+
+        if program_id not in self.prompts_by_program:
+            self.prompts_by_program[program_id] = {}
+        self.prompts_by_program[program_id][template_key] = prompt

@@ -71,6 +71,7 @@ database:
   # General settings
   db_path: null                       # Path to persist database (null = in-memory only)
   in_memory: true                     # Keep database in memory for faster access
+  log_prompts: true                  # If true, log all prompts and responses into the database
 
   # Evolutionary parameters
   population_size: 1000               # Maximum number of programs to keep in memory

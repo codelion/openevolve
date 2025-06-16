@@ -16,6 +16,7 @@ help:
 	@echo "  test           - Run tests"
 	@echo "  docker-build   - Build the Docker image"
 	@echo "  docker-run     - Run the Docker container with the example"
+	@echo "  visualizer     - Run the visualization script"
 
 .PHONY: all
 all: install test

@@ -61,11 +61,22 @@ export function renderNodeList(nodes) {
       </div>
     `;
     container.innerHTML = '';
-    filtered.forEach(node => {
+    filtered.forEach((node, idx) => {
         const row = document.createElement('div');
         row.className = 'node-list-item' + (selectedProgramId === node.id ? ' selected' : '') + (highlightIds.has(node.id) ? ' highlighted' : '');
         row.setAttribute('data-node-id', node.id);
         row.tabIndex = 0;
+
+        const numDiv = document.createElement('div');
+        numDiv.textContent = `#${idx + 1}`;
+        numDiv.style.fontSize = '2.2em';
+        numDiv.style.fontWeight = 'bold';
+        numDiv.style.color = '#444';
+        numDiv.style.flex = '0 0 70px';
+        numDiv.style.display = 'flex';
+        numDiv.style.alignItems = 'center';
+        numDiv.style.justifyContent = 'center';
+        row.appendChild(numDiv);
         let selectedMetricRow = '';
         if (node.metrics && metric in node.metrics) {
             let val = (typeof node.metrics[metric] === 'number' && isFinite(node.metrics[metric])) ? node.metrics[metric].toFixed(4) : node.metrics[metric];
