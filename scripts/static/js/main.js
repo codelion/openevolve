@@ -106,6 +106,13 @@ function loadAndRenderData(data) {
     metricSelect.addEventListener('change', function() {
         localStorage.setItem('selectedMetric', metricSelect.value);
     });
+    const perfTab = document.getElementById('tab-performance');
+    const perfView = document.getElementById('view-performance');
+    if (perfTab && perfView && (perfTab.classList.contains('active') || perfView.style.display !== 'none')) {
+        if (window.updatePerformanceGraph) {
+            window.updatePerformanceGraph(data.nodes);
+        }
+    }
 }
 
 if (window.STATIC_DATA) {
