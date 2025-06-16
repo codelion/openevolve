@@ -236,7 +236,7 @@ def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
         return mx.fast.scaled_dot_product_attention(queries, keys, values, scale=scale, mask=mask)
 
 
-class CustomMetalGQAAttention(nn.Module):
+class CustomGQAAttention(nn.Module):
     """
     Qwen3 attention module with custom Metal kernel optimization.
     
@@ -332,7 +332,7 @@ def create_metal_qwen3_optimization_hook():
             original_attention = qwen3_module.Attention
 
             # Replace with Metal optimized implementation
-            qwen3_module.Attention = CustomMetalGQAAttention
+            qwen3_module.Attention = CustomGQAAttention
 
             print("✅ Applied Custom Metal GQA Attention hook")
             return original_attention
@@ -384,7 +384,7 @@ def benchmark_metal_gqa_optimization():
     print("=" * 70)
 
     # Initialize Metal optimized attention
-    metal_attn = CustomMetalGQAAttention(args)
+    metal_attn = CustomGQAAttention(args)
 
     for config_name, batch_size, seq_len, hidden_size in test_configs:
         print(f"\nTesting {config_name}: B={batch_size}, L={seq_len}")
@@ -443,7 +443,7 @@ def test_metal_gqa_correctness():
     mask = "causal"
 
     # Test Metal optimized implementation
-    metal_attn = CustomMetalGQAAttention(args)
+    metal_attn = CustomGQAAttention(args)
     output = metal_attn(x, mask=mask)
 
     print(f"✅ Metal GQA output shape: {output.shape}")
