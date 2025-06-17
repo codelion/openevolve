@@ -354,9 +354,7 @@ class OpenEvolve:
 
                 # Specifically check if this is the new best program
                 if self.database.best_program_id == child_program.id:
-                    logger.info(
-                        f"🌟 New best solution found at iteration {i+1}: {child_program.id}"
-                    )
+                    logger.info(f"🌟 New best solution found at iteration {i+1}: {child_program.id}")
                     logger.info(f"Metrics: {format_metrics_safe(child_program.metrics)}")
 
                 # Save checkpoint

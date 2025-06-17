@@ -24,22 +24,22 @@ import time
 def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
     """
     Custom Metal kernel implementation for Qwen3 GQA attention.
-    
+
     Args:
-        queries: [B, num_heads=40, L, head_dim=128] 
+        queries: [B, num_heads=40, L, head_dim=128]
         keys: [B, num_kv_heads=8, L, head_dim=128]
         values: [B, num_kv_heads=8, L, head_dim=128]
         scale: Attention scaling factor (1/sqrt(head_dim))
         mask: Attention mask (None, "causal", or boolean tensor)
-        
+
     Returns:
         Attention output [B, num_heads=40, L, head_dim=128]
     """
-    
+
     B, num_heads, L, head_dim = queries.shape
     _, num_kv_heads, _, _ = keys.shape
     heads_per_kv = num_heads // num_kv_heads  # Should be 5 for Qwen3
-    
+
     # Handle mask conversion
     if mask == "causal" or mask is None:
         # Create causal mask for autoregressive attention
@@ -56,13 +56,13 @@ def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
     else:
         # Fallback for unsupported mask types
         return mx.fast.scaled_dot_product_attention(queries, keys, values, scale=scale, mask=mask)
-    
+
     # Expand mask to match batch and head dimensions if needed
     if mask_tensor.ndim == 2:
         mask_tensor = mx.broadcast_to(mask_tensor[None, None, :, :], (B, num_heads, L, L))
     elif mask_tensor.ndim == 3:
         mask_tensor = mx.broadcast_to(mask_tensor[:, None, :, :], (B, num_heads, L, L))
-    
+
     # EVOLVE-BLOCK-START
     # Custom Metal kernel source for Qwen3 GQA optimization
     # This kernel leverages the 40:8 head ratio and Apple Silicon architecture
@@ -193,12 +193,12 @@ def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
     }
     """
     # EVOLVE-BLOCK-END
-    
+
     try:
         # Prepare kernel inputs
         scale_tensor = mx.array([scale], dtype=queries.dtype)
         use_mask_tensor = mx.array([1 if use_mask else 0], dtype=mx.int32)
-        
+
         # Create and execute custom Metal kernel
         kernel = mx.fast.metal_kernel(
             name="qwen3_gqa_attention_kernel",
@@ -206,10 +206,10 @@ def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
             output_names=["output"],
             source=kernel_source,
         )
-        
+
         # Optimize thread group size for Apple Silicon
         threadgroup_size = min(32, L)  # Adapt to sequence length
-        
+
         # Execute kernel
         outputs = kernel(
             inputs=[queries, keys, values, mask_tensor, scale_tensor, use_mask_tensor],
@@ -227,9 +227,9 @@ def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
                 ("HEADS_PER_KV", heads_per_kv),
             ],
         )
-        
+
         return outputs[0]
-        
+
     except Exception as e:
         # Fallback to standard MLX implementation if custom kernel fails
         print(f"⚠️ Custom GQA kernel failed: {e}, falling back to MLX SPDA")
@@ -239,7 +239,7 @@ def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
 class CustomGQAAttention(nn.Module):
     """
     Qwen3 attention module with custom Metal kernel optimization.
-    
+
     This module integrates the custom Metal kernel while maintaining
     compatibility with the standard MLX-LM interface.
     """
@@ -268,6 +268,7 @@ class CustomGQAAttention(nn.Module):
         # Standard MLX-LM RoPE
         try:
             from mlx_lm.models.rope_utils import initialize_rope
+
             self.rope = initialize_rope(
                 head_dim,
                 base=args.rope_theta,
@@ -278,7 +279,7 @@ class CustomGQAAttention(nn.Module):
         except ImportError:
             print("⚠️ Could not import mlx_lm rope_utils, using basic RoPE")
             self.rope = None
-        
+
         print(f"🔧 Initialized Custom Metal GQA Attention")
         print(f"   📊 Architecture: {n_heads}:{n_kv_heads} heads ({n_heads//n_kv_heads}:1 ratio)")
         print(f"   🎯 Head dimension: {head_dim}")
@@ -447,11 +448,11 @@ def test_metal_gqa_correctness():
     output = metal_attn(x, mask=mask)
 
     print(f"✅ Metal GQA output shape: {output.shape}")
-    
+
     # Check for valid output
     has_nan = bool(mx.any(mx.isnan(output)))
     has_inf = bool(mx.any(mx.isinf(output)))
-    
+
     print(f"✅ Has NaN: {has_nan}, Has Inf: {has_inf}")
 
     # Check output statistics
@@ -467,10 +468,10 @@ def test_metal_gqa_correctness():
     k = mx.random.normal((B, 8, L, D))  # 8 KV heads
     v = mx.random.normal((B, 8, L, D))
     scale = 1.0 / math.sqrt(D)
-    
+
     kernel_output = qwen3_custom_gqa_attention(q, k, v, scale=scale, mask="causal")
     print(f"✅ Direct kernel output shape: {kernel_output.shape}")
-    
+
     kernel_mean = float(mx.mean(kernel_output))
     kernel_std = float(mx.std(kernel_output))
     print(f"✅ Direct kernel stats - Mean: {kernel_mean:.6f}, Std: {kernel_std:.6f}")
@@ -494,7 +495,7 @@ if __name__ == "__main__":
     print("Ready for Metal Kernel Evolution")
     print("Evolution focus:")
     print("1. 🔧 Metal kernel source code optimization")
-    print("2. 💾 Memory access pattern improvements for Apple Silicon") 
+    print("2. 💾 Memory access pattern improvements for Apple Silicon")
     print("3. 🎯 GQA-specific optimizations for 40:8 head ratio")
     print("4. ⚡ Vectorization and SIMD optimization")
     print("5. 🚀 Thread group and grid configuration tuning")

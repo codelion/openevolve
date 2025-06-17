@@ -91,6 +91,7 @@ def run_compare_benchmarks(args):
     except Exception as e:
         print(f"❌ Error in comparison benchmark: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
@@ -104,9 +105,7 @@ def run_optimized_benchmark(args, original_dir):
     """
     try:
         # Import the optimized attention implementation
-        best_program_path = os.path.join(
-            original_dir, "best_program.py"
-        )
+        best_program_path = os.path.join(original_dir, "best_program.py")
 
         if not os.path.exists(best_program_path):
             print(f"❌ Error: Optimized program not found at {best_program_path}")
@@ -127,15 +126,20 @@ def run_optimized_benchmark(args, original_dir):
         print("✅ Optimized program loaded successfully")
 
         # Check for the hook function
-        if not hasattr(best_program, 'create_metal_qwen3_optimization_hook'):
-            print("❌ Error: create_metal_qwen3_optimization_hook function not found in best_program.py")
-            print("Available functions:", [attr for attr in dir(best_program) if not attr.startswith('_')])
+        if not hasattr(best_program, "create_metal_qwen3_optimization_hook"):
+            print(
+                "❌ Error: create_metal_qwen3_optimization_hook function not found in best_program.py"
+            )
+            print(
+                "Available functions:",
+                [attr for attr in dir(best_program) if not attr.startswith("_")],
+            )
             return None
 
         # Apply the custom attention hook
         apply_hook, remove_hook = best_program.create_metal_qwen3_optimization_hook()
         print("🔧 Applying optimized attention hook...")
-        
+
         original_attention = apply_hook()
 
         if original_attention is None:
@@ -149,8 +153,10 @@ def run_optimized_benchmark(args, original_dir):
             # Run benchmarks with optimized attention
             print("📊 Running full benchmark suite with chunked GQA optimization...")
             print("⏳ This will take another 15-30 minutes...")
-            print("💡 The optimization uses chunked processing: 8 smaller attention calls vs 1 large call")
-            
+            print(
+                "💡 The optimization uses chunked processing: 8 smaller attention calls vs 1 large call"
+            )
+
             optimized_suite = Qwen3BenchmarkSuite(args.model)
             optimized_results = optimized_suite.run_full_benchmark_suite()
 
@@ -166,6 +172,7 @@ def run_optimized_benchmark(args, original_dir):
     except Exception as e:
         print(f"❌ Error running optimized benchmark: {e}")
         import traceback
+
         traceback.print_exc()
         return None
 
@@ -291,16 +298,22 @@ def analyze_comparison_results(standard_results, optimized_results, model_name):
             aggregate_stats[f"{key}_std"] = np.std(values)
 
     # Calculate overall metrics
-    std_decode_speeds = [std_result["decode_tokens_per_sec"] for std_result in standard_benchmarks.values()]
-    opt_decode_speeds = [opt_result["decode_tokens_per_sec"] for opt_result in optimized_benchmarks.values()]
-    
+    std_decode_speeds = [
+        std_result["decode_tokens_per_sec"] for std_result in standard_benchmarks.values()
+    ]
+    opt_decode_speeds = [
+        opt_result["decode_tokens_per_sec"] for opt_result in optimized_benchmarks.values()
+    ]
+
     avg_std_decode = np.mean(std_decode_speeds) if std_decode_speeds else 0
     avg_opt_decode = np.mean(opt_decode_speeds) if opt_decode_speeds else 0
 
     print(f"📊 Analysis complete:")
     print(f"  📈 Average standard decode speed: {avg_std_decode:.1f} tokens/sec")
     print(f"  📈 Average optimized decode speed: {avg_opt_decode:.1f} tokens/sec")
-    print(f"  📈 Average improvement: {aggregate_stats.get('decode_speed_improvements_avg', 0):.1f}%")
+    print(
+        f"  📈 Average improvement: {aggregate_stats.get('decode_speed_improvements_avg', 0):.1f}%"
+    )
 
     return {
         "model": model_name,
@@ -316,7 +329,9 @@ def analyze_comparison_results(standard_results, optimized_results, model_name):
             "avg_time_reduction_pct": aggregate_stats.get("time_improvements_avg", 0),
             "avg_standard_decode_speed": avg_std_decode,
             "avg_optimized_decode_speed": avg_opt_decode,
-            "benchmarks_improved": sum(1 for x in improvements["decode_speed_improvements"] if x > 0),
+            "benchmarks_improved": sum(
+                1 for x in improvements["decode_speed_improvements"] if x > 0
+            ),
             "total_benchmarks": len(improvements["decode_speed_improvements"]),
         },
     }
@@ -350,7 +365,7 @@ def save_comparison_results(comparison_results, output_dir):
                 "standard_decode_speed",
                 "optimized_decode_speed",
                 "decode_improvement_pct",
-                "standard_prefill_speed", 
+                "standard_prefill_speed",
                 "optimized_prefill_speed",
                 "prefill_improvement_pct",
                 "standard_total_speed",
@@ -429,11 +444,13 @@ def print_comparison_summary(comparison_results):
     print(f"  ⚡ Average Total Speed Improvement:  {summary['avg_total_improvement_pct']:+.2f}%")
     print(f"  💾 Average Memory Reduction:        {summary['avg_memory_reduction_pct']:+.2f}%")
     print(f"  ⏱️  Average Time Reduction:          {summary['avg_time_reduction_pct']:+.2f}%")
-    
+
     print(f"\n📊 ABSOLUTE PERFORMANCE:")
     print(f"  🔵 Standard MLX-LM:  {summary['avg_standard_decode_speed']:.1f} tokens/sec average")
     print(f"  🟢 Chunked GQA:      {summary['avg_optimized_decode_speed']:.1f} tokens/sec average")
-    print(f"  📈 Net Improvement:  {summary['avg_optimized_decode_speed'] - summary['avg_standard_decode_speed']:+.1f} tokens/sec")
+    print(
+        f"  📈 Net Improvement:  {summary['avg_optimized_decode_speed'] - summary['avg_standard_decode_speed']:+.1f} tokens/sec"
+    )
 
     print(f"\n📊 DETAILED BENCHMARK COMPARISON:")
     print(f"{'='*110}")
@@ -445,8 +462,11 @@ def print_comparison_summary(comparison_results):
     )
     print(f"{'-'*110}")
 
-    for comp in sorted(comparison_results["individual_comparisons"], 
-                      key=lambda x: x["improvements"]["decode_speed_pct"], reverse=True):
+    for comp in sorted(
+        comparison_results["individual_comparisons"],
+        key=lambda x: x["improvements"]["decode_speed_pct"],
+        reverse=True,
+    ):
         name = comp["benchmark_name"][:29]
         std_decode = comp["standard"]["decode_tokens_per_sec"]
         opt_decode = comp["optimized"]["decode_tokens_per_sec"]
@@ -499,14 +519,20 @@ def print_comparison_summary(comparison_results):
 
     if summary["avg_decode_improvement_pct"] > 15:
         print(f"  🎉 EXCELLENT: OpenEvolve discovered a significant optimization!")
-        print(f"  💡 {summary['avg_decode_improvement_pct']:.1f}% average improvement is substantial")
+        print(
+            f"  💡 {summary['avg_decode_improvement_pct']:.1f}% average improvement is substantial"
+        )
         print(f"  🔬 This warrants further investigation and potential MLX-LM contribution")
     elif summary["avg_decode_improvement_pct"] > 5:
         print(f"  📈 GOOD: Meaningful performance improvements achieved")
-        print(f"  🔧 {summary['avg_decode_improvement_pct']:.1f}% improvement shows optimization potential")
+        print(
+            f"  🔧 {summary['avg_decode_improvement_pct']:.1f}% improvement shows optimization potential"
+        )
     elif summary["avg_decode_improvement_pct"] > 0:
         print(f"  📊 MODEST: Some improvements observed")
-        print(f"  💭 {summary['avg_decode_improvement_pct']:.1f}% suggests room for further optimization")
+        print(
+            f"  💭 {summary['avg_decode_improvement_pct']:.1f}% suggests room for further optimization"
+        )
     else:
         print(f"  ⚠️  No overall improvement detected")
         print(f"  🔧 Consider running additional evolution cycles or different strategies")
