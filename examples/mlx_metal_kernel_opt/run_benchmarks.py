@@ -105,7 +105,7 @@ def run_optimized_benchmark(args, original_dir):
     try:
         # Import the optimized attention implementation
         best_program_path = os.path.join(
-            original_dir, "openevolve_output", "best", "best_program.py"
+            original_dir, "best_program.py"
         )
 
         if not os.path.exists(best_program_path):
@@ -127,8 +127,8 @@ def run_optimized_benchmark(args, original_dir):
         print("✅ Optimized program loaded successfully")
 
         # Check for the hook function
-        if not hasattr(best_program, 'create_qwen3_optimization_hook'):
-            print("❌ Error: create_qwen3_optimization_hook function not found in best_program.py")
+        if not hasattr(best_program, 'create_metal_qwen3_optimization_hook'):
+            print("❌ Error: create_metal_qwen3_optimization_hook function not found in best_program.py")
             print("Available functions:", [attr for attr in dir(best_program) if not attr.startswith('_')])
             return None
 
