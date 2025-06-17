@@ -1,26 +1,20 @@
 """
-Robust Qwen3 Custom GQA Attention Evaluator with Comprehensive Metal Kernel Error Handling
+Thread-Safe Robust Qwen3 Custom GQA Attention Evaluator
 
-This evaluator provides bulletproof protection against Metal kernel failures that terminate evolution:
+This evaluator provides bulletproof protection against Metal kernel failures without using signals:
 
-🛡️ PROTECTION FEATURES:
-1. Signal-based timeout handling for hanging Metal kernels
-2. Comprehensive C++ exception catching with try-catch blocks
-3. Process isolation for dangerous Metal kernel execution  
-4. Retry mechanisms with exponential backoff
-5. Graceful fallback to standard attention on failures
-6. Detailed error classification and recovery strategies
+🛡️ THREAD-SAFE PROTECTION:
+1. No signal-based timeouts (works in worker threads)
+2. Comprehensive C++ exception catching
+3. Retry mechanisms with exponential backoff  
+4. Graceful fallback to standard attention on failures
+5. Detailed error classification and recovery
 
 🔧 EVOLUTION SAFETY:
 - Never terminates the evolution process due to kernel errors
+- Works perfectly in OpenEvolve's worker threads
 - Provides meaningful feedback on kernel failure types
-- Maintains evaluation progress even with problematic kernels
 - Statistical tracking of Metal kernel error patterns
-
-Evolution Target:
-- Custom GQA implementation using MLX primitives
-- 40:8 query-to-KV head pattern optimization
-- Safe evolution despite Metal kernel instability
 """
 
 import os
@@ -28,9 +22,7 @@ import sys
 import json
 import time
 import traceback
-import signal
-import subprocess
-import tempfile
+import threading
 from typing import Dict, List, Tuple, Any, Optional
 import numpy as np
 
@@ -49,21 +41,20 @@ class MetalKernelError(Exception):
     pass
 
 
-class TimeoutError(Exception):
-    """Custom timeout exception for compatibility"""
+class ThreadSafeTimeoutError(Exception):
+    """Thread-safe timeout exception"""
     pass
 
 
-class RobustCustomGQAEvaluator:
-    """Bulletproof evaluator that never crashes from Metal kernel errors"""
+class ThreadSafeRobustEvaluator:
+    """Thread-safe bulletproof evaluator that never crashes from Metal kernel errors"""
 
     def __init__(self):
         self.model_path = "mlx-community/Qwen3-0.6B-bf16"
         
-        # Error handling configuration
-        self.metal_kernel_timeout = 45  # 45 second timeout for Metal operations
+        # Error handling configuration (no signal-based timeouts)
+        self.metal_kernel_timeout = 45  # Reference only, no actual timeout enforcement
         self.max_retry_attempts = 2
-        self.use_process_isolation = False  # Disable for now, causes import issues
         
         # Error tracking
         self.metal_errors_caught = 0
@@ -77,27 +68,26 @@ class RobustCustomGQAEvaluator:
         # Use comprehensive benchmark suite for consistency
         self.benchmark_suite = Qwen3BenchmarkSuite(self.model_path)
 
-        print("🛡️  Initialized Robust Custom GQA Evaluator")
+        print("🛡️  Initialized Thread-Safe Robust Custom GQA Evaluator")
         print(f"📱 Model: {self.model_path}")
-        print(f"⏱️  Metal kernel timeout: {self.metal_kernel_timeout}s")
         print(f"🔁 Max retry attempts: {self.max_retry_attempts}")
-        print(f"🚫 Process isolation: {self.use_process_isolation}")
+        print(f"🧵 Thread-safe: No signal dependencies")
 
     def evaluate(self, program_text: str) -> Dict[str, Any]:
         """
-        Bulletproof evaluation that never crashes:
+        Thread-safe bulletproof evaluation that never crashes:
         1. Safe extraction with syntax validation
         2. Protected baseline measurement  
-        3. Isolated correctness testing with timeouts
+        3. Isolated correctness testing
         4. Robust benchmarking with retries
         5. Comprehensive Metal kernel error recovery
         """
 
         print("\n" + "=" * 100)
-        print("🛡️  BULLETPROOF CUSTOM GQA ATTENTION EVALUATION")
+        print("🛡️  THREAD-SAFE BULLETPROOF CUSTOM GQA ATTENTION EVALUATION")
         print("=" * 100)
         print("✅ Comprehensive Metal kernel error protection")
-        print("✅ Signal-based timeout handling")
+        print("✅ Thread-safe operation (no signal dependencies)")
         print("✅ Multi-layer exception catching")
         print("✅ Automatic retry with exponential backoff")
         print("✅ Never crashes the evolution process")
@@ -111,7 +101,7 @@ class RobustCustomGQAEvaluator:
 
             # Step 1: Ultra-safe extraction
             print("\n🔧 STEP 1: Ultra-Safe Custom Attention Class Extraction")
-            extraction_result = self._bulletproof_extract_custom_attention_class(program_text)
+            extraction_result = self._thread_safe_extract_custom_attention_class(program_text)
             if not extraction_result["success"]:
                 return self._create_failure_result(f"Extraction failed: {extraction_result['error']}")
             
@@ -123,9 +113,9 @@ class RobustCustomGQAEvaluator:
             if not baseline_results:
                 return self._create_failure_result("Failed to measure baseline performance safely")
 
-            # Step 3: Bulletproof correctness testing
-            print("\n🔍 STEP 3: Bulletproof Custom Attention Correctness Testing")
-            correctness_result = self._bulletproof_correctness_test(custom_attention_class)
+            # Step 3: Thread-safe correctness testing
+            print("\n🔍 STEP 3: Thread-Safe Custom Attention Correctness Testing")
+            correctness_result = self._thread_safe_correctness_test(custom_attention_class)
             if not correctness_result["success"]:
                 return self._create_failure_result(f"Correctness test failed: {correctness_result['error']}")
             
@@ -184,10 +174,10 @@ class RobustCustomGQAEvaluator:
             traceback.print_exc()
             return self._create_failure_result(error_msg)
 
-    def _bulletproof_extract_custom_attention_class(self, program_text: str) -> Dict[str, Any]:
-        """Ultra-safe extraction with comprehensive error handling"""
+    def _thread_safe_extract_custom_attention_class(self, program_text: str) -> Dict[str, Any]:
+        """Thread-safe extraction with comprehensive error handling"""
         try:
-            print("  🔍 Ultra-safe program analysis...")
+            print("  🔍 Thread-safe program analysis...")
 
             # Handle file paths vs direct text
             if (
@@ -217,15 +207,14 @@ class RobustCustomGQAEvaluator:
                 return {"success": False, "error": f"Compilation error: {e}"}
 
             # Create bulletproof execution environment
-            exec_globals = self._create_bulletproof_execution_environment()
+            exec_globals = self._create_safe_execution_environment()
 
-            # Execute program with comprehensive protection
+            # Execute program with comprehensive protection (no timeouts)
             print("  ⚙️  Executing program with maximum protection...")
             try:
-                # Use timeout protection even for program execution
-                success, result = self._execute_with_metal_protection(
-                    lambda: exec(actual_program_text, exec_globals),
-                    timeout=30  # 30 second timeout for program execution
+                # Use thread-safe execution
+                success, result = self._thread_safe_execute_with_protection(
+                    lambda: exec(actual_program_text, exec_globals)
                 )
                 
                 if not success:
@@ -258,7 +247,7 @@ class RobustCustomGQAEvaluator:
         except Exception as e:
             return {"success": False, "error": f"Extraction failed with exception: {str(e)}"}
 
-    def _create_bulletproof_execution_environment(self) -> Dict[str, Any]:
+    def _create_safe_execution_environment(self) -> Dict[str, Any]:
         """Create ultra-safe execution environment"""
         import math
         import numpy as np
@@ -309,10 +298,9 @@ class RobustCustomGQAEvaluator:
                 print(f"  [{i}/{len(baseline_configs)}] Protected baseline: {config.name}")
                 
                 try:
-                    # Run with Metal kernel protection
-                    success, result = self._execute_with_metal_protection(
-                        lambda: self.benchmark_suite.run_single_benchmark(config),
-                        timeout=90  # 90 second timeout per benchmark
+                    # Run with thread-safe Metal kernel protection
+                    success, result = self._thread_safe_execute_with_protection(
+                        lambda: self.benchmark_suite.run_single_benchmark(config)
                     )
                     
                     if success and result:
@@ -344,9 +332,9 @@ class RobustCustomGQAEvaluator:
             print(f"  ❌ Protected baseline measurement failed: {e}")
             return None
 
-    def _bulletproof_correctness_test(self, custom_attention_class: Any) -> Dict[str, Any]:
-        """Bulletproof correctness testing with maximum protection"""
-        print("  🔍 Running bulletproof correctness testing...")
+    def _thread_safe_correctness_test(self, custom_attention_class: Any) -> Dict[str, Any]:
+        """Thread-safe correctness testing with maximum protection"""
+        print("  🔍 Running thread-safe correctness testing...")
         
         try:
             # Create safe test configuration
@@ -375,17 +363,16 @@ class RobustCustomGQAEvaluator:
             local_timeout_errors = 0
 
             for B, L, D in test_cases:
-                print(f"      🧪 Testing sequence length {L} with maximum protection...")
+                print(f"      🧪 Testing sequence length {L} with thread-safe protection...")
 
                 try:
                     # Create test inputs
                     x = mx.random.normal((B, L, D))
                     mask = "causal"
 
-                    # Test with bulletproof execution
-                    success, result = self._execute_with_metal_protection(
-                        lambda: self._test_single_sequence_safely(custom_attention_class, args, x, mask),
-                        timeout=self.metal_kernel_timeout
+                    # Test with thread-safe execution
+                    success, result = self._thread_safe_execute_with_protection(
+                        lambda: self._test_single_sequence_safely(custom_attention_class, args, x, mask)
                     )
                     
                     if success:
@@ -432,7 +419,7 @@ class RobustCustomGQAEvaluator:
             }
 
         except Exception as e:
-            print(f"    ❌ Bulletproof correctness testing failed: {e}")
+            print(f"    ❌ Thread-safe correctness testing failed: {e}")
             return {"success": False, "error": str(e)}
 
     def _test_single_sequence_safely(self, custom_attention_class: Any, args: Any, x: Any, mask: Any) -> float:
@@ -518,9 +505,8 @@ class RobustCustomGQAEvaluator:
                         
                         try:
                             # Run with comprehensive protection
-                            success, result = self._execute_with_metal_protection(
-                                lambda: self.benchmark_suite.run_single_benchmark(config),
-                                timeout=120  # 2 minute timeout per benchmark
+                            success, result = self._thread_safe_execute_with_protection(
+                                lambda: self.benchmark_suite.run_single_benchmark(config)
                             )
                             
                             if success and result:
@@ -565,27 +551,12 @@ class RobustCustomGQAEvaluator:
         
         return {"success": False, "error": "All armored attempts exhausted"}
 
-    def _execute_with_metal_protection(self, func, timeout: int) -> Tuple[bool, Any]:
-        """Execute function with comprehensive Metal kernel protection"""
-        
-        # Timeout handler using signals (Unix systems)
-        def timeout_handler(signum, frame):
-            raise TimeoutError(f"Operation timed out after {timeout} seconds")
-        
-        # Set up timeout protection if available
-        old_handler = None
-        if hasattr(signal, 'SIGALRM'):
-            old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(timeout)
-        
+    def _thread_safe_execute_with_protection(self, func) -> Tuple[bool, Any]:
+        """Thread-safe execution with comprehensive Metal kernel protection (no signals)"""
         try:
             # Execute the function with comprehensive error catching
             result = func()
             return True, result
-            
-        except TimeoutError as e:
-            self.timeout_errors_caught += 1
-            return False, f"Timeout error: {str(e)}"
             
         except Exception as e:
             error_msg = str(e)
@@ -597,12 +568,6 @@ class RobustCustomGQAEvaluator:
                 return False, f"Metal kernel error: {error_msg}"
             else:
                 return False, f"Execution error: {error_msg}"
-                
-        finally:
-            # Clean up timeout signal
-            if hasattr(signal, 'SIGALRM') and old_handler is not None:
-                signal.alarm(0)
-                signal.signal(signal.SIGALRM, old_handler)
 
     def _protected_apply_custom_attention_hook(self, custom_attention_class: Any) -> Dict[str, Any]:
         """Protected application of custom attention hook"""
@@ -882,7 +847,7 @@ class RobustCustomGQAEvaluator:
     def _print_evaluation_results(self, result: Dict[str, Any]):
         """Print comprehensive evaluation results"""
         print(f"\n{'='*100}")
-        print(f"{'🎯 BULLETPROOF EVALUATION RESULTS':^100}")
+        print(f"{'🎯 THREAD-SAFE EVALUATION RESULTS':^100}")
         print(f"{'='*100}")
 
         if result["success"]:
@@ -946,13 +911,13 @@ class RobustCustomGQAEvaluator:
 
 def evaluate(program_text: str) -> Dict[str, Any]:
     """Main evaluation function called by OpenEvolve"""
-    evaluator = RobustCustomGQAEvaluator()
+    evaluator = ThreadSafeRobustEvaluator()
     return evaluator.evaluate(program_text)
 
 
-def test_robust_evaluator():
-    """Test the bulletproof evaluator"""
-    print("🧪 Testing Bulletproof Custom GQA Evaluator")
+def test_thread_safe_evaluator():
+    """Test the thread-safe evaluator"""
+    print("🧪 Testing Thread-Safe Robust Custom GQA Evaluator")
     print("=" * 80)
     
     initial_program_path = os.path.join(os.path.dirname(__file__), "initial_program.py")
@@ -965,7 +930,7 @@ def test_robust_evaluator():
     result = evaluate(initial_program_path)
     
     print(f"\n{'='*80}")
-    print(f"🔬 BULLETPROOF EVALUATOR TEST RESULTS")
+    print(f"🔬 THREAD-SAFE EVALUATOR TEST RESULTS")
     print(f"{'='*80}")
     print(f"Success: {result['success']}")
     print(f"Final Score: {result.get('final_score', 'N/A')}")
@@ -980,4 +945,4 @@ def test_robust_evaluator():
 
 
 if __name__ == "__main__":
-    test_robust_evaluator()
+    test_thread_safe_evaluator()
