@@ -133,7 +133,7 @@ def run_optimized_benchmark(args, original_dir):
             return None
 
         # Apply the custom attention hook
-        apply_hook, remove_hook = best_program.create_qwen3_optimization_hook()
+        apply_hook, remove_hook = best_program.create_metal_qwen3_optimization_hook()
         print("🔧 Applying optimized attention hook...")
         
         original_attention = apply_hook()
