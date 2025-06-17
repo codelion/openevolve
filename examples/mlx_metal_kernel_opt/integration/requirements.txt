@@ -1,0 +1,20 @@
+# MLX Metal Kernel Integration Requirements
+
+# Core MLX dependencies
+mlx>=0.26.0
+mlx-lm>=0.25.0
+
+# Python standard library dependencies (included with Python 3.8+)
+# - importlib
+# - sys
+# - pathlib
+# - time
+# - warnings
+# - json
+# - dataclasses
+# - typing
+# - functools
+# - argparse
+
+# Optional dependencies for development and testing
+numpy>=1.21.0  # For numerical operations in benchmarks
