@@ -24,22 +24,22 @@ import time
 def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
     """
     Custom Metal kernel implementation for Qwen3 GQA attention.
-
+    
     Args:
-        queries: [B, num_heads=40, L, head_dim=128]
+        queries: [B, num_heads=40, L, head_dim=128] 
         keys: [B, num_kv_heads=8, L, head_dim=128]
         values: [B, num_kv_heads=8, L, head_dim=128]
         scale: Attention scaling factor (1/sqrt(head_dim))
         mask: Attention mask (None, "causal", or boolean tensor)
-
+        
     Returns:
         Attention output [B, num_heads=40, L, head_dim=128]
     """
-
+    
     B, num_heads, L, head_dim = queries.shape
     _, num_kv_heads, _, _ = keys.shape
     heads_per_kv = num_heads // num_kv_heads  # Should be 5 for Qwen3
-
+    
     # Handle mask conversion
     if mask == "causal" or mask is None:
         # Create causal mask for autoregressive attention
@@ -56,18 +56,18 @@ def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
     else:
         # Fallback for unsupported mask types
         return mx.fast.scaled_dot_product_attention(queries, keys, values, scale=scale, mask=mask)
-
+    
     # Expand mask to match batch and head dimensions if needed
     if mask_tensor.ndim == 2:
         mask_tensor = mx.broadcast_to(mask_tensor[None, None, :, :], (B, num_heads, L, L))
     elif mask_tensor.ndim == 3:
         mask_tensor = mx.broadcast_to(mask_tensor[:, None, :, :], (B, num_heads, L, L))
-
+    
     # EVOLVE-BLOCK-START
-    # Custom Metal kernel source for Qwen3 GQA optimization
+    # Fixed Metal kernel source for Qwen3 GQA optimization
     # This kernel leverages the 40:8 head ratio and Apple Silicon architecture
     kernel_source = """
-    // Qwen3 GQA Metal Kernel - Optimized for 40:8 head pattern
+    // Fixed Qwen3 GQA Metal Kernel - Optimized for 40:8 head pattern
     // Thread mapping: each thread processes one query position
     uint thread_id = thread_position_in_grid.x;
     uint head_idx = thread_position_in_grid.y; 
@@ -102,10 +102,10 @@ def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
                            
     const uint out_base = q_base;
     
-    // Load query vector for this position using T4 chunks for coalesced access
-    thread T4 query_vec_chunks[HEAD_DIM / 4]; 
-    for (uint d_chunk = 0; d_chunk < HEAD_DIM / 4; d_chunk++) {
-        query_vec_chunks[d_chunk] = *(device T4*)(queries + q_base + d_chunk * 4);
+    // Load query vector for this position (using proper Metal syntax)
+    thread T query_vec[HEAD_DIM];
+    for (uint d = 0; d < HEAD_DIM; d++) {
+        query_vec[d] = queries[q_base + d];
     }
     
     // Fused attention pass using online softmax for memory efficiency.
@@ -114,9 +114,9 @@ def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
     T denominator = T(0.0);
 
     // Accumulator for the output vector, held in fast thread memory.
-    thread T4 output_accumulator[HEAD_DIM / 4];
-    for (uint d_chunk = 0; d_chunk < HEAD_DIM / 4; ++d_chunk) {
-        output_accumulator[d_chunk] = T4(0.0);
+    thread T output_accumulator[HEAD_DIM];
+    for (uint d = 0; d < HEAD_DIM; ++d) {
+        output_accumulator[d] = T(0.0);
     }
 
     // Single pass over all key/value positions, reducing global memory traffic.
@@ -127,11 +127,25 @@ def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
             continue;
         }
 
-        // Compute Q @ K^T for this key position
+        // Compute Q @ K^T for this key position using vectorized operations
         const uint k_base = k_base_start + key_pos * HEAD_DIM;
         T score = T(0.0);
-        for (uint d_chunk = 0; d_chunk < HEAD_DIM / 4; ++d_chunk) {
-            score += dot(query_vec_chunks[d_chunk], *(device T4*)(keys + k_base + d_chunk * 4));
+        
+        // Process 4 elements at a time for SIMD efficiency
+        for (uint d = 0; d < HEAD_DIM; d += 4) {
+            if (d + 3 < HEAD_DIM) {
+                // Manual vectorization for better performance
+                score += query_vec[d] * keys[k_base + d] +
+                         query_vec[d+1] * keys[k_base + d+1] +
+                         query_vec[d+2] * keys[k_base + d+2] +
+                         query_vec[d+3] * keys[k_base + d+3];
+            } else {
+                // Handle remaining elements
+                for (uint dd = d; dd < HEAD_DIM; ++dd) {
+                    score += query_vec[dd] * keys[k_base + dd];
+                }
+                break;
+            }
         }
         score *= scale_val;
 
@@ -146,10 +160,22 @@ def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
         
         // Load the value vector and update the output accumulator.
         const uint v_base = v_base_start + key_pos * HEAD_DIM;
-        for (uint d_chunk = 0; d_chunk < HEAD_DIM / 4; ++d_chunk) {
-            T4 v_chunk = *(device T4*)(values + v_base + d_chunk * 4);
-            // Rescale the existing accumulator and add the new weighted value.
-            output_accumulator[d_chunk] = output_accumulator[d_chunk] * exp_old_max_diff + exp_new_val_diff * v_chunk;
+        
+        // Process values with manual vectorization
+        for (uint d = 0; d < HEAD_DIM; d += 4) {
+            if (d + 3 < HEAD_DIM) {
+                // Rescale the existing accumulator and add the new weighted value.
+                output_accumulator[d] = output_accumulator[d] * exp_old_max_diff + exp_new_val_diff * values[v_base + d];
+                output_accumulator[d+1] = output_accumulator[d+1] * exp_old_max_diff + exp_new_val_diff * values[v_base + d+1];
+                output_accumulator[d+2] = output_accumulator[d+2] * exp_old_max_diff + exp_new_val_diff * values[v_base + d+2];
+                output_accumulator[d+3] = output_accumulator[d+3] * exp_old_max_diff + exp_new_val_diff * values[v_base + d+3];
+            } else {
+                // Handle remaining elements
+                for (uint dd = d; dd < HEAD_DIM; ++dd) {
+                    output_accumulator[dd] = output_accumulator[dd] * exp_old_max_diff + exp_new_val_diff * values[v_base + dd];
+                }
+                break;
+            }
         }
         
         max_score = new_max_score;
@@ -158,23 +184,23 @@ def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
     // Final normalization and write to global memory once at the end.
     if (denominator > T(1e-9)) { // Use a small epsilon for stability
         T inv_denominator = T(1.0) / denominator;
-        for (uint d_chunk = 0; d_chunk < HEAD_DIM / 4; ++d_chunk) {
-            *(device T4*)(output + out_base + d_chunk * 4) = output_accumulator[d_chunk] * inv_denominator;
+        for (uint d = 0; d < HEAD_DIM; ++d) {
+            output[out_base + d] = output_accumulator[d] * inv_denominator;
         }
     } else {
         // Handle cases where all scores were masked out; write zeros.
-        for (uint d_chunk = 0; d_chunk < HEAD_DIM / 4; ++d_chunk) {
-            *(device T4*)(output + out_base + d_chunk * 4) = T4(0.0);
+        for (uint d = 0; d < HEAD_DIM; ++d) {
+            output[out_base + d] = T(0.0);
         }
     }
     """
     # EVOLVE-BLOCK-END
-
+    
     try:
         # Prepare kernel inputs
         scale_tensor = mx.array([scale], dtype=queries.dtype)
         use_mask_tensor = mx.array([1 if use_mask else 0], dtype=mx.int32)
-
+        
         # Create and execute custom Metal kernel
         kernel = mx.fast.metal_kernel(
             name="qwen3_gqa_attention_kernel",
@@ -182,10 +208,10 @@ def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
             output_names=["output"],
             source=kernel_source,
         )
-
+        
         # Optimize thread group size for Apple Silicon
         threadgroup_size = min(32, L)  # Adapt to sequence length
-
+        
         # Execute kernel
         outputs = kernel(
             inputs=[queries, keys, values, mask_tensor, scale_tensor, use_mask_tensor],
@@ -203,9 +229,9 @@ def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
                 ("HEADS_PER_KV", heads_per_kv),
             ],
         )
-
+        
         return outputs[0]
-
+        
     except Exception as e:
         # Fallback to standard MLX implementation if custom kernel fails
         print(f"⚠️ Custom GQA kernel failed: {e}, falling back to MLX SPDA")
@@ -215,7 +241,7 @@ def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
 class CustomGQAAttention(nn.Module):
     """
     Qwen3 attention module with custom Metal kernel optimization.
-
+    
     This module integrates the custom Metal kernel while maintaining
     compatibility with the standard MLX-LM interface.
     """
@@ -244,7 +270,6 @@ class CustomGQAAttention(nn.Module):
         # Standard MLX-LM RoPE
         try:
             from mlx_lm.models.rope_utils import initialize_rope
-
             self.rope = initialize_rope(
                 head_dim,
                 base=args.rope_theta,
@@ -255,7 +280,7 @@ class CustomGQAAttention(nn.Module):
         except ImportError:
             print("⚠️ Could not import mlx_lm rope_utils, using basic RoPE")
             self.rope = None
-
+        
         print(f"🔧 Initialized Custom Metal GQA Attention")
         print(f"   📊 Architecture: {n_heads}:{n_kv_heads} heads ({n_heads//n_kv_heads}:1 ratio)")
         print(f"   🎯 Head dimension: {head_dim}")
@@ -424,11 +449,11 @@ def test_metal_gqa_correctness():
     output = metal_attn(x, mask=mask)
 
     print(f"✅ Metal GQA output shape: {output.shape}")
-
+    
     # Check for valid output
     has_nan = bool(mx.any(mx.isnan(output)))
     has_inf = bool(mx.any(mx.isinf(output)))
-
+    
     print(f"✅ Has NaN: {has_nan}, Has Inf: {has_inf}")
 
     # Check output statistics
@@ -444,10 +469,10 @@ def test_metal_gqa_correctness():
     k = mx.random.normal((B, 8, L, D))  # 8 KV heads
     v = mx.random.normal((B, 8, L, D))
     scale = 1.0 / math.sqrt(D)
-
+    
     kernel_output = qwen3_custom_gqa_attention(q, k, v, scale=scale, mask="causal")
     print(f"✅ Direct kernel output shape: {kernel_output.shape}")
-
+    
     kernel_mean = float(mx.mean(kernel_output))
     kernel_std = float(mx.std(kernel_output))
     print(f"✅ Direct kernel stats - Mean: {kernel_mean:.6f}, Std: {kernel_std:.6f}")
@@ -471,7 +496,7 @@ if __name__ == "__main__":
     print("Ready for Metal Kernel Evolution")
     print("Evolution focus:")
     print("1. 🔧 Metal kernel source code optimization")
-    print("2. 💾 Memory access pattern improvements for Apple Silicon")
+    print("2. 💾 Memory access pattern improvements for Apple Silicon") 
     print("3. 🎯 GQA-specific optimizations for 40:8 head ratio")
     print("4. ⚡ Vectorization and SIMD optimization")
     print("5. 🚀 Thread group and grid configuration tuning")
