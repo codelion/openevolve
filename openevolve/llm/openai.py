@@ -12,6 +12,8 @@ import openai
 from openevolve.config import LLMConfig
 from openevolve.llm.base import LLMInterface
 
+from openai import AzureOpenAI
+
 logger = logging.getLogger(__name__)
 
 
@@ -34,9 +36,13 @@ class OpenAILLM(LLMInterface):
         self.api_key = model_cfg.api_key
 
         # Set up API client
+        print("##########################")
+    
         self.client = openai.OpenAI(
-            api_key=self.api_key,
-            base_url=self.api_base,
+            api_key      = self.api_key,
+            base_url     = self.api_base,
+            default_headers={"api-key": self.api_key},
+            default_query = {"api-version": "2025-01-01-preview"},
         )
 
         logger.info(f"Initialized OpenAI LLM with model: {self.model}")
@@ -102,6 +108,16 @@ class OpenAILLM(LLMInterface):
 
     async def _call_api(self, params: Dict[str, Any]) -> str:
         """Make the actual API call"""
+        # ----- Azure o-series models need max_completion_tokens -----
+        if "max_tokens" in params:
+            params = params.copy()                               # don’t mutate caller’s dict
+            params["extra_body"] = {"max_completion_tokens": params.pop("max_tokens")}
+        # -----------------------------------------------------------
+        # ⬇ NEW: drop sampling knobs that o-series refuses
+        for unsupported in ("temperature", "top_p",
+                            "frequency_penalty", "presence_penalty"):
+            params.pop(unsupported, None)
+        # ------------------------------------------------------------------
         # Use asyncio to run the blocking API call in a thread pool
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
