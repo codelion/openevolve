@@ -743,30 +743,27 @@ class ProgramDatabase:
             additional_removals = remaining_programs[: num_to_remove - len(programs_to_remove)]
             programs_to_remove.extend(additional_removals)
 
-        # Remove the selected programs
+        # Remove from main dictionary and their respective islands
         for program in programs_to_remove:
             program_id = program.id
-
-            # Remove from main programs dict
             if program_id in self.programs:
                 del self.programs[program_id]
 
-            # Remove from feature map
-            keys_to_remove = []
-            for key, pid in self.feature_map.items():
-                if pid == program_id:
-                    keys_to_remove.append(key)
-            for key in keys_to_remove:
-                del self.feature_map[key]
-
-            # Remove from islands
+            # Also remove from islands
             for island in self.islands:
                 island.discard(program_id)
 
-            # Remove from archive
+            # CRITICAL FIX: Also remove from archive and feature_map
             self.archive.discard(program_id)
 
-            logger.debug(f"Removed program {program_id} due to population limit")
+            # Remove from feature_map if it's the one stored there
+            keys_to_remove = [
+                key for key, value in self.feature_map.items() if value == program_id
+            ]
+            for key in keys_to_remove:
+                del self.feature_map[key]
+
+            logger.info(f"Removed program {program_id} to maintain population size.")
 
         logger.info(f"Population size after cleanup: {len(self.programs)}")
 
