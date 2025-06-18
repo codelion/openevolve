@@ -105,13 +105,20 @@ def run_optimized_benchmark(args, original_dir):
     """
     try:
         # Import the optimized attention implementation
-        best_program_path = os.path.join(original_dir, "best_program.py")
-
+        # First, try the OpenEvolve output directory (most likely location)
+        best_program_path = os.path.join(original_dir, "openevolve_output", "best", "best_program.py")
+        
+        # Fallback to root directory if not found in openevolve_output
         if not os.path.exists(best_program_path):
-            print(f"❌ Error: Optimized program not found at {best_program_path}")
+            best_program_path = os.path.join(original_dir, "best_program.py")
+        
+        if not os.path.exists(best_program_path):
+            print(f"❌ Error: Optimized program not found")
+            print("Searched in the following locations:")
+            print(f"  1. {os.path.join(original_dir, 'openevolve_output', 'best', 'best_program.py')}")
+            print(f"  2. {os.path.join(original_dir, 'best_program.py')}")
             print("Please ensure OpenEvolve has generated an optimized solution")
-            print("Expected path structure:")
-            print("  ./openevolve_output/best/best_program.py")
+            print("Expected path: ./openevolve_output/best/best_program.py")
             return None
 
         print(f"📁 Loading optimized program from: {best_program_path}")
