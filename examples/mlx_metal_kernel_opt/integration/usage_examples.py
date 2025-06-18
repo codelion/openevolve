@@ -4,23 +4,34 @@ Simple Usage Examples for MLX Metal Kernel Optimization
 
 This script shows the most common usage patterns for integrating Metal kernel
 optimizations with existing mlx-lm workflows.
+
+Run from integration/ directory:
+    cd integration/
+    pip install -r requirements.txt
+    python usage_examples.py
 """
 
 import sys
 from pathlib import Path
-
-# Add integration to path
-sys.path.insert(0, str(Path(__file__).parent))
 
 try:
     import mlx.core as mx
     from mlx_lm import load, generate
 except ImportError:
     print("❌ Please install MLX and MLX-LM:")
-    print("   pip install mlx mlx-lm")
+    print("   pip install -r requirements.txt")
     sys.exit(1)
 
-from integration import patch_mlx_lm, unpatch_mlx_lm, get_integration_status
+try:
+    from mlx_lm_integration import patch_mlx_lm, unpatch_mlx_lm, get_integration_status
+    from metal_kernel_optimizer import configure_optimizer
+except ImportError as e:
+    print(f"❌ Could not import optimization modules: {e}")
+    print("   Make sure you're running from the integration/ directory:")
+    print("   cd integration/")
+    print("   pip install -r requirements.txt")
+    print("   python usage_examples.py")
+    sys.exit(1)
 
 
 def example_1_basic_usage():
@@ -42,7 +53,7 @@ def example_1_basic_usage():
         # Generate text (uses optimized kernels automatically)
         print("\n3. Generating text with optimizations...")
         prompt = "Explain how attention mechanisms work in transformers."
-        response = generate(model, tokenizer, prompt=prompt, max_tokens=100, temp=0.7)
+        response = generate(model, tokenizer, prompt=prompt, max_tokens=100)
         
         print(f"   📝 Prompt: {prompt}")
         print(f"   🤖 Response: {response}")
@@ -149,8 +160,6 @@ def example_4_custom_configuration():
     print("\n🚀 Example 4: Custom Optimization Configuration")
     print("=" * 60)
     
-    from integration import configure_optimizer
-    
     # Configure optimizer with custom thresholds
     print("🔧 Configuring optimizer with custom settings...")
     configure_optimizer(
@@ -194,7 +203,7 @@ def example_5_selective_model_patching():
     print("\n🚀 Example 5: Selective Model Patching")
     print("=" * 60)
     
-    from integration.mlx_lm_integration import MLXLMIntegration
+    from mlx_lm_integration import MLXLMIntegration
     
     # Create custom integration instance
     integration = MLXLMIntegration()

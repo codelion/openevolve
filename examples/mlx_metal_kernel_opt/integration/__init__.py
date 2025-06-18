@@ -36,25 +36,47 @@ Supported Models:
 - DeepSeek-V3 (GQA) - High priority optimization
 """
 
-from .metal_kernel_optimizer import (
-    MetalKernelOptimizer,
-    AttentionConfig,
-    optimized_scaled_dot_product_attention,
-    configure_optimizer,
-    get_optimizer_stats,
-    reset_optimizer_stats
-)
-
-from .mlx_lm_integration import (
-    MLXLMIntegration,
-    patch_mlx_lm,
-    unpatch_mlx_lm,
-    get_integration_status,
-    is_mlx_lm_patched,
-    benchmark_optimization,
-    quick_benchmark,
-    BenchmarkResult
-)
+# Handle both relative and absolute imports
+try:
+    from .metal_kernel_optimizer import (
+        MetalKernelOptimizer,
+        AttentionConfig,
+        optimized_scaled_dot_product_attention,
+        configure_optimizer,
+        get_optimizer_stats,
+        reset_optimizer_stats
+    )
+    
+    from .mlx_lm_integration import (
+        MLXLMIntegration,
+        patch_mlx_lm,
+        unpatch_mlx_lm,
+        get_integration_status,
+        is_mlx_lm_patched,
+        benchmark_optimization,
+        quick_benchmark,
+        BenchmarkResult
+    )
+except ImportError:
+    from metal_kernel_optimizer import (
+        MetalKernelOptimizer,
+        AttentionConfig,
+        optimized_scaled_dot_product_attention,
+        configure_optimizer,
+        get_optimizer_stats,
+        reset_optimizer_stats
+    )
+    
+    from mlx_lm_integration import (
+        MLXLMIntegration,
+        patch_mlx_lm,
+        unpatch_mlx_lm,
+        get_integration_status,
+        is_mlx_lm_patched,
+        benchmark_optimization,
+        quick_benchmark,
+        BenchmarkResult
+    )
 
 __version__ = "1.0.0"
 __author__ = "OpenEvolve Team"

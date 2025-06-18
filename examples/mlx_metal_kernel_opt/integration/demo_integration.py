@@ -6,7 +6,7 @@ This script demonstrates how to integrate Metal kernel optimizations with mlx-lm
 for improved transformer performance on Apple Silicon. It shows before/after
 comparisons and provides easy integration examples.
 
-Usage:
+Usage (run from integration/ directory):
     python demo_integration.py --model qwen2.5-0.5b --enable-optimization
     python demo_integration.py --model llama-3.2-1b --benchmark-only
     python demo_integration.py --quick-test
@@ -20,26 +20,34 @@ from pathlib import Path
 from typing import Optional, List
 import warnings
 
-# Add integration to path
-sys.path.insert(0, str(Path(__file__).parent))
-
 try:
     import mlx.core as mx
     import mlx.nn as nn
     from mlx_lm import load, generate
 except ImportError:
     print("❌ MLX and MLX-LM are required. Install with:")
-    print("   pip install mlx mlx-lm")
+    print("   pip install -r requirements.txt")
     sys.exit(1)
 
-# Import our optimizations
-from integration import (
-    patch_mlx_lm, 
-    unpatch_mlx_lm, 
-    get_integration_status,
-    benchmark_optimization,
-    quick_benchmark
-)
+# Import our optimizations (assumes running from integration/ directory)
+try:
+    from mlx_lm_integration import (
+        patch_mlx_lm, 
+        unpatch_mlx_lm, 
+        get_integration_status,
+        benchmark_optimization,
+        quick_benchmark
+    )
+    from metal_kernel_optimizer import (
+        print_model_optimization_summary
+    )
+except ImportError as e:
+    print(f"❌ Could not import optimization modules: {e}")
+    print("   Make sure you're running from the integration/ directory:")
+    print("   cd integration/")
+    print("   pip install -r requirements.txt")
+    print("   python demo_integration.py --quick-test")
+    sys.exit(1)
 
 
 class MLXOptimizationDemo:
@@ -94,13 +102,17 @@ class MLXOptimizationDemo:
             self.model, self.tokenizer = load(model_path)
             print(f"✅ Model loaded successfully")
             
-            # Print model info
-            if hasattr(self.model, 'args'):
-                args = self.model.args
-                print(f"   📊 Architecture: {getattr(args, 'num_attention_heads', 'Unknown')} heads, "
-                      f"{getattr(args, 'num_key_value_heads', 'Unknown')} KV heads")
-                print(f"   📏 Hidden size: {getattr(args, 'hidden_size', 'Unknown')}")
-                print(f"   🧠 Head dim: {getattr(args, 'head_dim', 'Unknown')}")
+            # Show optimization analysis for this model
+            try:
+                print_model_optimization_summary(self.model)
+            except Exception as e:
+                # Fallback to basic info if analysis fails
+                if hasattr(self.model, 'args'):
+                    args = self.model.args
+                    print(f"   📊 Architecture: {getattr(args, 'num_attention_heads', 'Unknown')} heads, "
+                          f"{getattr(args, 'num_key_value_heads', 'Unknown')} KV heads")
+                    print(f"   📏 Hidden size: {getattr(args, 'hidden_size', 'Unknown')}")
+                    print(f"   🧠 Head dim: {getattr(args, 'head_dim', 'Unknown')}")
             
             return True
             
@@ -108,7 +120,7 @@ class MLXOptimizationDemo:
             print(f"❌ Failed to load model: {e}")
             return False
 
-    def generate_text(self, prompt: str, max_tokens: int = 50, temp: float = 0.7) -> tuple[str, float]:
+    def generate_text(self, prompt: str, max_tokens: int = 50) -> tuple[str, float]:
         """Generate text and measure time"""
         if not self.model or not self.tokenizer:
             raise ValueError("Model not loaded")
@@ -121,7 +133,6 @@ class MLXOptimizationDemo:
                 self.tokenizer, 
                 prompt=prompt, 
                 max_tokens=max_tokens,
-                temp=temp,
                 verbose=False
             )
             
@@ -136,7 +147,68 @@ class MLXOptimizationDemo:
             
         except Exception as e:
             print(f"❌ Generation failed: {e}")
-            return "", 0.0
+            # Try a simpler generation without extra parameters
+            try:
+                response = generate(self.model, self.tokenizer, prompt=prompt)
+                end_time = time.perf_counter()
+                generation_time = end_time - start_time
+                print(f"✅ Fallback generation succeeded")
+                return response, generation_time
+            except Exception as e2:
+                print(f"❌ Fallback generation also failed: {e2}")
+                return "", 0.0
+
+    def quick_comparison(self):
+        """Quick side-by-side comparison"""
+        
+        self.print_header("Quick Optimization Comparison")
+        
+        # Use a smaller model for quick testing
+        model_key = 'qwen2.5-0.5b'
+        if not self.load_model(model_key):
+            return
+        
+        prompt = "Write a short poem about machine learning."
+        max_tokens = 80
+        
+        print(f"📝 Prompt: {prompt}")
+        print(f"🎯 Max tokens: {max_tokens}")
+        
+        # Standard generation
+        print("\n🔄 Standard MLX-LM:")
+        standard_response, standard_time = self.generate_text(prompt, max_tokens)
+        standard_memory = mx.get_active_memory() / 1e9
+        
+        print(f"⏱️  Time: {standard_time:.2f}s")
+        print(f"💾 Memory: {standard_memory:.2f}GB")
+        print(f"📝 Response:\n{standard_response}")
+        
+        # Optimized generation
+        print("\n⚡ With Metal Kernel Optimization:")
+        patch_mlx_lm(enable_debug=False)
+        
+        try:
+            optimized_response, optimized_time = self.generate_text(prompt, max_tokens)
+            optimized_memory = mx.get_active_memory() / 1e9
+            
+            print(f"⏱️  Time: {optimized_time:.2f}s")
+            print(f"💾 Memory: {optimized_memory:.2f}GB")
+            print(f"📝 Response:\n{optimized_response}")
+            
+            # Show comparison
+            speedup = standard_time / optimized_time if optimized_time > 0 else 1.0
+            memory_diff = standard_memory - optimized_memory
+            
+            print("\n📊 Comparison:")
+            print(f"🚀 Speedup: {speedup:.2f}x")
+            print(f"💾 Memory difference: {memory_diff:.2f}GB")
+            
+            status = get_integration_status()
+            opt_stats = status.get('optimizer_stats', {})
+            print(f"📈 Optimization rate: {opt_stats.get('optimization_rate', 0):.1%}")
+            
+        finally:
+            unpatch_mlx_lm(enable_debug=False)
 
     def benchmark_generation(self, model_key: str, num_runs: int = 3):
         """Benchmark text generation with and without optimizations"""
@@ -269,58 +341,6 @@ class MLXOptimizationDemo:
         # Clean up
         if optimized:
             unpatch_mlx_lm(enable_debug=self.enable_debug)
-
-    def quick_comparison(self):
-        """Quick side-by-side comparison"""
-        
-        self.print_header("Quick Optimization Comparison")
-        
-        # Use a smaller model for quick testing
-        model_key = 'qwen2.5-0.5b'
-        if not self.load_model(model_key):
-            return
-        
-        prompt = "Write a short poem about machine learning."
-        max_tokens = 80
-        
-        print(f"📝 Prompt: {prompt}")
-        print(f"🎯 Max tokens: {max_tokens}")
-        
-        # Standard generation
-        print("\n🔄 Standard MLX-LM:")
-        standard_response, standard_time = self.generate_text(prompt, max_tokens)
-        standard_memory = mx.get_active_memory() / 1e9
-        
-        print(f"⏱️  Time: {standard_time:.2f}s")
-        print(f"💾 Memory: {standard_memory:.2f}GB")
-        print(f"📝 Response:\n{standard_response}")
-        
-        # Optimized generation
-        print("\n⚡ With Metal Kernel Optimization:")
-        patch_mlx_lm(enable_debug=False)
-        
-        try:
-            optimized_response, optimized_time = self.generate_text(prompt, max_tokens)
-            optimized_memory = mx.get_active_memory() / 1e9
-            
-            print(f"⏱️  Time: {optimized_time:.2f}s")
-            print(f"💾 Memory: {optimized_memory:.2f}GB")
-            print(f"📝 Response:\n{optimized_response}")
-            
-            # Show comparison
-            speedup = standard_time / optimized_time if optimized_time > 0 else 1.0
-            memory_diff = standard_memory - optimized_memory
-            
-            print("\n📊 Comparison:")
-            print(f"🚀 Speedup: {speedup:.2f}x")
-            print(f"💾 Memory difference: {memory_diff:.2f}GB")
-            
-            status = get_integration_status()
-            opt_stats = status.get('optimizer_stats', {})
-            print(f"📈 Optimization rate: {opt_stats.get('optimization_rate', 0):.1%}")
-            
-        finally:
-            unpatch_mlx_lm(enable_debug=False)
 
     def run_comprehensive_test(self):
         """Run comprehensive test across multiple models"""

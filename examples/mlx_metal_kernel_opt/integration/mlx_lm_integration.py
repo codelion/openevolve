@@ -34,13 +34,23 @@ try:
 except ImportError:
     raise ImportError("MLX is required for Metal kernel optimizations")
 
-from .metal_kernel_optimizer import (
-    MetalKernelOptimizer, 
-    optimized_scaled_dot_product_attention,
-    configure_optimizer,
-    get_optimizer_stats,
-    reset_optimizer_stats
-)
+# Handle both relative and absolute imports
+try:
+    from .metal_kernel_optimizer import (
+        MetalKernelOptimizer, 
+        optimized_scaled_dot_product_attention,
+        configure_optimizer,
+        get_optimizer_stats,
+        reset_optimizer_stats
+    )
+except ImportError:
+    from metal_kernel_optimizer import (
+        MetalKernelOptimizer, 
+        optimized_scaled_dot_product_attention,
+        configure_optimizer,
+        get_optimizer_stats,
+        reset_optimizer_stats
+    )
 
 
 class MLXLMIntegration:
