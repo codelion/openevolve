@@ -54,8 +54,8 @@ def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
             mask_tensor = mask.astype(mx.bool_)
             use_mask = True
     else:
-        # Fallback for unsupported mask types
-        return mx.fast.scaled_dot_product_attention(queries, keys, values, scale=scale, mask=mask)
+        # Raise error for unsupported mask types - no fallback
+        raise ValueError(f"Unsupported mask type: {type(mask)}. Custom kernel requires None, 'causal', or mx.array mask.")
 
     # Expand mask to match batch and head dimensions if needed
     if mask_tensor.ndim == 2:
@@ -231,9 +231,9 @@ def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
         return outputs[0]
 
     except Exception as e:
-        # Fallback to standard MLX implementation if custom kernel fails
-        print(f"⚠️ Custom GQA kernel failed: {e}, falling back to MLX SPDA")
-        return mx.fast.scaled_dot_product_attention(queries, keys, values, scale=scale, mask=mask)
+        # No fallback - let the custom kernel failure propagate for proper scoring
+        print(f"❌ Custom GQA kernel failed: {e}")
+        raise RuntimeError(f"Custom Metal kernel execution failed: {e}") from e
 
 
 class CustomGQAAttention(nn.Module):
