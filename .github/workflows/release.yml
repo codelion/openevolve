@@ -1,0 +1,121 @@
+name: Upload Python Package and Docker Image on Release
+on:
+  release:
+    types: [created]
+
+jobs:
+  pypi-publish:
+    name: Publish release to PyPI
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/openevolve
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+      - name: Build package
+        run: |
+          python -m build
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  docker-publish:
+    name: Publish Docker image
+    runs-on: ubuntu-22.04
+    needs: pypi-publish
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      # Add aggressive cleanup before any Docker operations
+      - name: Free disk space
+        run: |
+          # Clean Docker
+          docker system prune -af
+          docker image prune -af
+          docker builder prune -af
+          
+          df -h
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:buildx-stable-1
+            network=host
+          buildkitd-flags: --debug
+      
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+            
+      # Extract metadata for Docker image
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      # Build and push Docker image for AMD64
+      - name: Build and push Docker image AMD64
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=openevolve-amd64
+          cache-to: type=gha,scope=openevolve-amd64,mode=max
+          outputs: type=registry,compression=zstd,compression-level=5
+
+      # Cleanup after AMD64 build
+      - name: Cleanup after AMD64 build
+        run: |
+          docker system prune -af
+          docker builder prune -af
+          df -h
+
+      # Build and push Docker image for ARM64
+      - name: Build and push Docker image ARM64
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          platforms: linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=openevolve-arm64
+          cache-to: type=gha,scope=openevolve-arm64,mode=max
+          outputs: type=registry,compression=zstd,compression-level=5
+
+      # Final cleanup
+      - name: Final cleanup
+        run: |
+          docker system prune -af
+          docker builder prune -af
+          find /tmp -type f -user $(id -u) -exec rm -f {} + 2>/dev/null || true
+          df -h

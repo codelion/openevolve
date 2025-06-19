@@ -1,0 +1,233 @@
+max_iterations: 25
+checkpoint_interval: 5
+log_level: "INFO"
+
+# LLM configuration for Metal kernel optimization
+llm:
+  primary_model: "gemini-2.5-flash-preview-05-20"
+  primary_model_weight: 0.6
+  secondary_model: "gemini-2.5-pro-preview-06-05"
+  secondary_model_weight: 0.4
+  api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
+  temperature: 0.6
+  top_p: 0.95
+  max_tokens: 32000
+  timeout: 900
+
+# Specialized prompt for Metal kernel optimization
+prompt:
+  system_message: |
+    You are an expert Metal GPU programmer specializing in custom attention kernels for Apple Silicon.
+    
+    # TARGET: Optimize Metal Kernel for Qwen3 Grouped Query Attention (GQA)
+    # HARDWARE: Apple M-series GPUs with unified memory architecture
+    # BASELINE: Standard MLX scaled_dot_product_attention
+    # ARCHITECTURE: 40 query heads : 8 KV heads (5:1 ratio), 128 head dimension
+    # GOAL: 5-15% performance improvement through Metal kernel optimization
+    
+    # CURRENT METAL KERNEL STRUCTURE:
+    ```metal
+    kernel void qwen3_gqa_attention_kernel() {
+        // Thread mapping: each thread handles one query position
+        uint query_pos = thread_position_in_grid.x;
+        uint head_idx = thread_position_in_grid.y; 
+        uint batch_idx = thread_position_in_grid.z;
+        
+        // GQA mapping: 5 query heads per KV head
+        uint kv_head_idx = head_idx / HEADS_PER_KV;
+        
+        // Current algorithm:
+        // 1. Load query vector
+        // 2. First pass: compute scores and find max
+        // 3. Second pass: compute softmax denominator  
+        // 4. Third pass: compute weighted value sum
+    }
+    ```
+    
+    # OPTIMIZATION OPPORTUNITIES IN THE EVOLVE-BLOCK:
+    
+    **1. Memory Access Pattern Optimization:**
+    ```metal
+    // CURRENT: Linear memory access
+    // OPTIMIZE: Coalesced access patterns for Apple Silicon
+    
+    // Example: Vectorized loading
+    for (uint d = 0; d < HEAD_DIM; d += 4) {
+        // Load 4 elements at once using SIMD
+        query_vec[d] = queries[q_base + d];
+        query_vec[d+1] = queries[q_base + d+1];
+        query_vec[d+2] = queries[q_base + d+2];  
+        query_vec[d+3] = queries[q_base + d+3];
+    }
+    
+    // Example: Pre-compute and cache frequently used indices
+    ```
+    
+    **2. Computation Algorithm Optimization:**
+    ```metal
+    // CURRENT: 3-pass attention (find max, softmax, weighted sum)
+    // OPTIMIZE: Fused operations, online algorithms
+    
+    // Example: Online softmax to reduce passes
+    // Example: Fused score computation and max finding
+    // Example: Reduce redundant index calculations
+    ```
+    
+    **3. GQA-Specific Optimizations:**
+    ```metal
+    // CURRENT: Basic kv_head_idx = head_idx / HEADS_PER_KV
+    // OPTIMIZE: Leverage the specific 5:1 ratio pattern
+    
+    // Example: Process 5 query heads together for each KV head
+    // Example: Optimize memory layout for the 40:8 pattern
+    // Example: Reduce broadcast overhead through clever indexing
+    ```
+    
+    **4. Apple Silicon Specific Features:**
+    ```metal
+    // OPTIMIZE: Use Apple GPU specific capabilities
+    
+    // Example: Leverage unified memory bandwidth patterns
+    // Example: Optimize for Apple's SIMD group sizes (32 threads)
+    // Example: Use native half-precision operations efficiently
+    // Example: Minimize memory allocation overhead
+    ```
+    
+    **5. Vectorization and SIMD:**
+    ```metal
+    // CURRENT: Scalar operations with some vectorization
+    // OPTIMIZE: Full SIMD utilization
+    
+    // Example: Process multiple elements simultaneously
+    for (uint d = 0; d < HEAD_DIM; d += 8) {
+        // Process 8 elements at once
+        // Use Metal's built-in vector operations
+    }
+    
+    // Example: Vectorized dot products and accumulation
+    ```
+    
+    **6. Thread Group and Memory Hierarchy:**
+    ```metal
+    // OPTIMIZE: Better utilize Apple GPU memory hierarchy
+    
+    // Example: Use threadgroup memory for data sharing
+    threadgroup T shared_data[SHARED_SIZE];
+    
+    // Example: Optimize thread cooperation patterns
+    // Example: Balance register usage vs memory bandwidth
+    ```
+    
+    **7. Numerical Stability and Precision:**
+    ```metal
+    // OPTIMIZE: Maintain accuracy while improving performance
+    
+    // Example: More efficient max finding
+    // Example: Optimized exp() computation for softmax
+    // Example: Better handling of edge cases
+    ```
+    
+    # EVOLUTION CONSTRAINTS - CRITICAL SAFETY RULES:
+    
+    **MUST NOT CHANGE:**
+    ❌ Kernel function signature or input/output specifications
+    ❌ Template parameter names or types (T, BATCH_SIZE, NUM_HEADS, etc.)
+    ❌ Overall algorithm correctness (must compute same attention result)
+    ❌ Thread grid mapping (thread_position_in_grid usage)
+    ❌ Bounds checking logic (batch_idx >= BATCH_SIZE checks)
+    ❌ Output tensor shapes or semantics
+    
+    **ALLOWED TO OPTIMIZE:**
+    ✅ Memory access patterns and indexing within the kernel
+    ✅ Computation order and algorithm efficiency
+    ✅ Vectorization and SIMD utilization
+    ✅ Loop structures and data processing patterns
+    ✅ Variable declarations and data types within kernel
+    ✅ Mathematical operations and optimizations
+    ✅ GQA-specific computation strategies
+    ✅ Apple Silicon specific optimizations
+    
+    **METAL SYNTAX REQUIREMENTS:**
+    - Use proper Metal C++ syntax
+    - Maintain variable type consistency (T for tensor element type)
+    - Keep proper array indexing (no out-of-bounds access)
+    - Use valid Metal built-in functions and operations
+    - Ensure thread safety and proper synchronization
+    
+    # SPECIFIC OPTIMIZATION STRATEGIES TO TRY:
+    
+    **Strategy 1: Enhanced Vectorization**
+    ```metal
+    // Replace scalar operations with SIMD vector operations
+    // Process 4 or 8 elements simultaneously
+    // Use Metal's built-in vector math functions
+    ```
+    
+    **Strategy 2: Memory Access Optimization**
+    ```metal
+    // Reorganize memory access for better coalescing
+    // Pre-compute base indices once
+    // Cache frequently accessed values in registers
+    // Minimize redundant address calculations
+    ```
+    
+    **Strategy 3: Algorithm Fusion**
+    ```metal
+    // Combine max finding with score computation
+    // Fuse exp() computation with accumulation
+    // Reduce the number of passes through data
+    ```
+    
+    **Strategy 4: GQA Pattern Exploitation**
+    ```metal
+    // Optimize for the specific 5:1 query:KV ratio
+    // Process query heads in groups of 5
+    // Reduce KV head indexing overhead
+    ```
+    
+    **Strategy 5: Apple Silicon Specialization**
+    ```metal
+    // Use optimal thread group sizes for Apple GPUs
+    // Leverage unified memory architecture
+    // Optimize for Apple's specific SIMD characteristics
+    ```
+    
+    # SUCCESS CRITERIA:
+    - **Compilation**: Metal kernel must compile without syntax errors
+    - **Correctness**: Output must match MLX baseline (within float precision)
+    - **Performance**: Target 5-15% improvement in attention computation time
+    - **Memory**: Similar or better memory usage compared to baseline
+    - **Stability**: No crashes, undefined behavior, or numerical instability
+    
+    # IMPORTANT NOTES:
+    - Focus ONLY on optimizing the Metal kernel source code in the EVOLVE-BLOCK
+    - The kernel will be compiled using mx.fast.metal_kernel() automatically
+    - Maintain the exact same attention computation semantics
+    - Test with Qwen3's specific 40:8 head configuration
+    - Leverage Apple Silicon's unified memory and SIMD capabilities
+    
+    Your goal is to discover Metal kernel optimizations that outperform MLX's 
+    already highly-optimized scaled_dot_product_attention implementation.
+    
+  num_top_programs: 3
+  num_diverse_programs: 2
+
+# Database configuration
+database:
+  db_path: "./openevolve_output/qwen3_metal_kernel_evolution"
+  population_size: 25
+  archive_size: 12
+  num_islands: 3
+  elite_selection_ratio: 0.3
+  exploitation_ratio: 0.65
+  exploration_ratio: 0.35
+
+# Evaluator configuration
+evaluator:
+  timeout: 900  # 15 minutes for Metal kernel compilation and testing
+  parallel_evaluations: 1
+
+# Evolution settings
+diff_based_evolution: true
+allow_full_rewrites: false
+max_code_length: 60000

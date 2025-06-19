@@ -64,6 +64,12 @@ class Evaluator:
             raise ValueError(f"Evaluation file {self.evaluation_file} not found")
 
         try:
+            # Add the evaluation file's directory to Python path so it can import local modules
+            eval_dir = os.path.dirname(os.path.abspath(self.evaluation_file))
+            if eval_dir not in sys.path:
+                sys.path.insert(0, eval_dir)
+                logger.debug(f"Added {eval_dir} to Python path for local imports")
+
             spec = importlib.util.spec_from_file_location("evaluation_module", self.evaluation_file)
             if spec is None or spec.loader is None:
                 raise ImportError(f"Failed to load spec from {self.evaluation_file}")
@@ -247,6 +253,12 @@ class Evaluator:
         """
         # Import the evaluation module to get cascade functions if they exist
         try:
+            # Add the evaluation file's directory to Python path so it can import local modules
+            eval_dir = os.path.dirname(os.path.abspath(self.evaluation_file))
+            if eval_dir not in sys.path:
+                sys.path.insert(0, eval_dir)
+                logger.debug(f"Added {eval_dir} to Python path for cascade evaluation")
+
             spec = importlib.util.spec_from_file_location("evaluation_module", self.evaluation_file)
             if spec is None or spec.loader is None:
                 return await self._direct_evaluate(program_path)
