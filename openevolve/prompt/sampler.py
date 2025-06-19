@@ -178,6 +178,10 @@ class PromptSampler:
             metrics_regressed = []
 
             for metric, value in metrics.items():
+                # Only compare numeric metrics
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    continue
+
                 improved = True
                 regressed = True
 
@@ -251,7 +255,7 @@ class PromptSampler:
                     performance_parts.append(f"{name}: {value}")
             performance_str = ", ".join(performance_parts)
 
-            # Determine outcome based on comparison with parent
+            # Determine outcome based on comparison with parent (only numeric metrics)
             parent_metrics = program.get("parent_metrics", {})
             outcome = "Mixed results"
 
