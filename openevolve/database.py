@@ -499,7 +499,12 @@ class ProgramDatabase:
 
         logger.info(f"Distributed {len(program_ids)} programs across {len(self.islands)} islands")
 
-    def _save_program(self, program: Program, base_path: Optional[str] = None, prompts: Optional[Dict[str, Dict[str, str]]] = None) -> None:
+    def _save_program(
+        self,
+        program: Program,
+        base_path: Optional[str] = None,
+        prompts: Optional[Dict[str, Dict[str, str]]] = None,
+    ) -> None:
         """
         Save a program to disk
 
