@@ -1,4 +1,4 @@
-# 🎯 Qwen3-0.6B Custom Metal Kernel Optimization with OpenEvolve
+# 🎯Custom Metal Kernel Optimization with OpenEvolve
 
 **Evolving custom GPU kernels for Grouped Query Attention using MLX Metal kernels for Qwen3-0.6B on Apple Silicon**
 
@@ -416,29 +416,3 @@ python run_benchmarks.py --mode compare
 ---
 
 **🎯 This example demonstrates OpenEvolve's capability to discover genuine algorithmic improvements through evolutionary optimization, achieving measurable performance gains on real hardware with production-ready implementations.**
-
-## 🔧 **Recent Improvements**
-
-### **✅ Correct Terminology**
-- **Before**: Incorrect references to "chunked GQA processing"
-- **After**: Accurate descriptions of custom Metal kernel optimization
-- **Benefits**: Technical accuracy and clear understanding of actual discoveries
-
-### **✅ Comprehensive Testing**
-- **Before**: Basic performance measurement
-- **After**: 17-scenario comprehensive benchmark suite with statistical validation
-- **Benefits**: Robust performance analysis and reproducible results
-
-### **✅ Production Integration**
-- **Before**: Standalone optimization experiments
-- **After**: Full MLX-LM integration with seamless switching
-- **Benefits**: Real-world usability and easy adoption
-
-### **✅ Detailed Documentation**
-- **Before**: High-level optimization descriptions  
-- **After**: Complete technical details with actual kernel code snippets
-- **Benefits**: Understanding, reproducibility, and further research
-
----
-
-**🚀 Ready for custom Metal kernel evolution with comprehensive benchmarking and detailed analysis!**
