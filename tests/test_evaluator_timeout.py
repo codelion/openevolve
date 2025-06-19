@@ -19,12 +19,11 @@ class TestEvaluatorTimeout(unittest.TestCase):
     def setUp(self):
         """Set up test evaluation file"""
         # Create a test evaluation file
-        self.test_eval_file = tempfile.NamedTemporaryFile(
-            mode='w', suffix='.py', delete=False
-        )
-        
+        self.test_eval_file = tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False)
+
         # Write test evaluation functions
-        self.test_eval_file.write("""
+        self.test_eval_file.write(
+            """
 import time
 
 def evaluate(program_path):
@@ -40,6 +39,9 @@ def evaluate(program_path):
         # Sleep for a short time that should not timeout
         time.sleep(1)
         return {"score": 0.8}
+    elif 'RAISE_ERROR' in code:
+        # Raise an error to trigger retries
+        raise RuntimeError("Evaluation failed")
     else:
         # Fast evaluation
         return {"score": 0.5}
@@ -73,7 +75,8 @@ def evaluate_stage3(program_path):
         return {"stage3_score": 1.0}
     else:
         return {"stage3_score": 0.9}
-""")
+"""
+        )
         self.test_eval_file.close()
 
     def tearDown(self):
@@ -98,15 +101,16 @@ def evaluate_stage3(program_path):
 
     def test_fast_evaluation_completes(self):
         """Test that fast evaluations complete successfully"""
+
         async def run_test():
             evaluator = self._create_evaluator(timeout=5)
             program_code = "def test(): return 'fast'"
             start_time = time.time()
-            
+
             result = await evaluator.evaluate_program(program_code, "test_fast")
-            
+
             elapsed_time = time.time() - start_time
-            
+
             # Should complete quickly
             self.assertLess(elapsed_time, 3.0)
             # Should return successful result
@@ -120,15 +124,16 @@ def evaluate_stage3(program_path):
 
     def test_short_evaluation_completes(self):
         """Test that evaluations shorter than timeout complete successfully"""
+
         async def run_test():
             evaluator = self._create_evaluator(timeout=5)
             program_code = "# SLEEP_SHORT\ndef test(): return 'short'"
             start_time = time.time()
-            
+
             result = await evaluator.evaluate_program(program_code, "test_short")
-            
+
             elapsed_time = time.time() - start_time
-            
+
             # Should complete within timeout
             self.assertLess(elapsed_time, 5)
             # Should return successful result
@@ -142,19 +147,20 @@ def evaluate_stage3(program_path):
 
     def test_long_evaluation_times_out(self):
         """Test that long evaluations time out properly"""
+
         async def run_test():
             evaluator = self._create_evaluator(timeout=5)
             program_code = "# SLEEP_LONG\ndef test(): return 'long'"
             start_time = time.time()
-            
+
             result = await evaluator.evaluate_program(program_code, "test_long")
-            
+
             elapsed_time = time.time() - start_time
-            
+
             # Should complete around the timeout period (allowing some margin)
             self.assertGreater(elapsed_time, 4)
             self.assertLess(elapsed_time, 8)
-            
+
             # Should return timeout result
             self.assertIn("error", result)
             self.assertEqual(result["error"], 0.0)
@@ -165,19 +171,20 @@ def evaluate_stage3(program_path):
 
     def test_cascade_evaluation_timeout_stage1(self):
         """Test timeout in cascade evaluation stage 1"""
+
         async def run_test():
             evaluator = self._create_evaluator(timeout=5, cascade_evaluation=True)
             program_code = "# STAGE1_TIMEOUT\ndef test(): return 'stage1_timeout'"
             start_time = time.time()
-            
+
             result = await evaluator.evaluate_program(program_code, "test_cascade_stage1")
-            
+
             elapsed_time = time.time() - start_time
-            
+
             # Should timeout around the configured timeout
             self.assertGreater(elapsed_time, 4)
             self.assertLess(elapsed_time, 8)
-            
+
             # Should return stage1 timeout result
             self.assertIn("stage1_passed", result)
             self.assertEqual(result["stage1_passed"], 0.0)
@@ -188,19 +195,20 @@ def evaluate_stage3(program_path):
 
     def test_cascade_evaluation_timeout_stage2(self):
         """Test timeout in cascade evaluation stage 2"""
+
         async def run_test():
             evaluator = self._create_evaluator(timeout=5, cascade_evaluation=True)
             program_code = "# STAGE2_TIMEOUT\ndef test(): return 'stage2_timeout'"
             start_time = time.time()
-            
+
             result = await evaluator.evaluate_program(program_code, "test_cascade_stage2")
-            
+
             elapsed_time = time.time() - start_time
-            
+
             # Should timeout on stage 2, but stage 1 should complete first
             self.assertGreater(elapsed_time, 4)
             self.assertLess(elapsed_time, 8)
-            
+
             # Should have stage1 result but stage2 timeout
             self.assertIn("stage1_score", result)
             self.assertEqual(result["stage1_score"], 0.7)
@@ -213,19 +221,20 @@ def evaluate_stage3(program_path):
 
     def test_cascade_evaluation_timeout_stage3(self):
         """Test timeout in cascade evaluation stage 3"""
+
         async def run_test():
             evaluator = self._create_evaluator(timeout=5, cascade_evaluation=True)
             program_code = "# STAGE3_TIMEOUT\ndef test(): return 'stage3_timeout'"
             start_time = time.time()
-            
+
             result = await evaluator.evaluate_program(program_code, "test_cascade_stage3")
-            
+
             elapsed_time = time.time() - start_time
-            
+
             # Should timeout on stage 3, but stages 1 and 2 should complete first
             self.assertGreater(elapsed_time, 4)
             self.assertLess(elapsed_time, 8)
-            
+
             # Should have stage1 and stage2 results but stage3 timeout
             self.assertIn("stage1_score", result)
             self.assertEqual(result["stage1_score"], 0.7)
@@ -240,80 +249,143 @@ def evaluate_stage3(program_path):
 
     def test_timeout_config_respected(self):
         """Test that the timeout configuration value is actually used"""
+
         async def run_test():
             # Create evaluator with different timeout
             evaluator = self._create_evaluator(timeout=10)
-            
+
             program_code = "# SLEEP_LONG\ndef test(): return 'long'"
             start_time = time.time()
-            
+
             result = await evaluator.evaluate_program(program_code, "test_config")
-            
+
             elapsed_time = time.time() - start_time
-            
+
             # Should timeout around 10 seconds, not 5
             self.assertGreater(elapsed_time, 9)
             self.assertLess(elapsed_time, 13)
-            
+
             # Should return timeout result
             self.assertIn("timeout", result)
             self.assertTrue(result["timeout"])
 
         asyncio.run(run_test())
 
-    def test_multiple_retries_with_timeout(self):
-        """Test that retries work correctly with timeout"""
+    def test_multiple_retries_with_errors(self):
+        """Test that retries work correctly with actual errors (not timeouts)"""
+
         async def run_test():
             # Create evaluator with more retries
             config = EvaluatorConfig()
-            config.timeout = 5
+            config.timeout = 10  # Long timeout to avoid timeout during this test
             config.max_retries = 2  # 3 total attempts
             config.cascade_evaluation = False
-            
+
             evaluator = Evaluator(
                 config=config,
                 evaluation_file=self.test_eval_file.name,
                 llm_ensemble=None,
                 prompt_sampler=None,
             )
-            
-            program_code = "# SLEEP_LONG\ndef test(): return 'long'"
+
+            # Use RAISE_ERROR to trigger actual exceptions that will be retried
+            program_code = "# RAISE_ERROR\ndef test(): return 'error'"
             start_time = time.time()
-            
+
             result = await evaluator.evaluate_program(program_code, "test_retries")
-            
+
             elapsed_time = time.time() - start_time
-            
-            # Should timeout on each retry (3 total attempts)
-            # Each attempt should take ~5 seconds
-            expected_time = 5 * (config.max_retries + 1)
-            self.assertGreater(elapsed_time, expected_time - 3)
-            self.assertLess(elapsed_time, expected_time + 5)
-            
-            # Should return timeout result after all retries fail
+
+            # Should have retried 3 times (max_retries=2 means 3 total attempts)
+            # Each attempt should fail quickly, plus 1 second sleep between retries
+            # So total time should be around 2-3 seconds (quick failures + 2 sleep periods)
+            self.assertGreater(elapsed_time, 1.8)  # At least 2 sleep periods
+            self.assertLess(elapsed_time, 5)  # But not too long
+
+            # Should return error result after all retries fail
             self.assertIn("error", result)
             self.assertEqual(result["error"], 0.0)
 
         asyncio.run(run_test())
 
+    def test_timeout_does_not_trigger_retries(self):
+        """Test that timeouts do not trigger retries (correct behavior)"""
+
+        async def run_test():
+            # Create evaluator with retries enabled
+            config = EvaluatorConfig()
+            config.timeout = 3  # Short timeout
+            config.max_retries = 2  # Would allow 3 attempts if retries were triggered
+            config.cascade_evaluation = False
+
+            evaluator = Evaluator(
+                config=config,
+                evaluation_file=self.test_eval_file.name,
+                llm_ensemble=None,
+                prompt_sampler=None,
+            )
+
+            # Use SLEEP_LONG to trigger timeout
+            program_code = "# SLEEP_LONG\ndef test(): return 'long'"
+            start_time = time.time()
+
+            result = await evaluator.evaluate_program(program_code, "test_timeout_no_retry")
+
+            elapsed_time = time.time() - start_time
+
+            # Should timeout only once (~3 seconds), not retry multiple times
+            # If retries were happening, this would take ~9 seconds
+            self.assertGreater(elapsed_time, 2.5)  # At least the timeout period
+            self.assertLess(elapsed_time, 5)  # But not multiple timeout periods
+
+            # Should return timeout result
+            self.assertIn("timeout", result)
+            self.assertTrue(result["timeout"])
+
+        asyncio.run(run_test())
+
     def test_artifacts_on_timeout(self):
         """Test that timeout artifacts are properly captured"""
+
         async def run_test():
             # Enable artifacts
-            with patch.dict(os.environ, {'ENABLE_ARTIFACTS': 'true'}):
+            with patch.dict(os.environ, {"ENABLE_ARTIFACTS": "true"}):
                 evaluator = self._create_evaluator(timeout=5)
                 program_code = "# SLEEP_LONG\ndef test(): return 'long'"
-                
+
+                # Execute evaluation
                 result = await evaluator.evaluate_program(program_code, "test_artifacts")
-                
-                # Should have timeout result
-                self.assertIn("timeout", result)
-                self.assertTrue(result["timeout"])
-                
-                # Should have captured artifacts
+
+                # Verify timeout occurred
+                self.assertIn("timeout", result, "Result should contain timeout flag")
+                self.assertTrue(result["timeout"], "Timeout flag should be True")
+
+                # Verify artifacts were captured
                 artifacts = evaluator.get_pending_artifacts("test_artifacts")
-                self.assertIsNotNone(artifacts)
-                self.assertIn("failure_stage", artifacts)
+                self.assertIsNotNone(artifacts, "Artifacts should not be None")
+
+                # Verify required artifact fields
+                self.assertIn("failure_stage", artifacts, "Artifacts should contain failure_stage")
+                self.assertEqual(
+                    artifacts["failure_stage"], "evaluation", "failure_stage should be 'evaluation'"
+                )
+
+                self.assertIn("timeout", artifacts, "Artifacts should contain timeout flag")
+                self.assertTrue(artifacts["timeout"], "Artifact timeout flag should be True")
+
+                self.assertIn("error_type", artifacts, "Artifacts should contain error_type")
+                self.assertEqual(
+                    artifacts["error_type"], "timeout", "error_type should be 'timeout'"
+                )
+
+                self.assertIn(
+                    "timeout_duration", artifacts, "Artifacts should contain timeout_duration"
+                )
+                self.assertEqual(
+                    artifacts["timeout_duration"], 5, "timeout_duration should match config"
+                )
+
+                print(f"✅ Artifacts captured correctly: {list(artifacts.keys())}")
 
         asyncio.run(run_test())
 
@@ -323,20 +395,21 @@ class TestTimeoutIntegration(unittest.TestCase):
 
     def test_real_world_scenario(self):
         """Test a scenario similar to the reported bug"""
+
         async def run_test():
             # Create a test evaluation file that simulates a long-running evaluation
-            test_eval_file = tempfile.NamedTemporaryFile(
-                mode='w', suffix='.py', delete=False
-            )
-            
-            test_eval_file.write("""
+            test_eval_file = tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False)
+
+            test_eval_file.write(
+                """
 import time
 
 def evaluate(program_path):
     # Simulate a very long evaluation (like the 11-hour case)
     time.sleep(20)  # 20 seconds to test timeout
     return {"accReturn": 0.1, "CalmarRatio": 0.9, "combined_score": 0.82}
-""")
+"""
+            )
             test_eval_file.close()
 
             try:
@@ -368,7 +441,7 @@ def search_algorithm():
                 # Should timeout in ~5 seconds, not 20+ seconds
                 self.assertLess(elapsed_time, 8)
                 self.assertGreater(elapsed_time, 4)
-                
+
                 # Should return timeout error
                 self.assertIn("error", result)
                 self.assertIn("timeout", result)
