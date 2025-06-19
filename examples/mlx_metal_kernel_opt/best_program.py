@@ -7,7 +7,7 @@ by leveraging Apple Silicon specific optimizations and the 5:1 query-to-KV head 
 
 Target: Qwen3-0.6B with 40 query heads : 8 KV heads
 Hardware: Apple M-series GPUs with unified memory
-Baseline: Standard MLX-LM using mx.fast.scaled_dot_product_attention  
+Baseline: Standard MLX-LM using mx.fast.scaled_dot_product_attention
 Goal: 5-15% performance improvement through custom Metal kernel optimization
 
 Evolution Target: The Metal kernel source code that computes GQA attention

@@ -1082,24 +1082,24 @@ class BulletproofMetalEvaluator:
         custom_memories = [r.peak_memory_gb for r in custom_results if r.peak_memory_gb > 0]
 
         aggregate_metrics = {
-            "avg_decode_speed": float(np.mean(custom_decode_speeds))
-            if custom_decode_speeds
-            else 0.0,
-            "min_decode_speed": float(np.min(custom_decode_speeds))
-            if custom_decode_speeds
-            else 0.0,
-            "max_decode_speed": float(np.max(custom_decode_speeds))
-            if custom_decode_speeds
-            else 0.0,
-            "avg_prefill_speed": float(np.mean(custom_prefill_speeds))
-            if custom_prefill_speeds
-            else 0.0,
+            "avg_decode_speed": (
+                float(np.mean(custom_decode_speeds)) if custom_decode_speeds else 0.0
+            ),
+            "min_decode_speed": (
+                float(np.min(custom_decode_speeds)) if custom_decode_speeds else 0.0
+            ),
+            "max_decode_speed": (
+                float(np.max(custom_decode_speeds)) if custom_decode_speeds else 0.0
+            ),
+            "avg_prefill_speed": (
+                float(np.mean(custom_prefill_speeds)) if custom_prefill_speeds else 0.0
+            ),
             "avg_memory_gb": float(np.mean(custom_memories)) if custom_memories else 0.0,
             "max_memory_gb": float(np.max(custom_memories)) if custom_memories else 0.0,
             "num_successful_tests": len(custom_results),
-            "decode_speed_std": float(np.std(custom_decode_speeds))
-            if len(custom_decode_speeds) > 1
-            else 0.0,
+            "decode_speed_std": (
+                float(np.std(custom_decode_speeds)) if len(custom_decode_speeds) > 1 else 0.0
+            ),
         }
 
         # Enhanced comparison summary
