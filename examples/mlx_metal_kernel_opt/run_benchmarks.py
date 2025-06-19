@@ -106,16 +106,20 @@ def run_optimized_benchmark(args, original_dir):
     try:
         # Import the optimized attention implementation
         # First, try the OpenEvolve output directory (most likely location)
-        best_program_path = os.path.join(original_dir, "openevolve_output", "best", "best_program.py")
-        
+        best_program_path = os.path.join(
+            original_dir, "openevolve_output", "best", "best_program.py"
+        )
+
         # Fallback to root directory if not found in openevolve_output
         if not os.path.exists(best_program_path):
             best_program_path = os.path.join(original_dir, "best_program.py")
-        
+
         if not os.path.exists(best_program_path):
             print(f"❌ Error: Optimized program not found")
             print("Searched in the following locations:")
-            print(f"  1. {os.path.join(original_dir, 'openevolve_output', 'best', 'best_program.py')}")
+            print(
+                f"  1. {os.path.join(original_dir, 'openevolve_output', 'best', 'best_program.py')}"
+            )
             print(f"  2. {os.path.join(original_dir, 'best_program.py')}")
             print("Please ensure OpenEvolve has generated an optimized solution")
             print("Expected path: ./openevolve_output/best/best_program.py")
@@ -454,7 +458,9 @@ def print_comparison_summary(comparison_results):
 
     print(f"\n📊 ABSOLUTE PERFORMANCE:")
     print(f"  🔵 Standard MLX-LM:     {summary['avg_standard_decode_speed']:.1f} tokens/sec average")
-    print(f"  🟠 Metal Kernel Optimized: {summary['avg_optimized_decode_speed']:.1f} tokens/sec average")
+    print(
+        f"  🟠 Metal Kernel Optimized: {summary['avg_optimized_decode_speed']:.1f} tokens/sec average"
+    )
     print(
         f"  📈 Net Improvement:     {summary['avg_optimized_decode_speed'] - summary['avg_standard_decode_speed']:+.1f} tokens/sec"
     )

@@ -55,7 +55,9 @@ def qwen3_custom_gqa_attention(queries, keys, values, scale=1.0, mask=None):
             use_mask = True
     else:
         # Raise error for unsupported mask types - no fallback
-        raise ValueError(f"Unsupported mask type: {type(mask)}. Custom kernel requires None, 'causal', or mx.array mask.")
+        raise ValueError(
+            f"Unsupported mask type: {type(mask)}. Custom kernel requires None, 'causal', or mx.array mask."
+        )
 
     # Expand mask to match batch and head dimensions if needed
     if mask_tensor.ndim == 2:
