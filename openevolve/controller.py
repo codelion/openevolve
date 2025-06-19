@@ -9,7 +9,7 @@ import re
 import time
 import uuid
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 import traceback
 
 from openevolve.config import Config, load_config
