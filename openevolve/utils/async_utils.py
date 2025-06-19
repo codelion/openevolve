@@ -33,28 +33,24 @@ def run_in_executor(f: Callable) -> Callable:
 
 
 async def run_with_timeout(
-    coro: Callable, 
-    timeout: float, 
-    *args: Any, 
-    timeout_error_value: Any = None,
-    **kwargs: Any
+    coro: Callable, timeout: float, *args: Any, timeout_error_value: Any = None, **kwargs: Any
 ) -> Any:
     """
     Run a coroutine with a timeout, returning a default value on timeout
-    
+
     Args:
         coro: Coroutine function to run
         timeout: Timeout in seconds
         *args: Arguments to pass to the coroutine
         timeout_error_value: Value to return on timeout (default: {"error": 0.0, "timeout": True})
         **kwargs: Keyword arguments to pass to the coroutine
-        
+
     Returns:
         Result of the coroutine or timeout_error_value on timeout
     """
     if timeout_error_value is None:
         timeout_error_value = {"error": 0.0, "timeout": True}
-        
+
     try:
         return await asyncio.wait_for(coro(*args, **kwargs), timeout=timeout)
     except asyncio.TimeoutError:
@@ -63,28 +59,24 @@ async def run_with_timeout(
 
 
 async def run_sync_with_timeout(
-    func: Callable, 
-    timeout: float, 
-    *args: Any, 
-    timeout_error_value: Any = None,
-    **kwargs: Any
+    func: Callable, timeout: float, *args: Any, timeout_error_value: Any = None, **kwargs: Any
 ) -> Any:
     """
     Run a synchronous function in an executor with a timeout
-    
+
     Args:
         func: Synchronous function to run
         timeout: Timeout in seconds
         *args: Arguments to pass to the function
         timeout_error_value: Value to return on timeout (default: {"error": 0.0, "timeout": True})
         **kwargs: Keyword arguments to pass to the function
-        
+
     Returns:
         Result of the function or timeout_error_value on timeout
     """
     if timeout_error_value is None:
         timeout_error_value = {"error": 0.0, "timeout": True}
-        
+
     try:
         loop = asyncio.get_event_loop()
         task = loop.run_in_executor(None, functools.partial(func, *args, **kwargs))
@@ -178,20 +170,8 @@ class TaskPool:
     """
 
     def __init__(self, max_concurrency: int = 10):
-        self.max_concurrency = max_concurrency
-        self._semaphore = None  # Lazy initialization
+        self.semaphore = asyncio.Semaphore(max_concurrency)
         self.tasks: List[asyncio.Task] = []
-
-    @property
-    def semaphore(self):
-        """Lazy-initialized semaphore that creates itself when first accessed"""
-        if self._semaphore is None:
-            try:
-                self._semaphore = asyncio.Semaphore(self.max_concurrency)
-            except RuntimeError:
-                # No event loop running, will be created later when needed
-                pass
-        return self._semaphore
 
     async def run(self, coro: Callable, *args: Any, **kwargs: Any) -> Any:
         """
@@ -205,11 +185,7 @@ class TaskPool:
         Returns:
             Result of the coroutine
         """
-        # Ensure semaphore is created in the current event loop
-        if self._semaphore is None:
-            self._semaphore = asyncio.Semaphore(self.max_concurrency)
-            
-        async with self._semaphore:
+        async with self.semaphore:
             return await coro(*args, **kwargs)
 
     def create_task(self, coro: Callable, *args: Any, **kwargs: Any) -> asyncio.Task:

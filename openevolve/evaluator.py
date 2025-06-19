@@ -117,21 +117,12 @@ class Evaluator:
         # Retry logic for evaluation
         last_exception = None
         for attempt in range(self.config.max_retries + 1):
-            # Create a temporary file for the program - FIXED: proper file handling
-            temp_file_path = None
+            # Create a temporary file for the program
+            with tempfile.NamedTemporaryFile(suffix=".py", delete=False) as temp_file:
+                temp_file.write(program_code.encode("utf-8"))
+                temp_file_path = temp_file.name
+
             try:
-                # Create temp file and write content with proper flushing
-                temp_fd, temp_file_path = tempfile.mkstemp(suffix=".py", text=True)
-                with os.fdopen(temp_fd, 'w') as temp_file:
-                    temp_file.write(program_code)
-                    temp_file.flush()  # Ensure content is written to disk
-                    os.fsync(temp_file.fileno())  # Force sync to disk
-
-                # Verify file was written correctly (debug)
-                with open(temp_file_path, 'r') as verify_file:
-                    written_content = verify_file.read()
-                    logger.debug(f"Temp file content (first 100 chars): {written_content[:100]}")
-
                 # Run evaluation
                 if self.config.cascade_evaluation:
                     # Run cascade evaluation
@@ -195,26 +186,13 @@ class Evaluator:
                 )
                 traceback.print_exc()
 
-                # Capture failure artifacts if enabled - FIXED: better artifact capture
+                # Capture failure artifacts if enabled
                 if artifacts_enabled and program_id:
-                    failure_artifacts = {
+                    self._pending_artifacts[program_id] = {
                         "stderr": str(e),
                         "traceback": traceback.format_exc(),
                         "failure_stage": "evaluation",
-                        "attempt": attempt + 1,
-                        "timeout_config": self.config.timeout,
                     }
-                    
-                    # Check if this was a timeout error
-                    if isinstance(e, asyncio.TimeoutError) or "timeout" in str(e).lower():
-                        failure_artifacts["timeout"] = True
-                        failure_artifacts["failure_stage"] = "timeout"
-                    
-                    # Store or update artifacts
-                    if program_id in self._pending_artifacts:
-                        self._pending_artifacts[program_id].update(failure_artifacts)
-                    else:
-                        self._pending_artifacts[program_id] = failure_artifacts
 
                 # If this is not the last attempt, wait a bit before retrying
                 if attempt < self.config.max_retries:
@@ -222,22 +200,14 @@ class Evaluator:
 
             finally:
                 # Clean up temporary file
-                if temp_file_path and os.path.exists(temp_file_path):
-                    try:
-                        os.unlink(temp_file_path)
-                    except OSError:
-                        pass  # Ignore cleanup errors
+                if os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
 
-        # All retries failed - FIXED: better error return with timeout info
+        # All retries failed
         logger.error(
             f"All evaluation attempts failed for program{program_id_str}. Last error: {str(last_exception)}"
         )
-        
-        # Check if the last exception was a timeout
-        if isinstance(last_exception, asyncio.TimeoutError):
-            return {"error": 0.0, "timeout": True}
-        else:
-            return {"error": 0.0}
+        return {"error": 0.0}
 
     def _process_evaluation_result(self, result: Any) -> EvaluationResult:
         """
@@ -282,19 +252,13 @@ class Evaluator:
         Returns:
             Dictionary of metric name to score
         """
-        logger.debug(f"Starting direct evaluation with timeout={self.config.timeout}s")
-        
         try:
             # Create a coroutine that runs the evaluation function in an executor
             async def run_evaluation():
                 loop = asyncio.get_event_loop()
-                logger.debug(f"Running evaluation function on {program_path}")
-                result = await loop.run_in_executor(None, self.evaluate_function, program_path)
-                logger.debug(f"Evaluation function returned: {result}")
-                return result
+                return await loop.run_in_executor(None, self.evaluate_function, program_path)
 
             # Run the evaluation with timeout
-            logger.debug(f"Waiting for evaluation with {self.config.timeout}s timeout")
             result = await asyncio.wait_for(run_evaluation(), timeout=self.config.timeout)
 
             # Validate result
@@ -302,7 +266,6 @@ class Evaluator:
                 logger.warning(f"Evaluation returned non-dictionary result: {result}")
                 return {"error": 0.0}
 
-            logger.debug(f"Evaluation completed successfully: {result}")
             return result
 
         except asyncio.TimeoutError:
@@ -310,7 +273,6 @@ class Evaluator:
             return {"error": 0.0, "timeout": True}
         except Exception as e:
             logger.error(f"Error in direct evaluation: {str(e)}")
-            traceback.print_exc()
             return {"error": 0.0}
 
     async def _cascade_evaluate(
@@ -346,6 +308,7 @@ class Evaluator:
 
             # Run first stage with timeout
             try:
+
                 async def run_stage1():
                     loop = asyncio.get_event_loop()
                     return await loop.run_in_executor(None, module.evaluate_stage1, program_path)
@@ -385,6 +348,7 @@ class Evaluator:
 
             # Run second stage with timeout
             try:
+
                 async def run_stage2():
                     loop = asyncio.get_event_loop()
                     return await loop.run_in_executor(None, module.evaluate_stage2, program_path)
@@ -446,6 +410,7 @@ class Evaluator:
 
             # Run third stage with timeout
             try:
+
                 async def run_stage3():
                     loop = asyncio.get_event_loop()
                     return await loop.run_in_executor(None, module.evaluate_stage3, program_path)
