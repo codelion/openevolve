@@ -10,6 +10,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+import traceback
 
 from openevolve.config import Config, load_config
 from openevolve.database import Program, ProgramDatabase
@@ -142,6 +143,7 @@ class OpenEvolve:
             evaluation_file,
             self.llm_evaluator_ensemble,
             self.evaluator_prompt_sampler,
+            database=self.database,
         )
 
         logger.info(f"Initialized OpenEvolve with {initial_program_path} " f"and {evaluation_file}")
@@ -335,9 +337,29 @@ class OpenEvolve:
                 # Add to database (will be added to current island)
                 self.database.add(child_program, iteration=i + 1)
 
+                # Log prompts
+                self.database.log_prompt(
+                    template_key=(
+                        "full_rewrite_user" if self.config.allow_full_rewrites else "diff_user"
+                    ),
+                    program_id=child_id,
+                    prompt=prompt,
+                    responses=[llm_response],
+                )
+
                 # Store artifacts if they exist
                 if artifacts:
                     self.database.store_artifacts(child_id, artifacts)
+
+                # Log prompts
+                self.database.log_prompt(
+                    template_key=(
+                        "full_rewrite_user" if self.config.allow_full_rewrites else "diff_user"
+                    ),
+                    program_id=child_id,
+                    prompt=prompt,
+                    responses=[llm_response],
+                )
 
                 # Increment generation for current island
                 self.database.increment_island_generation()
@@ -384,6 +406,7 @@ class OpenEvolve:
 
             except Exception as e:
                 logger.error(f"Error in iteration {i+1}: {str(e)}")
+                traceback.print_exc()
                 continue
 
         # Get the best program using our tracking mechanism

@@ -32,9 +32,18 @@ export function showSidebarContent(d, fromHover = false) {
     let tabContentHtml = '';
     let tabNames = [];
     if (d.code && typeof d.code === 'string' && d.code.trim() !== '') tabNames.push('Code');
-    if (d.prompts && typeof d.prompts === 'object' && Object.keys(d.prompts).length > 0) tabNames.push('Prompts');
+    if ((d.prompts && typeof d.prompts === 'object' && Object.keys(d.prompts).length > 0) || (d.artifacts_json && typeof d.artifacts_json === 'object' && Object.keys(d.artifacts_json).length > 0)) tabNames.push('Prompts');
     const children = allNodeData.filter(n => n.parent_id === d.id);
     if (children.length > 0) tabNames.push('Children');
+
+    // Handle nodes with "-copyN" IDs
+    function getBaseId(id) {
+        return id.includes('-copy') ? id.split('-copy')[0] : id;
+    }
+    const baseId = getBaseId(d.id);
+    const clones = allNodeData.filter(n => getBaseId(n.id) === baseId && n.id !== d.id);
+    if (clones.length > 0) tabNames.push('Clones');
+
     let activeTab = lastSidebarTab && tabNames.includes(lastSidebarTab) ? lastSidebarTab : tabNames[0];
 
     // Helper to render tab content
@@ -43,11 +52,44 @@ export function showSidebarContent(d, fromHover = false) {
             return `<pre class="sidebar-code-pre">${d.code}</pre>`;
         }
         if (tabName === 'Prompts') {
-            let html = '';
-            for (const [k, v] of Object.entries(d.prompts)) {
-                html += `<div style="margin-bottom:0.7em;"><b>${k}:</b><pre class="sidebar-pre">${v}</pre></div>`;
+            // Prompt select logic
+            let promptOptions = [];
+            let promptMap = {};
+            if (d.prompts && typeof d.prompts === 'object') {
+                for (const [k, v] of Object.entries(d.prompts)) {
+                    if (v && typeof v === 'object' && !Array.isArray(v)) {
+                        for (const [subKey, subVal] of Object.entries(v)) {
+                            const optLabel = `${k} - ${subKey}`;
+                            promptOptions.push(optLabel);
+                            promptMap[optLabel] = subVal;
+                        }
+                    } else {
+                        const optLabel = `${k}`;
+                        promptOptions.push(optLabel);
+                        promptMap[optLabel] = v;
+                    }
+                }
             }
-            return html;
+            // Artifacts
+            if (d.artifacts_json) {
+                const optLabel = `artifacts`;
+                promptOptions.push(optLabel);
+                promptMap[optLabel] = d.artifacts_json;
+            }
+            // Get last selected prompt from localStorage, or default to first
+            let lastPromptKey = localStorage.getItem('sidebarPromptSelect') || promptOptions[0] || '';
+            if (!promptMap[lastPromptKey]) lastPromptKey = promptOptions[0] || '';
+            // Build select box
+            let selectHtml = '';
+            if (promptOptions.length > 1) {
+                selectHtml = `<select id="sidebar-prompt-select" style="margin-bottom:0.7em;max-width:100%;font-size:1em;">
+                    ${promptOptions.map(opt => `<option value="${opt}"${opt===lastPromptKey?' selected':''}>${opt}</option>`).join('')}
+                </select>`;
+            }
+            // Show only the selected prompt
+            let promptVal = promptMap[lastPromptKey];
+            let promptHtml = `<pre class="sidebar-pre">${promptVal ?? ''}</pre>`;
+            return selectHtml + promptHtml;
         }
         if (tabName === 'Children') {
             const metric = (document.getElementById('metric-select') && document.getElementById('metric-select').value) || 'combined_score';
@@ -63,6 +105,13 @@ export function showSidebarContent(d, fromHover = false) {
                     let bar = (child.metrics && typeof child.metrics[metric] === 'number') ? renderMetricBar(child.metrics[metric], min, max) : '';
                     return `<li style='margin-bottom:0.3em;'><a href="#" class="child-link" data-child="${child.id}">${child.id}</a><br /><br /> <span style='margin-left:0.5em;'>${val}</span> ${bar}</li>`;
                 }).join('') +
+                `</ul></div>`;
+        }
+        if (tabName === 'Clones') {
+            return `<div><ul style='margin:0.5em 0 0 1em;padding:0;'>` +
+                clones.map(clone =>
+                    `<li style='margin-bottom:0.3em;'><a href="#" class="clone-link" data-clone="${clone.id}">${clone.id}</a></li>`
+                ).join('') +
                 `</ul></div>`;
         }
         return '';
@@ -93,6 +142,24 @@ export function showSidebarContent(d, fromHover = false) {
             <b>Metrics:</b><br>${formatMetrics(d.metrics)}<br><br>
             ${tabHtml}${tabContentHtml}
         </div>`;
+
+    // Helper to attach prompt select handler
+    function attachPromptSelectHandler() {
+        const promptSelect = document.getElementById('sidebar-prompt-select');
+        if (promptSelect) {
+            promptSelect.onchange = function() {
+                localStorage.setItem('sidebarPromptSelect', promptSelect.value);
+                // Only re-render the Prompts tab, not the whole sidebar
+                const tabContent = document.getElementById('sidebar-tab-content');
+                if (tabContent) {
+                    tabContent.innerHTML = renderSidebarTabContent('Prompts', d, children);
+                    attachPromptSelectHandler();
+                }
+            };
+        }
+    }
+    attachPromptSelectHandler();
+
     if (tabNames.length > 1) {
         const tabBar = document.getElementById('sidebar-tab-bar');
         Array.from(tabBar.children).forEach(tabEl => {
@@ -103,6 +170,9 @@ export function showSidebarContent(d, fromHover = false) {
                 lastSidebarTab = tabName;
                 const tabContent = document.getElementById('sidebar-tab-content');
                 tabContent.innerHTML = renderSidebarTabContent(tabName, d, children);
+                if (tabName === 'Prompts') {
+                    attachPromptSelectHandler();
+                }
                 setTimeout(() => {
                     document.querySelectorAll('.child-link').forEach(link => {
                         link.onclick = function(e) {
@@ -123,11 +193,31 @@ export function showSidebarContent(d, fromHover = false) {
                             }
                         };
                     });
+                    document.querySelectorAll('.clone-link').forEach(link => {
+                        link.onclick = function(e) {
+                            e.preventDefault();
+                            const cloneNode = allNodeData.find(n => n.id == link.dataset.clone);
+                            if (cloneNode) {
+                                window._lastSelectedNodeData = cloneNode;
+                                const perfTabBtn = document.getElementById('tab-performance');
+                                const perfTabView = document.getElementById('view-performance');
+                                if ((perfTabBtn && perfTabBtn.classList.contains('active')) || (perfTabView && perfTabView.classList.contains('active'))) {
+                                    import('./performance.js').then(mod => {
+                                        mod.selectPerformanceNodeById(cloneNode.id);
+                                        showSidebar();
+                                    });
+                                } else {
+                                    scrollAndSelectNodeById(cloneNode.id);
+                                }
+                            }
+                        };
+                    });
                 }, 0);
             };
         });
     }
     setTimeout(() => {
+        attachPromptSelectHandler();
         document.querySelectorAll('.child-link').forEach(link => {
             link.onclick = function(e) {
                 e.preventDefault();
@@ -144,6 +234,25 @@ export function showSidebarContent(d, fromHover = false) {
                         });
                     } else {
                         scrollAndSelectNodeById(childNode.id);
+                    }
+                }
+            };
+        });
+        document.querySelectorAll('.clone-link').forEach(link => {
+            link.onclick = function(e) {
+                e.preventDefault();
+                const cloneNode = allNodeData.find(n => n.id == link.dataset.clone);
+                if (cloneNode) {
+                    window._lastSelectedNodeData = cloneNode;
+                    const perfTabBtn = document.getElementById('tab-performance');
+                    const perfTabView = document.getElementById('view-performance');
+                    if ((perfTabBtn && perfTabBtn.classList.contains('active')) || (perfTabView && perfTabView.classList.contains('active'))) {
+                        import('./performance.js').then(mod => {
+                            mod.selectPerformanceNodeById(cloneNode.id);
+                            showSidebar();
+                        });
+                    } else {
+                        scrollAndSelectNodeById(cloneNode.id);
                     }
                 }
             };

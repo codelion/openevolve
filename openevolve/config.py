@@ -142,6 +142,9 @@ class DatabaseConfig:
     db_path: Optional[str] = None  # Path to store database on disk
     in_memory: bool = True
 
+    # Prompt and response logging to programs/<id>.json
+    log_prompts: bool = True
+
     # Evolutionary parameters
     population_size: int = 1000
     archive_size: int = 100
@@ -308,6 +311,7 @@ class Config:
                 "migration_interval": self.database.migration_interval,
                 "migration_rate": self.database.migration_rate,
                 "random_seed": self.database.random_seed,
+                "log_prompts": self.database.log_prompts,
             },
             "evaluator": {
                 "timeout": self.evaluator.timeout,

@@ -11,7 +11,7 @@ import { selectListNodeById } from './list.js';
         if (!toggleDiv) {
             toggleDiv = document.createElement('div');
             toggleDiv.id = 'perf-island-toggle';
-            toggleDiv.style = 'display:flex;align-items:center;gap:0.7em;';
+            toggleDiv.style = 'display:flex;align-items:center;gap:0.7em;margin-left:3em;';
             toggleDiv.innerHTML = `
             <label class="toggle-switch">
                 <input type="checkbox" id="show-islands-toggle">
@@ -166,14 +166,47 @@ import { selectListNodeById } from './list.js';
 
         // Initial render
         if (typeof allNodeData !== 'undefined' && allNodeData.length) {
-            updatePerformanceGraph(allNodeData, {autoZoom: true});
-            // --- Zoom to fit after initial render ---
+            updatePerformanceGraph(allNodeData);
+            // Zoom to fit after initial render
             setTimeout(() => {
                 zoomPerformanceGraphToFit();
             }, 0);
         }
     });
 })();
+
+// Recenter Button Overlay
+function showRecenterButton(onClick) {
+    let btn = document.getElementById('performance-recenter-btn');
+    if (!btn) {
+        btn = document.createElement('button');
+        btn.id = 'performance-recenter-btn';
+        btn.textContent = 'Recenter';
+        btn.style.position = 'absolute';
+        btn.style.left = '50%';
+        btn.style.top = '50%';
+        btn.style.transform = 'translate(-50%, -50%)';
+        btn.style.zIndex = 1000;
+        btn.style.fontSize = '2em';
+        btn.style.padding = '0.5em 1.5em';
+        btn.style.background = '#fff';
+        btn.style.border = '2px solid #2196f3';
+        btn.style.borderRadius = '12px';
+        btn.style.boxShadow = '0 2px 16px #0002';
+        btn.style.cursor = 'pointer';
+        btn.style.display = 'block';
+        document.getElementById('view-performance').appendChild(btn);
+    }
+    btn.style.display = 'block';
+    btn.onclick = function() {
+        btn.style.display = 'none';
+        if (typeof onClick === 'function') onClick();
+    };
+}
+function hideRecenterButton() {
+    const btn = document.getElementById('performance-recenter-btn');
+    if (btn) btn.style.display = 'none';
+}
 
 // Select a node by ID and update graph and sidebar
 export function selectPerformanceNodeById(id, opts = {}) {
@@ -290,6 +323,35 @@ function updatePerformanceGraph(nodes, options = {}) {
             .on('zoom', function(event) {
                 g.attr('transform', event.transform);
                 lastTransform = event.transform;
+                // Check if all content is out of view
+                setTimeout(() => {
+                    try {
+                        const svgRect = svg.node().getBoundingClientRect();
+                        const allCircles = g.selectAll('circle').nodes();
+                        if (allCircles.length === 0) { hideRecenterButton(); return; }
+                        let anyVisible = false;
+                        for (const c of allCircles) {
+                            const bbox = c.getBoundingClientRect();
+                            if (
+                                bbox.right > svgRect.left &&
+                                bbox.left < svgRect.right &&
+                                bbox.bottom > svgRect.top &&
+                                bbox.top < svgRect.bottom
+                            ) {
+                                anyVisible = true;
+                                break;
+                            }
+                        }
+                        if (!anyVisible) {
+                            showRecenterButton(() => {
+                                // Reset zoom/pan
+                                svg.transition().duration(400).call(zoomBehavior.transform, d3.zoomIdentity);
+                            });
+                        } else {
+                            hideRecenterButton();
+                        }
+                    } catch {}
+                }, 0);
             });
         svg.call(zoomBehavior);
     }
@@ -500,7 +562,7 @@ function updatePerformanceGraph(nodes, options = {}) {
         })
         .attr('stroke-width', d => (selectedProgramId && (d.source.id === selectedProgramId || d.target.id === selectedProgramId)) ? 3 : 1.5)
         .attr('opacity', d => (selectedProgramId && (d.source.id === selectedProgramId || d.target.id === selectedProgramId)) ? 0.9 : 0.5);
-    // --- Ensure edge highlighting updates after node selection ---
+    // Ensure edge highlighting updates after node selection
     function updateEdgeHighlighting() {
         g.selectAll('line.performance-edge')
             .attr('stroke', d => (selectedProgramId && (d.source.id === selectedProgramId || d.target.id === selectedProgramId)) ? 'red' : '#888')
@@ -651,7 +713,7 @@ function updatePerformanceGraph(nodes, options = {}) {
     }
 }
 
-// --- Zoom-to-fit helper ---
+// Zoom-to-fit helper
 function zoomPerformanceGraphToFit() {
     if (!svg || !g) return;
     // Get all node positions (valid and NaN)
@@ -679,9 +741,14 @@ function zoomPerformanceGraphToFit() {
     minX -= pad; minY -= pad; maxX += pad; maxY += pad;
     const graphW = svg.attr('width');
     const graphH = svg.attr('height');
+    // Bias the center to the left so the left edge is always visible
+    // Instead of centering on the middle, center at 35% from the left
+    const centerFrac = 0.35;
+    const centerX = minX + (maxX - minX) * centerFrac;
+    const centerY = minY + (maxY - minY) / 2;
     const scale = Math.min(graphW / (maxX - minX), graphH / (maxY - minY), 1.5);
-    const tx = graphW/2 - scale * (minX + (maxX-minX)/2);
-    const ty = graphH/2 - scale * (minY + (maxY-minY)/2);
+    const tx = graphW/2 - scale * centerX;
+    const ty = graphH/2 - scale * centerY;
     const t = d3.zoomIdentity.translate(tx, ty).scale(scale);
     svg.transition().duration(400).call(zoomBehavior.transform, t);
     lastTransform = t;
