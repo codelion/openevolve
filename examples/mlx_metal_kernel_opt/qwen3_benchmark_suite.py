@@ -1,14 +1,15 @@
 """
-Comprehensive Benchmark Suite for Qwen3-0.6B Optimization
-=========================================================
+Comprehensive Benchmark Suite for Qwen3-0.6B Metal Kernel Optimization
+======================================================================
 
 This benchmark suite tests various scenarios to establish baseline performance
-and later validate evolved kernel optimizations. Mirrors AlphaEvolve's approach
-of testing across multiple configurations and workloads.
+and validate evolved Metal kernel optimizations. Tests the custom Metal kernel
+discovered by OpenEvolve against MLX's standard attention implementation.
 
 Target Model: mlx-community/Qwen3-0.6B-bf16
 Target Hardware: Apple M4 24GB
-Optimization Target: GQA attention kernel (40 query heads : 8 KV heads)
+Optimization: Custom Metal kernel for GQA attention (40 query heads : 8 KV heads)
+Baseline: mx.fast.scaled_dot_product_attention
 """
 
 import time
@@ -50,7 +51,7 @@ class BenchmarkConfig:
 
 
 class Qwen3BenchmarkSuite:
-    """Comprehensive benchmark suite for Qwen3-0.6B optimization"""
+    """Comprehensive benchmark suite for Qwen3-0.6B Metal kernel optimization"""
 
     def __init__(self, model_path: str = "mlx-community/Qwen3-0.6B-bf16"):
         self.model_path = model_path
@@ -766,6 +767,7 @@ Given this comprehensive overview of the current state and future directions of 
         print(f"Qwen3-0.6B Comprehensive Benchmark Suite")
         print(f"Model: {self.model_path}")
         print(f"Hardware: Apple M4 24GB")
+        print(f"Target: Custom Metal kernel optimization validation")
         print(f"{'='*80}")
 
         configs = self.create_benchmark_configs()
@@ -848,6 +850,7 @@ Given this comprehensive overview of the current state and future directions of 
             "timestamp": timestamp,
             "model": self.model_path,
             "hardware": "Apple M4 24GB",
+            "optimization": "Custom Metal kernel for GQA attention",
             "mlx_version": mx.__version__,
             "results": [self._result_to_dict(r) for r in results],
             "summary": summary,
@@ -954,9 +957,9 @@ Given this comprehensive overview of the current state and future directions of 
 
 def main():
     """Run the complete benchmark suite"""
-    # No need to change directories - mlx-lm is installed as a package
     print("Running Qwen3-0.6B Comprehensive Benchmark Suite")
     print("Ensure mlx-lm is installed: pip install mlx-lm")
+    print("Target: Validate custom Metal kernel optimization performance")
 
     benchmark_suite = Qwen3BenchmarkSuite()
     results = benchmark_suite.run_full_benchmark_suite()
@@ -964,8 +967,8 @@ def main():
 
     print(f"\n{'='*80}")
     print("Benchmark Suite Complete!")
-    print("These results will serve as baseline for kernel optimization.")
-    print("Target: Improve decode speed by 20%+ through evolved GQA attention kernel")
+    print("These results will serve as baseline for Metal kernel optimization validation.")
+    print("Target: Improve decode speed by 10%+ through evolved custom Metal kernels")
     print(f"{'='*80}")
 
     return results

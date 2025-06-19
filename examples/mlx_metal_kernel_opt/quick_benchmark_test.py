@@ -59,6 +59,7 @@ def run_quick_test():
         print(f"\n{'='*80}")
         print(f"Quick Benchmark Test - Qwen3-0.6B")
         print(f"Testing {len(test_configs)} key scenarios with warmup")
+        print(f"Purpose: Validate Metal kernel optimization baseline")
         print(f"{'='*80}")
 
         # Global warmup - run one quick test to warm up the system
@@ -121,8 +122,10 @@ def run_quick_test():
 
         print(f"\n{'='*80}")
         print("Quick test complete! If this looks good, run the full benchmark suite.")
-        print("python qwen3_benchmark_suite.py")
+        print("Full suite: python qwen3_benchmark_suite.py")
+        print("Compare mode: python run_benchmarks.py --mode compare")
         print(f"✅ All tests included proper warmup for reliable results")
+        print(f"🎯 Ready to test custom Metal kernel optimization!")
         print(f"{'='*80}")
 
         return results

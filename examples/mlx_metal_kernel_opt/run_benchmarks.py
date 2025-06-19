@@ -58,7 +58,7 @@ def run_compare_benchmarks(args):
 
         # Apply optimized attention hook and run benchmark
         print("\n🚀 Phase 2: Running OpenEvolve Discovered Optimization...")
-        print("💡 Applying chunked GQA processing optimization")
+        print("💡 Applying custom Metal kernel optimized GQA attention")
 
         # Import and apply the optimized attention
         optimized_results = run_optimized_benchmark(args, original_dir)
@@ -145,29 +145,29 @@ def run_optimized_benchmark(args, original_dir):
 
         # Apply the custom attention hook
         apply_hook, remove_hook = best_program.create_metal_qwen3_optimization_hook()
-        print("🔧 Applying optimized attention hook...")
+        print("🔧 Applying custom Metal kernel optimized attention hook...")
 
         original_attention = apply_hook()
 
         if original_attention is None:
-            print("❌ Failed to apply optimized attention hook")
+            print("❌ Failed to apply custom Metal kernel optimization hook")
             print("This may indicate MLX-LM import issues or incompatible environment")
             return None
 
-        print("✅ Optimized attention hook applied successfully")
+        print("✅ Custom Metal kernel optimization hook applied successfully")
 
         try:
             # Run benchmarks with optimized attention
-            print("📊 Running full benchmark suite with chunked GQA optimization...")
+            print("📊 Running full benchmark suite with custom Metal kernel optimization...")
             print("⏳ This will take another 15-30 minutes...")
             print(
-                "💡 The optimization uses chunked processing: 8 smaller attention calls vs 1 large call"
+                "💡 The optimization uses custom Metal kernel implementation for Apple Silicon GPU"
             )
 
             optimized_suite = Qwen3BenchmarkSuite(args.model)
             optimized_results = optimized_suite.run_full_benchmark_suite()
 
-            print("✅ Optimized benchmark suite completed successfully")
+            print("✅ Custom Metal kernel benchmark suite completed successfully")
             return optimized_results
 
         finally:
@@ -177,7 +177,7 @@ def run_optimized_benchmark(args, original_dir):
             print("✅ Standard attention restored")
 
     except Exception as e:
-        print(f"❌ Error running optimized benchmark: {e}")
+        print(f"❌ Error running Metal kernel optimized benchmark: {e}")
         import traceback
 
         traceback.print_exc()
@@ -325,7 +325,7 @@ def analyze_comparison_results(standard_results, optimized_results, model_name):
     return {
         "model": model_name,
         "timestamp": int(time.time()),
-        "optimization_type": "chunked_gqa_processing",
+        "optimization_type": "custom_metal_kernel",
         "total_comparisons": len(comparisons),
         "individual_comparisons": comparisons,
         "aggregate_improvements": aggregate_stats,
@@ -436,15 +436,15 @@ def print_comparison_summary(comparison_results):
         return
 
     print(f"\n{'='*100}")
-    print(f"{'🚀 OPENEVOLVE CHUNKED GQA OPTIMIZATION RESULTS':^100}")
+    print(f"{'🚀 OPENEVOLVE CUSTOM METAL KERNEL OPTIMIZATION RESULTS':^100}")
     print(f"{'='*100}")
 
     summary = comparison_results["summary"]
     total_tests = comparison_results["total_comparisons"]
 
-    print(f"\n💡 OPTIMIZATION: Chunked GQA Processing")
-    print(f"   Strategy: 8 smaller attention calls (5 heads each) vs 1 large call (40 heads)")
-    print(f"   Hypothesis: Better cache locality and Metal kernel efficiency on Apple Silicon")
+    print(f"\n💡 OPTIMIZATION: Custom Metal Kernel for GQA Attention")
+    print(f"   Strategy: Hand-optimized Metal kernel using vectorized operations")
+    print(f"   Target: Apple Silicon GPU with optimized memory access patterns")
 
     print(f"\n🎯 OVERALL PERFORMANCE IMPROVEMENTS (across {total_tests} comprehensive tests):")
     print(f"  📈 Average Decode Speed Improvement: {summary['avg_decode_improvement_pct']:+.2f}%")
@@ -453,10 +453,10 @@ def print_comparison_summary(comparison_results):
     print(f"  ⏱️  Average Time Reduction:          {summary['avg_time_reduction_pct']:+.2f}%")
 
     print(f"\n📊 ABSOLUTE PERFORMANCE:")
-    print(f"  🔵 Standard MLX-LM:  {summary['avg_standard_decode_speed']:.1f} tokens/sec average")
-    print(f"  🟢 Chunked GQA:      {summary['avg_optimized_decode_speed']:.1f} tokens/sec average")
+    print(f"  🔵 Standard MLX-LM:     {summary['avg_standard_decode_speed']:.1f} tokens/sec average")
+    print(f"  🟠 Metal Kernel Optimized: {summary['avg_optimized_decode_speed']:.1f} tokens/sec average")
     print(
-        f"  📈 Net Improvement:  {summary['avg_optimized_decode_speed'] - summary['avg_standard_decode_speed']:+.1f} tokens/sec"
+        f"  📈 Net Improvement:     {summary['avg_optimized_decode_speed'] - summary['avg_standard_decode_speed']:+.1f} tokens/sec"
     )
 
     print(f"\n📊 DETAILED BENCHMARK COMPARISON:")
@@ -546,26 +546,26 @@ def print_comparison_summary(comparison_results):
 
     # Technical insights
     print(f"\n🔬 TECHNICAL INSIGHTS:")
-    print(f"  💡 Chunked Processing Strategy:")
-    print(f"     • Standard: 1 call with 8→40 head broadcasting")
-    print(f"     • Optimized: 8 calls with 1→5 head broadcasting each")
+    print(f"  💡 Custom Metal Kernel Strategy:")
+    print(f"     • Standard: mx.fast.scaled_dot_product_attention")
+    print(f"     • Optimized: Hand-written Metal kernel with vectorized operations")
     print(f"  🧠 Potential Reasons for Performance Gains:")
-    print(f"     • Better cache locality with smaller attention matrices")
-    print(f"     • Metal kernel optimization for specific tensor sizes")
-    print(f"     • Reduced memory pressure during GQA broadcasting")
-    print(f"     • More efficient parallelization on Apple Silicon")
+    print(f"     • Optimized memory access patterns for Apple Silicon")
+    print(f"     • Vectorized operations using vec<T, 8> types")
+    print(f"     • Better cache locality with custom computation order")
+    print(f"     • GPU-specific optimizations for M-series processors")
 
     if summary["avg_decode_improvement_pct"] > 10:
         print(f"\n🎯 NEXT STEPS:")
         print(f"  1. Verify results independently outside this framework")
-        print(f"  2. Profile memory usage and kernel execution patterns")
-        print(f"  3. Test on different Apple Silicon variants (M1, M2, M3)")
-        print(f"  4. Consider contributing optimization back to MLX-LM")
-        print(f"  5. Explore similar chunking strategies for other GQA models")
+        print(f"  2. Profile Metal kernel execution patterns and memory usage")
+        print(f"  3. Test on different Apple Silicon variants (M1, M2, M3, M4)")
+        print(f"  4. Consider contributing Metal kernel optimization back to MLX")
+        print(f"  5. Explore similar Metal kernel strategies for other attention patterns")
 
     print(f"\n{'='*100}")
     print(f"🔬 Comprehensive analysis complete! Results saved to comparison files.")
-    print(f"💡 This represents a genuine algorithmic discovery by OpenEvolve.")
+    print(f"💡 This represents a genuine Metal kernel discovery by OpenEvolve.")
     print(f"{'='*100}")
 
 
@@ -596,7 +596,7 @@ def main():
 
     elif args.mode == "compare":
         print("\n🔬 Running Comprehensive Comparison...")
-        print("📊 This will benchmark standard MLX-LM vs OpenEvolve optimization")
+        print("📊 This will benchmark standard MLX-LM vs OpenEvolve Metal kernel optimization")
         return run_compare_benchmarks(args)
 
     else:  # full
@@ -625,7 +625,7 @@ def main():
             os.chdir(original_dir)
 
     if args.mode != "compare":
-        print("\n🎯 These results establish the baseline for kernel optimization.")
+        print("\n🎯 These results establish the baseline for Metal kernel optimization.")
         print("🔧 Next step: Run with --mode compare to validate OpenEvolve discoveries!")
         print("💡 Example: python run_benchmarks.py --mode compare --output-dir results")
         print("📚 Ensure MLX-LM is installed: pip install mlx-lm")
