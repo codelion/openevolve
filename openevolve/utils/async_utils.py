@@ -32,6 +32,60 @@ def run_in_executor(f: Callable) -> Callable:
     return wrapper
 
 
+async def run_with_timeout(
+    coro: Callable, timeout: float, *args: Any, timeout_error_value: Any = None, **kwargs: Any
+) -> Any:
+    """
+    Run a coroutine with a timeout, returning a default value on timeout
+
+    Args:
+        coro: Coroutine function to run
+        timeout: Timeout in seconds
+        *args: Arguments to pass to the coroutine
+        timeout_error_value: Value to return on timeout (default: {"error": 0.0, "timeout": True})
+        **kwargs: Keyword arguments to pass to the coroutine
+
+    Returns:
+        Result of the coroutine or timeout_error_value on timeout
+    """
+    if timeout_error_value is None:
+        timeout_error_value = {"error": 0.0, "timeout": True}
+
+    try:
+        return await asyncio.wait_for(coro(*args, **kwargs), timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.warning(f"Operation timed out after {timeout}s")
+        return timeout_error_value
+
+
+async def run_sync_with_timeout(
+    func: Callable, timeout: float, *args: Any, timeout_error_value: Any = None, **kwargs: Any
+) -> Any:
+    """
+    Run a synchronous function in an executor with a timeout
+
+    Args:
+        func: Synchronous function to run
+        timeout: Timeout in seconds
+        *args: Arguments to pass to the function
+        timeout_error_value: Value to return on timeout (default: {"error": 0.0, "timeout": True})
+        **kwargs: Keyword arguments to pass to the function
+
+    Returns:
+        Result of the function or timeout_error_value on timeout
+    """
+    if timeout_error_value is None:
+        timeout_error_value = {"error": 0.0, "timeout": True}
+
+    try:
+        loop = asyncio.get_event_loop()
+        task = loop.run_in_executor(None, functools.partial(func, *args, **kwargs))
+        return await asyncio.wait_for(task, timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.warning(f"Sync operation timed out after {timeout}s")
+        return timeout_error_value
+
+
 async def gather_with_concurrency(
     n: int, *tasks: asyncio.Future, return_exceptions: bool = False
 ) -> List[Any]:

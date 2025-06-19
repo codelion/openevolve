@@ -242,10 +242,9 @@ class Evaluator:
         """
         return self._pending_artifacts.pop(program_id, None)
 
-    @run_in_executor
-    def _direct_evaluate(self, program_path: str) -> Dict[str, float]:
+    async def _direct_evaluate(self, program_path: str) -> Dict[str, float]:
         """
-        Directly evaluate a program using the evaluation function
+        Directly evaluate a program using the evaluation function with timeout
 
         Args:
             program_path: Path to the program file
@@ -254,8 +253,13 @@ class Evaluator:
             Dictionary of metric name to score
         """
         try:
+            # Create a coroutine that runs the evaluation function in an executor
+            async def run_evaluation():
+                loop = asyncio.get_event_loop()
+                return await loop.run_in_executor(None, self.evaluate_function, program_path)
+
             # Run the evaluation with timeout
-            result = self.evaluate_function(program_path)
+            result = await asyncio.wait_for(run_evaluation(), timeout=self.config.timeout)
 
             # Validate result
             if not isinstance(result, dict):
@@ -264,6 +268,9 @@ class Evaluator:
 
             return result
 
+        except asyncio.TimeoutError:
+            logger.warning(f"Evaluation timed out after {self.config.timeout}s")
+            return {"error": 0.0, "timeout": True}
         except Exception as e:
             logger.error(f"Error in direct evaluation: {str(e)}")
             return {"error": 0.0}
@@ -299,10 +306,24 @@ class Evaluator:
             if not hasattr(module, "evaluate_stage1"):
                 return await self._direct_evaluate(program_path)
 
-            # Run first stage
+            # Run first stage with timeout
             try:
-                stage1_result = await run_in_executor(module.evaluate_stage1)(program_path)
+
+                async def run_stage1():
+                    loop = asyncio.get_event_loop()
+                    return await loop.run_in_executor(None, module.evaluate_stage1, program_path)
+
+                stage1_result = await asyncio.wait_for(run_stage1(), timeout=self.config.timeout)
                 stage1_eval_result = self._process_evaluation_result(stage1_result)
+            except asyncio.TimeoutError:
+                logger.warning(f"Stage 1 evaluation timed out after {self.config.timeout}s")
+                return EvaluationResult(
+                    metrics={"stage1_passed": 0.0, "error": 0.0, "timeout": True},
+                    artifacts={
+                        "failure_stage": "stage1",
+                        "timeout": True,
+                    },
+                )
             except Exception as e:
                 logger.error(f"Error in stage 1 evaluation: {str(e)}")
                 # Capture stage 1 failure as artifacts
@@ -325,10 +346,27 @@ class Evaluator:
             if not hasattr(module, "evaluate_stage2"):
                 return stage1_eval_result
 
-            # Run second stage
+            # Run second stage with timeout
             try:
-                stage2_result = await run_in_executor(module.evaluate_stage2)(program_path)
+
+                async def run_stage2():
+                    loop = asyncio.get_event_loop()
+                    return await loop.run_in_executor(None, module.evaluate_stage2, program_path)
+
+                stage2_result = await asyncio.wait_for(run_stage2(), timeout=self.config.timeout)
                 stage2_eval_result = self._process_evaluation_result(stage2_result)
+            except asyncio.TimeoutError:
+                logger.warning(f"Stage 2 evaluation timed out after {self.config.timeout}s")
+                # Capture stage 2 failure, but keep stage 1 results
+                stage1_eval_result.artifacts.update(
+                    {
+                        "stage2_timeout": True,
+                        "failure_stage": "stage2",
+                    }
+                )
+                stage1_eval_result.metrics["stage2_passed"] = 0.0
+                stage1_eval_result.metrics["timeout"] = True
+                return stage1_eval_result
             except Exception as e:
                 logger.error(f"Error in stage 2 evaluation: {str(e)}")
                 # Capture stage 2 failure, but keep stage 1 results
@@ -370,10 +408,27 @@ class Evaluator:
             if not hasattr(module, "evaluate_stage3"):
                 return merged_result
 
-            # Run third stage
+            # Run third stage with timeout
             try:
-                stage3_result = await run_in_executor(module.evaluate_stage3)(program_path)
+
+                async def run_stage3():
+                    loop = asyncio.get_event_loop()
+                    return await loop.run_in_executor(None, module.evaluate_stage3, program_path)
+
+                stage3_result = await asyncio.wait_for(run_stage3(), timeout=self.config.timeout)
                 stage3_eval_result = self._process_evaluation_result(stage3_result)
+            except asyncio.TimeoutError:
+                logger.warning(f"Stage 3 evaluation timed out after {self.config.timeout}s")
+                # Capture stage 3 failure, but keep previous results
+                merged_result.artifacts.update(
+                    {
+                        "stage3_timeout": True,
+                        "failure_stage": "stage3",
+                    }
+                )
+                merged_result.metrics["stage3_passed"] = 0.0
+                merged_result.metrics["timeout"] = True
+                return merged_result
             except Exception as e:
                 logger.error(f"Error in stage 3 evaluation: {str(e)}")
                 # Capture stage 3 failure, but keep previous results
