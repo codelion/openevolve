@@ -19,14 +19,6 @@ source env/bin/activate  # On Windows: env\Scripts\activate
 pip install -e ".[dev]"
 ```
 
-## Code Style
-
-We follow the [Black](https://black.readthedocs.io/) code style. Please format your code before submitting a pull request:
-
-```bash
-black openevolve tests examples
-```
-
 ## Pull Request Process
 
 1. Create a new branch for your feature or bugfix: `git checkout -b feat-your-feature-name`
