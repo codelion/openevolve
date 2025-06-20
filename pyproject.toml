@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openevolve"
-version = "0.0.3"
+version = "0.0.4"
 description = "Open-source implementation of AlphaEvolve"
 readme = "README.md"
 requires-python = ">=3.9"

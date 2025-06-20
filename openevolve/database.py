@@ -662,13 +662,38 @@ class ProgramDatabase:
             self.archive.add(program.id)
             return
 
-        # Otherwise, find worst program in archive
-        archive_programs = [self.programs[pid] for pid in self.archive]
-        worst_program = min(archive_programs, key=lambda p: safe_numeric_average(p.metrics))
+        # Clean up stale references and get valid archive programs
+        valid_archive_programs = []
+        stale_ids = []
 
-        # Replace if new program is better
-        if self._is_better(program, worst_program):
-            self.archive.remove(worst_program.id)
+        for pid in self.archive:
+            if pid in self.programs:
+                valid_archive_programs.append(self.programs[pid])
+            else:
+                stale_ids.append(pid)
+
+        # Remove stale references from archive
+        for stale_id in stale_ids:
+            self.archive.discard(stale_id)
+            logger.debug(f"Removing stale program {stale_id} from archive")
+
+        # If archive is now not full after cleanup, just add the new program
+        if len(self.archive) < self.config.archive_size:
+            self.archive.add(program.id)
+            return
+
+        # Find worst program among valid programs
+        if valid_archive_programs:
+            worst_program = min(
+                valid_archive_programs, key=lambda p: safe_numeric_average(p.metrics)
+            )
+
+            # Replace if new program is better
+            if self._is_better(program, worst_program):
+                self.archive.remove(worst_program.id)
+                self.archive.add(program.id)
+        else:
+            # No valid programs in archive, just add the new one
             self.archive.add(program.id)
 
     def _update_best_program(self, program: Program) -> None:
