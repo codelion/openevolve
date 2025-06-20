@@ -161,9 +161,20 @@ class ProgramDatabase:
 
         # Add to feature map (replacing existing if better)
         feature_key = self._feature_coords_to_key(feature_coords)
-        if feature_key not in self.feature_map or self._is_better(
-            program, self.programs[self.feature_map[feature_key]]
-        ):
+        should_replace = feature_key not in self.feature_map
+        
+        if not should_replace:
+            # Check if the existing program still exists before comparing
+            existing_program_id = self.feature_map[feature_key]
+            if existing_program_id not in self.programs:
+                # Stale reference, replace it
+                should_replace = True
+                logger.debug(f"Replacing stale program reference {existing_program_id} in feature map")
+            else:
+                # Program exists, compare fitness
+                should_replace = self._is_better(program, self.programs[existing_program_id])
+        
+        if should_replace:
             self.feature_map[feature_key] = program.id
 
         # Add to specific island (not random!)

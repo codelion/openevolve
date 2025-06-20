@@ -405,8 +405,7 @@ class OpenEvolve:
                             break
 
             except Exception as e:
-                logger.error(f"Error in iteration {i+1}: {str(e)}")
-                traceback.print_exc()
+                logger.exception(f"Error in iteration {i+1}: {str(e)}")
                 continue
 
         # Get the best program using our tracking mechanism
