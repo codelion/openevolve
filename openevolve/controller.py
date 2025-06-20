@@ -376,9 +376,7 @@ class OpenEvolve:
 
                 # Specifically check if this is the new best program
                 if self.database.best_program_id == child_program.id:
-                    logger.info(
-                        f"🌟 New best solution found at iteration {i+1}: {child_program.id}"
-                    )
+                    logger.info(f"🌟 New best solution found at iteration {i+1}: {child_program.id}")
                     logger.info(f"Metrics: {format_metrics_safe(child_program.metrics)}")
 
                 # Save checkpoint
@@ -405,8 +403,7 @@ class OpenEvolve:
                             break
 
             except Exception as e:
-                logger.error(f"Error in iteration {i+1}: {str(e)}")
-                traceback.print_exc()
+                logger.exception(f"Error in iteration {i+1}: {str(e)}")
                 continue
 
         # Get the best program using our tracking mechanism

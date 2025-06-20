@@ -295,9 +295,9 @@ def evaluate(program_path):
         # Add successful packing stats for good solutions
         if valid and target_ratio > 0.95:  # Near-optimal solutions
             artifacts["stdout"] = f"Excellent packing! Achieved {target_ratio:.1%} of target value"
-            artifacts["radius_stats"] = (
-                f"Min: {validation_details['min_radius']:.6f}, Max: {validation_details['max_radius']:.6f}, Avg: {validation_details['avg_radius']:.6f}"
-            )
+            artifacts[
+                "radius_stats"
+            ] = f"Min: {validation_details['min_radius']:.6f}, Max: {validation_details['max_radius']:.6f}, Avg: {validation_details['avg_radius']:.6f}"
 
         return EvaluationResult(
             metrics={
@@ -404,9 +404,9 @@ def evaluate_stage1(program_path):
 
             # Add validation issues if any
             if not valid:
-                artifacts["stderr"] = (
-                    f"Validation failed: {len(validation_details.get('boundary_violations', []))} boundary violations, {len(validation_details.get('overlaps', []))} overlaps"
-                )
+                artifacts[
+                    "stderr"
+                ] = f"Validation failed: {len(validation_details.get('boundary_violations', []))} boundary violations, {len(validation_details.get('overlaps', []))} overlaps"
                 artifacts["failure_stage"] = "stage1_geometric_validation"
                 if validation_details.get("boundary_violations"):
                     artifacts["boundary_issues"] = validation_details["boundary_violations"][
