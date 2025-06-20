@@ -457,9 +457,7 @@ def print_comparison_summary(comparison_results):
     print(f"  ⏱️  Average Time Reduction:          {summary['avg_time_reduction_pct']:+.2f}%")
 
     print(f"\n📊 ABSOLUTE PERFORMANCE:")
-    print(
-        f"  🔵 Standard MLX-LM:     {summary['avg_standard_decode_speed']:.1f} tokens/sec average"
-    )
+    print(f"  🔵 Standard MLX-LM:     {summary['avg_standard_decode_speed']:.1f} tokens/sec average")
     print(
         f"  🟠 Metal Kernel Optimized: {summary['avg_optimized_decode_speed']:.1f} tokens/sec average"
     )
