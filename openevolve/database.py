@@ -8,7 +8,7 @@ import logging
 import os
 import random
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -73,7 +73,18 @@ class Program:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Program":
         """Create from dictionary representation"""
-        return cls(**data)
+        # Get the valid field names for the Program dataclass
+        valid_fields = {f.name for f in fields(cls)}
+        
+        # Filter the data to only include valid fields
+        filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+        
+        # Log if we're filtering out any fields
+        if len(filtered_data) != len(data):
+            filtered_out = set(data.keys()) - set(filtered_data.keys())
+            logger.debug(f"Filtered out unsupported fields when loading Program: {filtered_out}")
+        
+        return cls(**filtered_data)
 
 
 class ProgramDatabase:
