@@ -1,18 +1,18 @@
 # Configuration for Real-Time Adaptive Signal Processing Example
-max_iterations: 200
-checkpoint_interval: 25
+max_iterations: 100
+checkpoint_interval: 10
 log_level: "INFO"
 
 # LLM configuration
 llm:
-  primary_model: "gemini-2.0-flash-lite"
+  primary_model: "gemini-2.5-flash-lite-preview-06-17"
   primary_model_weight: 0.8
   secondary_model: "gemini-2.5-flash"
   secondary_model_weight: 0.2
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
-  temperature: 0.7
+  temperature: 0.6
   top_p: 0.95
-  max_tokens: 4096
+  max_tokens: 32000
 
 # Prompt configuration
 prompt:
@@ -38,4 +38,4 @@ evaluator:
 
 # Evolution settings
 diff_based_evolution: true
-allow_full_rewrites: true
+max_code_length: 60000

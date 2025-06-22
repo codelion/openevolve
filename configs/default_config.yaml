@@ -11,7 +11,6 @@ random_seed: null                     # Random seed for reproducibility (null = 
 
 # Evolution settings
 diff_based_evolution: true            # Use diff-based evolution (true) or full rewrites (false)
-allow_full_rewrites: false            # Allow occasional full rewrites even in diff-based mode
 max_code_length: 10000                # Maximum allowed code length in characters
 
 # LLM configuration

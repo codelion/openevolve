@@ -272,7 +272,7 @@ class OpenEvolve:
                 top_programs=[p.to_dict() for p in inspirations],
                 language=self.language,
                 evolution_round=i,
-                allow_full_rewrite=self.config.allow_full_rewrites,
+                diff_based_evolution=self.config.diff_based_evolution,
                 program_artifacts=parent_artifacts if parent_artifacts else None,
             )
 
@@ -340,7 +340,7 @@ class OpenEvolve:
                 # Log prompts
                 self.database.log_prompt(
                     template_key=(
-                        "full_rewrite_user" if self.config.allow_full_rewrites else "diff_user"
+                        "full_rewrite_user" if not self.config.diff_based_evolution else "diff_user"
                     ),
                     program_id=child_id,
                     prompt=prompt,
@@ -354,7 +354,7 @@ class OpenEvolve:
                 # Log prompts
                 self.database.log_prompt(
                     template_key=(
-                        "full_rewrite_user" if self.config.allow_full_rewrites else "diff_user"
+                        "full_rewrite_user" if not self.config.diff_based_evolution else "diff_user"
                     ),
                     program_id=child_id,
                     prompt=prompt,
