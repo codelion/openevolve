@@ -53,7 +53,7 @@ class PromptSampler:
         top_programs: List[Dict[str, Any]] = [],
         language: str = "python",
         evolution_round: int = 0,
-        allow_full_rewrite: bool = False,
+        diff_based_evolution: bool = True,
         template_key: Optional[str] = None,
         program_artifacts: Optional[Dict[str, Union[str, bytes]]] = None,
         **kwargs: Any,
@@ -69,7 +69,7 @@ class PromptSampler:
             top_programs: List of top-performing programs
             language: Programming language
             evolution_round: Current evolution round
-            allow_full_rewrite: Whether to allow a full rewrite
+            diff_based_evolution: Whether to use diff-based evolution (True) or full rewrites (False)
             template_key: Optional override for template key
             program_artifacts: Optional artifacts from program evaluation
             **kwargs: Additional keys to replace in the user prompt
@@ -77,7 +77,7 @@ class PromptSampler:
         Returns:
             Dictionary with 'system' and 'user' keys
         """
-        # Select template based on whether we want a full rewrite (with overrides)
+        # Select template based on evolution mode (with overrides)
         if template_key:
             # Use explicitly provided template key
             user_template_key = template_key
@@ -85,8 +85,8 @@ class PromptSampler:
             # Use the override set with set_templates
             user_template_key = self.user_template_override
         else:
-            # Default behavior
-            user_template_key = "full_rewrite_user" if allow_full_rewrite else "diff_user"
+            # Default behavior: diff-based vs full rewrite
+            user_template_key = "diff_user" if diff_based_evolution else "full_rewrite_user"
 
         # Get the template
         user_template = self.template_manager.get_template(user_template_key)

@@ -222,7 +222,6 @@ class Config:
 
     # Evolution settings
     diff_based_evolution: bool = True
-    allow_full_rewrites: bool = False
     max_code_length: int = 10000
 
     @classmethod
@@ -329,7 +328,6 @@ class Config:
             },
             # Evolution settings
             "diff_based_evolution": self.diff_based_evolution,
-            "allow_full_rewrites": self.allow_full_rewrites,
             "max_code_length": self.max_code_length,
         }
 
