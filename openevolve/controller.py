@@ -263,13 +263,18 @@ class OpenEvolve:
             # Get artifacts for the parent program if available
             parent_artifacts = self.database.get_artifacts(parent.id)
 
+            # Get actual top programs for prompt context (separate from inspirations)
+            # This ensures the LLM sees only high-performing programs as examples
+            actual_top_programs = self.database.get_top_programs(5)
+
             # Build prompt
             prompt = self.prompt_sampler.build_prompt(
                 current_program=parent.code,
                 parent_program=parent.code,  # We don't have the parent's code, use the same
                 program_metrics=parent.metrics,
                 previous_programs=[p.to_dict() for p in self.database.get_top_programs(3)],
-                top_programs=[p.to_dict() for p in inspirations],
+                top_programs=[p.to_dict() for p in actual_top_programs],  # Use actual top programs
+                inspirations=[p.to_dict() for p in inspirations],  # Pass inspirations separately
                 language=self.language,
                 evolution_round=i,
                 diff_based_evolution=self.config.diff_based_evolution,

@@ -51,6 +51,7 @@ class PromptSampler:
         program_metrics: Dict[str, float] = {},
         previous_programs: List[Dict[str, Any]] = [],
         top_programs: List[Dict[str, Any]] = [],
+        inspirations: List[Dict[str, Any]] = [],  # Add inspirations parameter
         language: str = "python",
         evolution_round: int = 0,
         diff_based_evolution: bool = True,
@@ -66,7 +67,8 @@ class PromptSampler:
             parent_program: Parent program from which current was derived
             program_metrics: Dictionary of metric names to values
             previous_programs: List of previous program attempts
-            top_programs: List of top-performing programs
+            top_programs: List of top-performing programs (best by fitness)
+            inspirations: List of inspiration programs (diverse/creative examples)
             language: Programming language
             evolution_round: Current evolution round
             diff_based_evolution: Whether to use diff-based evolution (True) or full rewrites (False)
@@ -110,7 +112,7 @@ class PromptSampler:
 
         # Format evolution history
         evolution_history = self._format_evolution_history(
-            previous_programs, top_programs, language
+            previous_programs, top_programs, inspirations, language
         )
 
         # Format artifacts section if enabled and available
@@ -227,6 +229,7 @@ class PromptSampler:
         self,
         previous_programs: List[Dict[str, Any]],
         top_programs: List[Dict[str, Any]],
+        inspirations: List[Dict[str, Any]],
         language: str,
     ) -> str:
         """Format the evolution history for the prompt"""
@@ -391,11 +394,150 @@ class PromptSampler:
         # Combine top and diverse programs
         combined_programs_str = top_programs_str + diverse_programs_str
 
+        # Format inspirations section
+        inspirations_section_str = self._format_inspirations_section(inspirations, language)
+
         # Combine into full history
         return history_template.format(
             previous_attempts=previous_attempts_str.strip(),
             top_programs=combined_programs_str.strip(),
+            inspirations_section=inspirations_section_str,
         )
+
+    def _format_inspirations_section(
+        self, inspirations: List[Dict[str, Any]], language: str
+    ) -> str:
+        """
+        Format the inspirations section for the prompt
+        
+        Args:
+            inspirations: List of inspiration programs
+            language: Programming language
+            
+        Returns:
+            Formatted inspirations section string
+        """
+        if not inspirations:
+            return ""
+            
+        # Get templates
+        inspirations_section_template = self.template_manager.get_template("inspirations_section")
+        inspiration_program_template = self.template_manager.get_template("inspiration_program")
+        
+        inspiration_programs_str = ""
+        
+        for i, program in enumerate(inspirations):
+            # Extract a snippet (first 8 lines) for display
+            program_code = program.get("code", "")
+            program_snippet = "\n".join(program_code.split("\n")[:8])
+            if len(program_code.split("\n")) > 8:
+                program_snippet += "\n# ... (truncated for brevity)"
+            
+            # Calculate a composite score using safe numeric average
+            score = safe_numeric_average(program.get("metrics", {}))
+            
+            # Determine program type based on metadata and score
+            program_type = self._determine_program_type(program)
+            
+            # Extract unique features (emphasizing diversity rather than just performance)
+            unique_features = self._extract_unique_features(program)
+            
+            inspiration_programs_str += (
+                inspiration_program_template.format(
+                    program_number=i + 1,
+                    score=f"{score:.4f}",
+                    program_type=program_type,
+                    language=language,
+                    program_snippet=program_snippet,
+                    unique_features=unique_features,
+                )
+                + "\n\n"
+            )
+        
+        return inspirations_section_template.format(
+            inspiration_programs=inspiration_programs_str.strip()
+        )
+        
+    def _determine_program_type(self, program: Dict[str, Any]) -> str:
+        """
+        Determine the type/category of an inspiration program
+        
+        Args:
+            program: Program dictionary
+            
+        Returns:
+            String describing the program type
+        """
+        metadata = program.get("metadata", {})
+        score = safe_numeric_average(program.get("metrics", {}))
+        
+        # Check metadata for explicit type markers
+        if metadata.get("diverse", False):
+            return "Diverse"
+        if metadata.get("migrant", False):
+            return "Migrant"
+        if metadata.get("random", False):
+            return "Random"
+            
+        # Classify based on score ranges
+        if score >= 0.8:
+            return "High-Performer"
+        elif score >= 0.6:
+            return "Alternative"
+        elif score >= 0.4:
+            return "Experimental"
+        else:
+            return "Exploratory"
+            
+    def _extract_unique_features(self, program: Dict[str, Any]) -> str:
+        """
+        Extract unique features of an inspiration program
+        
+        Args:
+            program: Program dictionary
+            
+        Returns:
+            String describing unique aspects of the program
+        """
+        features = []
+        
+        # Extract from metadata if available
+        metadata = program.get("metadata", {})
+        if "changes" in metadata:
+            changes = metadata["changes"]
+            if isinstance(changes, str) and len(changes) < 100:
+                features.append(f"Modification: {changes}")
+        
+        # Analyze metrics for standout characteristics
+        metrics = program.get("metrics", {})
+        for metric_name, value in metrics.items():
+            if isinstance(value, (int, float)):
+                if value >= 0.9:
+                    features.append(f"Excellent {metric_name} ({value:.3f})")
+                elif value <= 0.3:
+                    features.append(f"Alternative {metric_name} approach")
+        
+        # Code-based features (simple heuristics)
+        code = program.get("code", "")
+        if code:
+            code_lower = code.lower()
+            if "class" in code_lower and "def __init__" in code_lower:
+                features.append("Object-oriented approach")
+            if "numpy" in code_lower or "np." in code_lower:
+                features.append("NumPy-based implementation")
+            if "for" in code_lower and "while" in code_lower:
+                features.append("Mixed iteration strategies")
+            if len(code.split("\n")) < 10:
+                features.append("Concise implementation")
+            elif len(code.split("\n")) > 50:
+                features.append("Comprehensive implementation")
+        
+        # Default if no specific features found
+        if not features:
+            program_type = self._determine_program_type(program)
+            features.append(f"{program_type} approach to the problem")
+            
+        return ", ".join(features[:3])  # Limit to top 3 features
 
     def _apply_template_variations(self, template: str) -> str:
         """Apply stochastic variations to the template"""
