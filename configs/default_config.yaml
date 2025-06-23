@@ -7,7 +7,7 @@ max_iterations: 1000                  # Maximum number of evolution iterations
 checkpoint_interval: 50               # Save checkpoints every N iterations
 log_level: "INFO"                     # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 log_dir: null                         # Custom directory for logs (default: output_dir/logs)
-random_seed: null                     # Random seed for reproducibility (null = random)
+random_seed: 42                       # Random seed for reproducibility (null = random, 42 = default)
 
 # Evolution settings
 diff_based_evolution: true            # Use diff-based evolution (true) or full rewrites (false)

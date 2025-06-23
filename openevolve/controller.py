@@ -104,10 +104,27 @@ class OpenEvolve:
         if self.config.random_seed is not None:
             import random
             import numpy as np
+            import hashlib
 
+            # Set global random seeds
             random.seed(self.config.random_seed)
             np.random.seed(self.config.random_seed)
+            
+            # Create hash-based seeds for different components
+            base_seed = str(self.config.random_seed).encode('utf-8')
+            llm_seed = int(hashlib.md5(base_seed + b'llm').hexdigest()[:8], 16) % (2**31)
+            
+            # Propagate seed to LLM configurations
+            self.config.llm.random_seed = llm_seed
+            for model_cfg in self.config.llm.models:
+                if not hasattr(model_cfg, 'random_seed') or model_cfg.random_seed is None:
+                    model_cfg.random_seed = llm_seed
+            for model_cfg in self.config.llm.evaluator_models:
+                if not hasattr(model_cfg, 'random_seed') or model_cfg.random_seed is None:
+                    model_cfg.random_seed = llm_seed
+            
             logger.info(f"Set random seed to {self.config.random_seed} for reproducibility")
+            logger.debug(f"Generated LLM seed: {llm_seed}")
 
         # Load initial program
         self.initial_program_path = initial_program_path
