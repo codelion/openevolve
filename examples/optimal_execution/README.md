@@ -226,7 +226,8 @@ When you add knobs, remember:
    
 5. FAQ  
 ------  
-   
+Q: **How do I run the example?**
+A: Run `python openevolve-run.py examples/optimal_execution/initial_program.py examples/optimal_execution/evaluator.py --iterations 20 --config config.yaml'
 Q: **Why does the evaluator re-implement `simulate_execution`?**    
 A: To guarantee the candidate cannot cheat by hard-coding answers from its own  
 RNG realisations.  
