@@ -32,6 +32,9 @@ class LLMModelConfig:
     timeout: int = None
     retries: int = None
     retry_delay: int = None
+    
+    # Reproducibility
+    random_seed: Optional[int] = None
 
 
 @dataclass
@@ -97,6 +100,7 @@ class LLMConfig(LLMModelConfig):
             "timeout": self.timeout,
             "retries": self.retries,
             "retry_delay": self.retry_delay,
+            "random_seed": self.random_seed,
         }
         self.update_model_params(shared_config)
 
@@ -165,7 +169,7 @@ class DatabaseConfig:
     migration_rate: float = 0.1  # Fraction of population to migrate
 
     # Random seed for reproducible sampling
-    random_seed: Optional[int] = None
+    random_seed: Optional[int] = 42
 
     # Artifact storage
     artifacts_base_path: Optional[str] = None  # Defaults to db_path/artifacts
@@ -212,7 +216,7 @@ class Config:
     checkpoint_interval: int = 100
     log_level: str = "INFO"
     log_dir: Optional[str] = None
-    random_seed: Optional[int] = None
+    random_seed: Optional[int] = 42
 
     # Component configurations
     llm: LLMConfig = field(default_factory=LLMConfig)
@@ -256,6 +260,10 @@ class Config:
             config.prompt = PromptConfig(**config_dict["prompt"])
         if "database" in config_dict:
             config.database = DatabaseConfig(**config_dict["database"])
+        
+        # Ensure database inherits the random seed if not explicitly set
+        if config.database.random_seed is None and config.random_seed is not None:
+            config.database.random_seed = config.random_seed
         if "evaluator" in config_dict:
             config.evaluator = EvaluatorConfig(**config_dict["evaluator"])
 
