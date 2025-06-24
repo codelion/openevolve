@@ -223,8 +223,28 @@ When you add knobs, remember:
    want a hill to climb.  
    
 -------------------------------------------------------------------------------  
-   
-5. FAQ  
+ 
+5. Optimized Solution
+--------------------  
+
+The evolutionary search has discovered an efficient strategy for trading volume execution, which can be found in `openevolve_output/best/best_program.py`.
+
+### Key Features of the Solution
+
+- **Alpha-based Schedule Creation**: The solution generates trading schedules using a parametrized approach where an alpha parameter controls the distribution of trading volume over time.
+  - α < 0: Front-loaded execution (more volume traded early)
+  - α = 0: Uniform execution (equal volume across all time slices)
+  - α > 0: Back-loaded execution (more volume traded later)
+
+- **Scenario-based Evaluation**: The solution evaluates different alpha values across multiple random market scenarios, considering:
+  - Random buy/sell sides
+  - Variable trading volumes
+  - Price impact simulation
+
+- **Optimization Method**: The algorithm uses a simple but effective random search approach to find the optimal alpha value that minimizes average slippage costs.
+
+
+6. FAQ  
 ------  
 Q: **How do I run the example?**
 A: Run `python openevolve-run.py examples/optimal_execution/initial_program.py examples/optimal_execution/evaluator.py --iterations 20 --config config.yaml'
