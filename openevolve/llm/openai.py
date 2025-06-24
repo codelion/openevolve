@@ -76,9 +76,16 @@ class OpenAILLM(LLMInterface):
             }
         
         # Add seed parameter for reproducibility if configured
+        # Skip seed parameter for Google AI Studio endpoint as it doesn't support it
         seed = kwargs.get("seed", self.random_seed)
         if seed is not None:
-            params["seed"] = seed
+            if self.api_base == "https://generativelanguage.googleapis.com/v1beta/openai/":
+                logger.warning(
+                    "Skipping seed parameter as Google AI Studio endpoint doesn't support it. "
+                    "Reproducibility may be limited."
+                )
+            else:
+                params["seed"] = seed
 
         # Attempt the API call with retries
         retries = kwargs.get("retries", self.retries)
