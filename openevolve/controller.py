@@ -10,6 +10,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+import traceback
 
 from openevolve.config import Config, load_config
 from openevolve.database import Program, ProgramDatabase
@@ -30,6 +31,34 @@ from openevolve.utils.format_utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _format_metrics(metrics: Dict[str, Any]) -> str:
+    """Safely format metrics, handling both numeric and string values"""
+    formatted_parts = []
+    for name, value in metrics.items():
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            try:
+                formatted_parts.append(f"{name}={value:.4f}")
+            except (ValueError, TypeError):
+                formatted_parts.append(f"{name}={value}")
+        else:
+            formatted_parts.append(f"{name}={value}")
+    return ", ".join(formatted_parts)
+
+
+def _format_improvement(improvement: Dict[str, Any]) -> str:
+    """Safely format improvement metrics"""
+    formatted_parts = []
+    for name, diff in improvement.items():
+        if isinstance(diff, (int, float)) and not isinstance(diff, bool):
+            try:
+                formatted_parts.append(f"{name}={diff:+.4f}")
+            except (ValueError, TypeError):
+                formatted_parts.append(f"{name}={diff}")
+        else:
+            formatted_parts.append(f"{name}={diff}")
+    return ", ".join(formatted_parts)
 
 
 class OpenEvolve:
@@ -75,10 +104,27 @@ class OpenEvolve:
         if self.config.random_seed is not None:
             import random
             import numpy as np
+            import hashlib
 
+            # Set global random seeds
             random.seed(self.config.random_seed)
             np.random.seed(self.config.random_seed)
+            
+            # Create hash-based seeds for different components
+            base_seed = str(self.config.random_seed).encode('utf-8')
+            llm_seed = int(hashlib.md5(base_seed + b'llm').hexdigest()[:8], 16) % (2**31)
+            
+            # Propagate seed to LLM configurations
+            self.config.llm.random_seed = llm_seed
+            for model_cfg in self.config.llm.models:
+                if not hasattr(model_cfg, 'random_seed') or model_cfg.random_seed is None:
+                    model_cfg.random_seed = llm_seed
+            for model_cfg in self.config.llm.evaluator_models:
+                if not hasattr(model_cfg, 'random_seed') or model_cfg.random_seed is None:
+                    model_cfg.random_seed = llm_seed
+            
             logger.info(f"Set random seed to {self.config.random_seed} for reproducibility")
+            logger.debug(f"Generated LLM seed: {llm_seed}")
 
         # Load initial program
         self.initial_program_path = initial_program_path
@@ -114,6 +160,7 @@ class OpenEvolve:
             evaluation_file,
             self.llm_evaluator_ensemble,
             self.evaluator_prompt_sampler,
+            database=self.database,
         )
 
         logger.info(f"Initialized OpenEvolve with {initial_program_path} " f"and {evaluation_file}")
@@ -233,16 +280,21 @@ class OpenEvolve:
             # Get artifacts for the parent program if available
             parent_artifacts = self.database.get_artifacts(parent.id)
 
+            # Get actual top programs for prompt context (separate from inspirations)
+            # This ensures the LLM sees only high-performing programs as examples
+            actual_top_programs = self.database.get_top_programs(5)
+
             # Build prompt
             prompt = self.prompt_sampler.build_prompt(
                 current_program=parent.code,
                 parent_program=parent.code,  # We don't have the parent's code, use the same
                 program_metrics=parent.metrics,
                 previous_programs=[p.to_dict() for p in self.database.get_top_programs(3)],
-                top_programs=[p.to_dict() for p in inspirations],
+                top_programs=[p.to_dict() for p in actual_top_programs],  # Use actual top programs
+                inspirations=[p.to_dict() for p in inspirations],  # Pass inspirations separately
                 language=self.language,
                 evolution_round=i,
-                allow_full_rewrite=self.config.allow_full_rewrites,
+                diff_based_evolution=self.config.diff_based_evolution,
                 program_artifacts=parent_artifacts if parent_artifacts else None,
             )
 
@@ -307,9 +359,29 @@ class OpenEvolve:
                 # Add to database (will be added to current island)
                 self.database.add(child_program, iteration=i + 1)
 
+                # Log prompts
+                self.database.log_prompt(
+                    template_key=(
+                        "full_rewrite_user" if not self.config.diff_based_evolution else "diff_user"
+                    ),
+                    program_id=child_id,
+                    prompt=prompt,
+                    responses=[llm_response],
+                )
+
                 # Store artifacts if they exist
                 if artifacts:
                     self.database.store_artifacts(child_id, artifacts)
+
+                # Log prompts
+                self.database.log_prompt(
+                    template_key=(
+                        "full_rewrite_user" if not self.config.diff_based_evolution else "diff_user"
+                    ),
+                    program_id=child_id,
+                    prompt=prompt,
+                    responses=[llm_response],
+                )
 
                 # Increment generation for current island
                 self.database.increment_island_generation()
@@ -326,9 +398,7 @@ class OpenEvolve:
 
                 # Specifically check if this is the new best program
                 if self.database.best_program_id == child_program.id:
-                    logger.info(
-                        f"🌟 New best solution found at iteration {i+1}: {child_program.id}"
-                    )
+                    logger.info(f"🌟 New best solution found at iteration {i+1}: {child_program.id}")
                     logger.info(f"Metrics: {format_metrics_safe(child_program.metrics)}")
 
                 # Save checkpoint
@@ -340,13 +410,22 @@ class OpenEvolve:
 
                 # Check if target score reached
                 if target_score is not None:
-                    avg_score = sum(child_metrics.values()) / max(1, len(child_metrics))
-                    if avg_score >= target_score:
-                        logger.info(f"Target score {target_score} reached after {i+1} iterations")
-                        break
+                    # Only consider numeric metrics for target score calculation
+                    numeric_metrics = [
+                        v
+                        for v in child_metrics.values()
+                        if isinstance(v, (int, float)) and not isinstance(v, bool)
+                    ]
+                    if numeric_metrics:
+                        avg_score = sum(numeric_metrics) / len(numeric_metrics)
+                        if avg_score >= target_score:
+                            logger.info(
+                                f"Target score {target_score} reached after {i+1} iterations"
+                            )
+                            break
 
             except Exception as e:
-                logger.error(f"Error in iteration {i+1}: {str(e)}")
+                logger.exception(f"Error in iteration {i+1}: {str(e)}")
                 continue
 
         # Get the best program using our tracking mechanism
@@ -388,7 +467,7 @@ class OpenEvolve:
             )
 
             # Save the best program (using our tracked best program)
-            self._save_best_program()
+            self._save_best_program(best_program)
 
             return best_program
         else:

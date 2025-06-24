@@ -96,6 +96,8 @@ EVOLUTION_HISTORY_TEMPLATE = """## Previous Attempts
 ## Top Performing Programs
 
 {top_programs}
+
+{inspirations_section}
 """
 
 # Template for formatting a previous attempt
@@ -111,6 +113,22 @@ TOP_PROGRAM_TEMPLATE = """### Program {program_number} (Score: {score})
 {program_snippet}
 ```
 Key features: {key_features}
+"""
+
+# Template for formatting inspirations section
+INSPIRATIONS_SECTION_TEMPLATE = """## Inspiration Programs
+
+These programs represent diverse approaches and creative solutions that may inspire new ideas:
+
+{inspiration_programs}
+"""
+
+# Template for formatting an individual inspiration program
+INSPIRATION_PROGRAM_TEMPLATE = """### Inspiration {program_number} (Score: {score}, Type: {program_type})
+```{language}
+{program_snippet}
+```
+Unique approach: {unique_features}
 """
 
 # Template for evaluating a program via an LLM
@@ -144,6 +162,8 @@ DEFAULT_TEMPLATES = {
     "evolution_history": EVOLUTION_HISTORY_TEMPLATE,
     "previous_attempt": PREVIOUS_ATTEMPT_TEMPLATE,
     "top_program": TOP_PROGRAM_TEMPLATE,
+    "inspirations_section": INSPIRATIONS_SECTION_TEMPLATE,
+    "inspiration_program": INSPIRATION_PROGRAM_TEMPLATE,
     "evaluation": EVALUATION_TEMPLATE,
 }
 

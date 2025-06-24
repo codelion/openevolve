@@ -121,6 +121,40 @@ Object.defineProperty(window, 'g', {
     set: function(val) { g = val; }
 });
 
+// Recenter Button Overlay
+function showRecenterButton(onClick) {
+    let btn = document.getElementById('graph-recenter-btn');
+    if (!btn) {
+        btn = document.createElement('button');
+        btn.id = 'graph-recenter-btn';
+        btn.textContent = 'Recenter';
+        btn.style.position = 'absolute';
+        btn.style.left = '50%';
+        btn.style.top = '50%';
+        btn.style.transform = 'translate(-50%, -50%)';
+        btn.style.zIndex = 1000;
+        btn.style.fontSize = '2em';
+        btn.style.padding = '0.5em 1.5em';
+        btn.style.background = '#fff';
+        btn.style.border = '2px solid #2196f3';
+        btn.style.borderRadius = '12px';
+        btn.style.boxShadow = '0 2px 16px #0002';
+        btn.style.cursor = 'pointer';
+        btn.style.display = 'block';
+        document.getElementById('graph').appendChild(btn);
+    }
+    btn.style.display = 'block';
+    btn.onclick = function() {
+        btn.style.display = 'none';
+        if (typeof onClick === 'function') onClick();
+    };
+}
+
+function hideRecenterButton() {
+    const btn = document.getElementById('graph-recenter-btn');
+    if (btn) btn.style.display = 'none';
+}
+
 function ensureGraphSvg() {
     // Get latest width/height from state.js
     let svgEl = d3.select('#graph').select('svg');
@@ -264,6 +298,35 @@ function renderGraph(data, options = {}) {
         .scaleExtent([0.2, 10])
         .on('zoom', function(event) {
             g.attr('transform', event.transform);
+            // Check if all content is out of view
+            setTimeout(() => {
+                try {
+                    const svgRect = svg.node().getBoundingClientRect();
+                    const allCircles = g.selectAll('circle').nodes();
+                    if (allCircles.length === 0) { hideRecenterButton(); return; }
+                    let anyVisible = false;
+                    for (const c of allCircles) {
+                        const bbox = c.getBoundingClientRect();
+                        if (
+                            bbox.right > svgRect.left &&
+                            bbox.left < svgRect.right &&
+                            bbox.bottom > svgRect.top &&
+                            bbox.top < svgRect.bottom
+                        ) {
+                            anyVisible = true;
+                            break;
+                        }
+                    }
+                    if (!anyVisible) {
+                        showRecenterButton(() => {
+                            // Reset zoom/pan
+                            svg.transition().duration(400).call(zoomBehavior.transform, d3.zoomIdentity);
+                        });
+                    } else {
+                        hideRecenterButton();
+                    }
+                } catch {}
+            }, 0);
         });
     svg.call(zoomBehavior);
     if (prevTransform) {

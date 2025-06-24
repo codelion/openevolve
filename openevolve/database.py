@@ -8,7 +8,7 @@ import logging
 import os
 import random
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -19,6 +19,22 @@ from openevolve.utils.code_utils import calculate_edit_distance
 from openevolve.utils.metrics_utils import safe_numeric_average
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_sum_metrics(metrics: Dict[str, Any]) -> float:
+    """Safely sum only numeric metric values, ignoring strings and other types"""
+    numeric_values = [
+        v for v in metrics.values() if isinstance(v, (int, float)) and not isinstance(v, bool)
+    ]
+    return sum(numeric_values) if numeric_values else 0.0
+
+
+def _safe_avg_metrics(metrics: Dict[str, Any]) -> float:
+    """Safely calculate average of only numeric metric values"""
+    numeric_values = [
+        v for v in metrics.values() if isinstance(v, (int, float)) and not isinstance(v, bool)
+    ]
+    return sum(numeric_values) / max(1, len(numeric_values)) if numeric_values else 0.0
 
 
 @dataclass
@@ -57,7 +73,18 @@ class Program:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Program":
         """Create from dictionary representation"""
-        return cls(**data)
+        # Get the valid field names for the Program dataclass
+        valid_fields = {f.name for f in fields(cls)}
+
+        # Filter the data to only include valid fields
+        filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+
+        # Log if we're filtering out any fields
+        if len(filtered_data) != len(data):
+            filtered_out = set(data.keys()) - set(filtered_data.keys())
+            logger.debug(f"Filtered out unsupported fields when loading Program: {filtered_out}")
+
+        return cls(**filtered_data)
 
 
 class ProgramDatabase:
@@ -82,14 +109,12 @@ class ProgramDatabase:
         # Island populations
         self.islands: List[Set[str]] = [set() for _ in range(config.num_islands)]
 
-        # Island-based evolution tracking
-        self.current_island: int = 0  # Track which island we're currently evolving
+        # Island management attributes
+        self.current_island: int = 0
         self.island_generations: List[int] = [0] * config.num_islands
-
-        # Migration parameters
-        self.migration_interval: int = getattr(config, "migration_interval", 50)
-        self.migration_rate: float = getattr(config, "migration_rate", 0.1)
         self.last_migration_generation: int = 0
+        self.migration_interval: int = getattr(config, "migration_interval", 10)  # Default to 10
+        self.migration_rate: float = getattr(config, "migration_rate", 0.1)  # Default to 0.1
 
         # Archive of elite programs
         self.archive: Set[str] = set()
@@ -103,6 +128,9 @@ class ProgramDatabase:
         # Load database from disk if path is provided
         if config.db_path and os.path.exists(config.db_path):
             self.load(config.db_path)
+
+        # Prompt log
+        self.prompts_by_program: Dict[str, Dict[str, Dict[str, str]]] = None
 
         # Set random seed for reproducible sampling if specified
         if config.random_seed is not None:
@@ -144,9 +172,22 @@ class ProgramDatabase:
 
         # Add to feature map (replacing existing if better)
         feature_key = self._feature_coords_to_key(feature_coords)
-        if feature_key not in self.feature_map or self._is_better(
-            program, self.programs[self.feature_map[feature_key]]
-        ):
+        should_replace = feature_key not in self.feature_map
+
+        if not should_replace:
+            # Check if the existing program still exists before comparing
+            existing_program_id = self.feature_map[feature_key]
+            if existing_program_id not in self.programs:
+                # Stale reference, replace it
+                should_replace = True
+                logger.debug(
+                    f"Replacing stale program reference {existing_program_id} in feature map"
+                )
+            else:
+                # Program exists, compare fitness
+                should_replace = self._is_better(program, self.programs[existing_program_id])
+
+        if should_replace:
             self.feature_map[feature_key] = program.id
 
         # Add to specific island (not random!)
@@ -314,7 +355,14 @@ class ProgramDatabase:
 
         # Save each program
         for program in self.programs.values():
-            self._save_program(program, save_path)
+            prompts = None
+            if (
+                self.config.log_prompts
+                and self.prompts_by_program
+                and program.id in self.prompts_by_program
+            ):
+                prompts = self.prompts_by_program[program.id]
+            self._save_program(program, save_path, prompts=prompts)
 
         # Save metadata
         metadata = {
@@ -344,24 +392,21 @@ class ProgramDatabase:
             logger.warning(f"Database path {path} does not exist, skipping load")
             return
 
-        # Load metadata
+        # Load metadata first
         metadata_path = os.path.join(path, "metadata.json")
+        saved_islands = []
         if os.path.exists(metadata_path):
             with open(metadata_path, "r") as f:
                 metadata = json.load(f)
 
             self.feature_map = metadata.get("feature_map", {})
-            self.islands = [set(island) for island in metadata.get("islands", [])]
+            saved_islands = metadata.get("islands", [])
             self.archive = set(metadata.get("archive", []))
             self.best_program_id = metadata.get("best_program_id")
             self.last_iteration = metadata.get("last_iteration", 0)
             self.current_island = metadata.get("current_island", 0)
-            self.island_generations = metadata.get("island_generations", [0] * len(self.islands))
+            self.island_generations = metadata.get("island_generations", [0] * len(saved_islands))
             self.last_migration_generation = metadata.get("last_migration_generation", 0)
-
-            # Ensure island_generations list has correct length
-            if len(self.island_generations) != len(self.islands):
-                self.island_generations = [0] * len(self.islands)
 
             logger.info(f"Loaded database metadata with last_iteration={self.last_iteration}")
 
@@ -380,15 +425,117 @@ class ProgramDatabase:
                     except Exception as e:
                         logger.warning(f"Error loading program {program_file}: {str(e)}")
 
+        # Reconstruct island assignments from metadata
+        self._reconstruct_islands(saved_islands)
+
+        # Ensure island_generations list has correct length
+        if len(self.island_generations) != len(self.islands):
+            self.island_generations = [0] * len(self.islands)
+
         logger.info(f"Loaded database with {len(self.programs)} programs from {path}")
 
-    def _save_program(self, program: Program, base_path: Optional[str] = None) -> None:
+        # Log the reconstructed island status
+        self.log_island_status()
+
+    def _reconstruct_islands(self, saved_islands: List[List[str]]) -> None:
+        """
+        Reconstruct island assignments from saved metadata
+
+        Args:
+            saved_islands: List of island program ID lists from metadata
+        """
+        # Initialize empty islands
+        num_islands = max(len(saved_islands), self.config.num_islands)
+        self.islands = [set() for _ in range(num_islands)]
+
+        missing_programs = []
+        restored_programs = 0
+
+        # Restore island assignments
+        for island_idx, program_ids in enumerate(saved_islands):
+            if island_idx >= len(self.islands):
+                continue
+
+            for program_id in program_ids:
+                if program_id in self.programs:
+                    # Program exists, add to island
+                    self.islands[island_idx].add(program_id)
+                    # Set island metadata on the program
+                    self.programs[program_id].metadata["island"] = island_idx
+                    restored_programs += 1
+                else:
+                    # Program missing, track it
+                    missing_programs.append((island_idx, program_id))
+
+        # Clean up archive - remove missing programs
+        original_archive_size = len(self.archive)
+        self.archive = {pid for pid in self.archive if pid in self.programs}
+
+        # Clean up feature_map - remove missing programs
+        feature_keys_to_remove = []
+        for key, program_id in self.feature_map.items():
+            if program_id not in self.programs:
+                feature_keys_to_remove.append(key)
+        for key in feature_keys_to_remove:
+            del self.feature_map[key]
+
+        # Check best program
+        if self.best_program_id and self.best_program_id not in self.programs:
+            logger.warning(f"Best program {self.best_program_id} not found, will recalculate")
+            self.best_program_id = None
+
+        # Log reconstruction results
+        if missing_programs:
+            logger.warning(
+                f"Found {len(missing_programs)} missing programs during island reconstruction:"
+            )
+            for island_idx, program_id in missing_programs[:5]:  # Show first 5
+                logger.warning(f"  Island {island_idx}: {program_id}")
+            if len(missing_programs) > 5:
+                logger.warning(f"  ... and {len(missing_programs) - 5} more")
+
+        if original_archive_size > len(self.archive):
+            logger.info(
+                f"Removed {original_archive_size - len(self.archive)} missing programs from archive"
+            )
+
+        if feature_keys_to_remove:
+            logger.info(f"Removed {len(feature_keys_to_remove)} missing programs from feature map")
+
+        logger.info(f"Reconstructed islands: restored {restored_programs} programs to islands")
+
+        # If we have programs but no island assignments, distribute them
+        if self.programs and sum(len(island) for island in self.islands) == 0:
+            logger.info("No island assignments found, distributing programs across islands")
+            self._distribute_programs_to_islands()
+
+    def _distribute_programs_to_islands(self) -> None:
+        """
+        Distribute loaded programs across islands when no island metadata exists
+        """
+        program_ids = list(self.programs.keys())
+
+        # Distribute programs round-robin across islands
+        for i, program_id in enumerate(program_ids):
+            island_idx = i % len(self.islands)
+            self.islands[island_idx].add(program_id)
+            self.programs[program_id].metadata["island"] = island_idx
+
+        logger.info(f"Distributed {len(program_ids)} programs across {len(self.islands)} islands")
+
+    def _save_program(
+        self,
+        program: Program,
+        base_path: Optional[str] = None,
+        prompts: Optional[Dict[str, Dict[str, str]]] = None,
+    ) -> None:
         """
         Save a program to disk
 
         Args:
             program: Program to save
             base_path: Base path to save to (uses config.db_path if None)
+            prompts: Optional prompts to save with the program, in the format {template_key: { 'system': str, 'user': str }}
         """
         save_path = base_path or self.config.db_path
         if not save_path:
@@ -399,9 +546,13 @@ class ProgramDatabase:
         os.makedirs(programs_dir, exist_ok=True)
 
         # Save program
+        program_dict = program.to_dict()
+        if prompts:
+            program_dict["prompts"] = prompts
         program_path = os.path.join(programs_dir, f"{program.id}.json")
+
         with open(program_path, "w") as f:
-            json.dump(program.to_dict(), f)
+            json.dump(program_dict, f)
 
     def _calculate_feature_coords(self, program: Program) -> List[int]:
         """
@@ -438,7 +589,7 @@ class ProgramDatabase:
                     )
                 coords.append(bin_idx)
             elif dim == "score":
-                # Use average of metrics
+                # Use average of numeric metrics
                 if not program.metrics:
                     bin_idx = 0
                 else:
@@ -511,13 +662,38 @@ class ProgramDatabase:
             self.archive.add(program.id)
             return
 
-        # Otherwise, find worst program in archive
-        archive_programs = [self.programs[pid] for pid in self.archive]
-        worst_program = min(archive_programs, key=lambda p: safe_numeric_average(p.metrics))
+        # Clean up stale references and get valid archive programs
+        valid_archive_programs = []
+        stale_ids = []
 
-        # Replace if new program is better
-        if self._is_better(program, worst_program):
-            self.archive.remove(worst_program.id)
+        for pid in self.archive:
+            if pid in self.programs:
+                valid_archive_programs.append(self.programs[pid])
+            else:
+                stale_ids.append(pid)
+
+        # Remove stale references from archive
+        for stale_id in stale_ids:
+            self.archive.discard(stale_id)
+            logger.debug(f"Removing stale program {stale_id} from archive")
+
+        # If archive is now not full after cleanup, just add the new program
+        if len(self.archive) < self.config.archive_size:
+            self.archive.add(program.id)
+            return
+
+        # Find worst program among valid programs
+        if valid_archive_programs:
+            worst_program = min(
+                valid_archive_programs, key=lambda p: safe_numeric_average(p.metrics)
+            )
+
+            # Replace if new program is better
+            if self._is_better(program, worst_program):
+                self.archive.remove(worst_program.id)
+                self.archive.add(program.id)
+        else:
+            # No valid programs in archive, just add the new one
             self.archive.add(program.id)
 
     def _update_best_program(self, program: Program) -> None:
@@ -591,8 +767,33 @@ class ProgramDatabase:
                 # Use any available program
                 return next(iter(self.programs.values()))
 
-        # Sample from current island
-        parent_id = random.choice(list(current_island_programs))
+        # Clean up stale references and sample from current island
+        valid_programs = [pid for pid in current_island_programs if pid in self.programs]
+
+        # Remove stale program IDs from island
+        if len(valid_programs) < len(current_island_programs):
+            stale_ids = current_island_programs - set(valid_programs)
+            logger.debug(
+                f"Removing {len(stale_ids)} stale program IDs from island {self.current_island}"
+            )
+            for stale_id in stale_ids:
+                self.islands[self.current_island].discard(stale_id)
+
+        # If no valid programs after cleanup, reinitialize island
+        if not valid_programs:
+            logger.warning(
+                f"Island {self.current_island} has no valid programs after cleanup, reinitializing"
+            )
+            if self.best_program_id and self.best_program_id in self.programs:
+                best_program = self.programs[self.best_program_id]
+                self.islands[self.current_island].add(self.best_program_id)
+                best_program.metadata["island"] = self.current_island
+                return best_program
+            else:
+                return next(iter(self.programs.values()))
+
+        # Sample from valid programs
+        parent_id = random.choice(valid_programs)
         return self.programs[parent_id]
 
     def _sample_exploitation_parent(self) -> Program:
@@ -603,20 +804,36 @@ class ProgramDatabase:
             # Fallback to exploration if no archive
             return self._sample_exploration_parent()
 
+        # Clean up stale references in archive
+        valid_archive = [pid for pid in self.archive if pid in self.programs]
+
+        # Remove stale program IDs from archive
+        if len(valid_archive) < len(self.archive):
+            stale_ids = self.archive - set(valid_archive)
+            logger.debug(f"Removing {len(stale_ids)} stale program IDs from archive")
+            for stale_id in stale_ids:
+                self.archive.discard(stale_id)
+
+        # If no valid archive programs, fallback to exploration
+        if not valid_archive:
+            logger.warning(
+                "Archive has no valid programs after cleanup, falling back to exploration"
+            )
+            return self._sample_exploration_parent()
+
         # Prefer programs from current island in archive
         archive_programs_in_island = [
             pid
-            for pid in self.archive
-            if pid in self.programs
-            and self.programs[pid].metadata.get("island") == self.current_island
+            for pid in valid_archive
+            if self.programs[pid].metadata.get("island") == self.current_island
         ]
 
         if archive_programs_in_island:
             parent_id = random.choice(archive_programs_in_island)
             return self.programs[parent_id]
         else:
-            # Fall back to any archive program if current island has none
-            parent_id = random.choice(list(self.archive))
+            # Fall back to any valid archive program if current island has none
+            parent_id = random.choice(valid_archive)
             return self.programs[parent_id]
 
     def _sample_random_parent(self) -> Program:
@@ -644,10 +861,20 @@ class ProgramDatabase:
         inspirations = []
 
         # Always include the absolute best program if available and different from parent
-        if self.best_program_id is not None and self.best_program_id != parent.id:
+        if (
+            self.best_program_id is not None
+            and self.best_program_id != parent.id
+            and self.best_program_id in self.programs
+        ):
             best_program = self.programs[self.best_program_id]
             inspirations.append(best_program)
             logger.debug(f"Including best program {self.best_program_id} in inspirations")
+        elif self.best_program_id is not None and self.best_program_id not in self.programs:
+            # Clean up stale best program reference
+            logger.warning(
+                f"Best program {self.best_program_id} no longer exists, clearing reference"
+            )
+            self.best_program_id = None
 
         # Add top programs as inspirations
         top_n = max(1, int(n * self.config.elite_selection_ratio))
@@ -677,8 +904,17 @@ class ProgramDatabase:
                 cell_key = self._feature_coords_to_key(perturbed_coords)
                 if cell_key in self.feature_map:
                     program_id = self.feature_map[cell_key]
-                    if program_id != parent.id and program_id not in [p.id for p in inspirations]:
+                    # Check if program still exists before adding
+                    if (
+                        program_id != parent.id
+                        and program_id not in [p.id for p in inspirations]
+                        and program_id in self.programs
+                    ):
                         nearby_programs.append(self.programs[program_id])
+                    elif program_id not in self.programs:
+                        # Clean up stale reference in feature_map
+                        logger.debug(f"Removing stale program {program_id} from feature_map")
+                        del self.feature_map[cell_key]
 
             # If we need more, add random programs
             if len(inspirations) + len(nearby_programs) < n:
@@ -885,25 +1121,67 @@ class ProgramDatabase:
         return stats
 
     def _calculate_island_diversity(self, programs: List[Program]) -> float:
-        """Calculate diversity within an island"""
+        """Calculate diversity within an island (deterministic version)"""
         if len(programs) < 2:
             return 0.0
 
-        total_distance = 0
+        total_diversity = 0
         comparisons = 0
 
-        # Sample up to 10 programs for efficiency
-        sample_size = min(10, len(programs))
-        sample_programs = (
-            random.sample(programs, sample_size) if len(programs) > sample_size else programs
-        )
+        # Use deterministic sampling instead of random.sample() to ensure consistent results
+        sample_size = min(5, len(programs))  # Reduced from 10 to 5
+
+        # Sort programs by ID for deterministic ordering
+        sorted_programs = sorted(programs, key=lambda p: p.id)
+
+        # Take first N programs instead of random sampling
+        sample_programs = sorted_programs[:sample_size]
+
+        # Limit total comparisons for performance
+        max_comparisons = 6  # Maximum comparisons to prevent long delays
 
         for i, prog1 in enumerate(sample_programs):
             for prog2 in sample_programs[i + 1 :]:
-                total_distance += calculate_edit_distance(prog1.code, prog2.code)
+                if comparisons >= max_comparisons:
+                    break
+
+                # Use fast approximation instead of expensive edit distance
+                diversity = self._fast_code_diversity(prog1.code, prog2.code)
+                total_diversity += diversity
                 comparisons += 1
 
-        return total_distance / max(1, comparisons)
+            if comparisons >= max_comparisons:
+                break
+
+        return total_diversity / max(1, comparisons)
+
+    def _fast_code_diversity(self, code1: str, code2: str) -> float:
+        """
+        Fast approximation of code diversity using simple metrics
+
+        Returns diversity score (higher = more diverse)
+        """
+        if code1 == code2:
+            return 0.0
+
+        # Length difference (scaled to reasonable range)
+        len1, len2 = len(code1), len(code2)
+        length_diff = abs(len1 - len2)
+
+        # Line count difference
+        lines1 = code1.count("\n")
+        lines2 = code2.count("\n")
+        line_diff = abs(lines1 - lines2)
+
+        # Simple character set difference
+        chars1 = set(code1)
+        chars2 = set(code2)
+        char_diff = len(chars1.symmetric_difference(chars2))
+
+        # Combine metrics (scaled to match original edit distance range)
+        diversity = length_diff * 0.1 + line_diff * 10 + char_diff * 0.5
+
+        return diversity
 
     def log_island_status(self) -> None:
         """Log current status of all islands"""
@@ -1079,3 +1357,35 @@ class ProgramDatabase:
             logger.warning(f"Failed to list artifact directory {artifact_dir}: {e}")
 
         return artifacts
+
+    def log_prompt(
+        self,
+        program_id: str,
+        template_key: str,
+        prompt: Dict[str, str],
+        responses: Optional[List[str]] = None,
+    ) -> None:
+        """
+        Log a prompt for a program.
+        Only logs if self.config.log_prompts is True.
+
+        Args:
+        program_id: ID of the program to log the prompt for
+        template_key: Key for the prompt template
+        prompt: Prompts in the format {template_key: { 'system': str, 'user': str }}.
+        responses: Optional list of responses to the prompt, if available.
+        """
+
+        if not self.config.log_prompts:
+            return
+
+        if responses is None:
+            responses = []
+        prompt["responses"] = responses
+
+        if self.prompts_by_program is None:
+            self.prompts_by_program = {}
+
+        if program_id not in self.prompts_by_program:
+            self.prompts_by_program[program_id] = {}
+        self.prompts_by_program[program_id][template_key] = prompt

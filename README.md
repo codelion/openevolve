@@ -185,7 +185,7 @@ See the [Configuration Guide](configs/default_config.yaml) for a full list of op
 
 ## Artifacts Channel
 
-OpenEvolve includes a **artifacts side-channel** that allows evaluators to capture build errors, profiling results, etc. to provide better feedback to the LLM in subsequent generations. This feature enhances the evolution process by giving the LLM context about what went wrong and how to fix it.
+OpenEvolve includes an **artifacts side-channel** that allows evaluators to capture build errors, profiling results, etc. to provide better feedback to the LLM in subsequent generations. This feature enhances the evolution process by giving the LLM context about what went wrong and how to fix it.
 
 The artifacts channel operates alongside the traditional fitness metrics.
 
@@ -205,17 +205,28 @@ return EvaluationResult(
 ```
 
 The next generation prompt will include:
-```
+```markdown
 ## Last Execution Output
 ### Stderr
-```
 SyntaxError: invalid syntax (line 15)
-```
+
 ### Traceback
-```
 ...
 ```
+
+## Example: LLM Feedback
+
+An example for an LLM artifact side channel is part of the default evaluation template, which ends with
+```markdown
+Return your evaluation as a JSON object with the following format:
+{{
+    "readability": [score],
+    "maintainability": [score],
+    "efficiency": [score],
+    "reasoning": "[brief explanation of scores]"
+}}
 ```
+The non-float values, in this case the "reasoning" key of the json response that the evaluator LLM generates, will be available within the next generation prompt.
 
 ### Configuration
 
@@ -240,7 +251,7 @@ export ENABLE_ARTIFACTS=false
 ### Benefits
 
 - **Faster convergence** - LLMs can see what went wrong and fix it directly
-- **Better error handling** - Compilation and runtime failures become learning opportunities  
+- **Better error handling** - Compilation and runtime failures become learning opportunities
 - **Rich debugging context** - Full stack traces and error messages guide improvements
 - **Zero overhead** - When disabled, no performance impact on evaluation
 
