@@ -72,6 +72,14 @@ class OpenAILLM(LLMInterface):
                 "messages": formatted_messages,
                 "max_completion_tokens": kwargs.get("max_tokens", self.max_tokens),
             }
+        # if we use aifoundry we need to get rid of max_completion_tokens
+        elif self.api_base.startswith('https://aispocuksouth'):
+            params = {
+                "model": self.model,
+                "messages": formatted_messages,
+                "temperature": kwargs.get("temperature", self.temperature),
+                "top_p": kwargs.get("top_p", self.top_p),
+            }
         else:
             params = {
                 "model": self.model,
