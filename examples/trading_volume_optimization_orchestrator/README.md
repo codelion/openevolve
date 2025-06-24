@@ -44,6 +44,11 @@ python initial_program.py
    
 python evaluator.py initial_program.py  
     # Scores the candidate on fresh market scenarios  
+
+
+python openevolve-run.py examples/trading_volume_optimization_orchestrator/initial_program.py examples/trading_volume_optimization_orchestrator/evaluator.py --iterations 20 --config examples/trading_volume_optimization_orchestrator/config.yaml 
+ # Runs the candidate with OpenEvolve orchestrator
+
 ```  
    
 Typical console output:  
