@@ -240,11 +240,6 @@ Q: **Is it okay to import heavy libraries (pandas, torch) inside the EVOLVE-BLOC
 A: Technically yes, but remember the 8-second time-out and the judge’s machine  
 may not have GPU or large RAM.  
    
--------------------------------------------------------------------------------  
    
-6. License  
-----------  
-   
-The example is released under the MIT License – do whatever you like, but  
-please keep references to the original authorship when redistributing.  
+
    
