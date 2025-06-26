@@ -57,6 +57,7 @@ class LLMEnsemble:
 
     def _sample_model(self) -> LLMInterface:
         """Sample a model from the ensemble based on weights"""
+        logger.info(f"Sampled model: {vars(self.models[index])['model']}")
         index = self.random_state.choices(range(len(self.models)), weights=self.weights, k=1)[0]
         return self.models[index]
 
