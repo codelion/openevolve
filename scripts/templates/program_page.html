@@ -27,9 +27,36 @@
     <pre>{{ program_data.code }}</pre>
     <h2>Prompts:</h2>
     <ul>
+        {#-- recursive “display” macro --#}
+        {% macro display(val) %}
+        {% if val is mapping %}
+            <ul>
+            {% for k, v in val.items() %}
+                <li>
+                <strong>{{ k|e }}:</strong>
+                {{ display(v) }}
+                </li>
+            {% endfor %}
+            </ul>
+        {% elif val is sequence and not val is string %}
+            <ul>
+            {% for item in val %}
+                <li>{{ display(item) }}</li>
+            {% endfor %}
+            </ul>
+        {% else %}
+            <pre>{{ val|e }}</pre>
+        {% endif %}
+        {% endmacro %}
+        {#-- loop over every prompts --#}
+        <div class="prompts">
         {% for key, value in program_data.prompts.items() %}
-            <li><strong>{{ key }}:</strong> <pre style="white-space: pre-wrap; word-break: break-word;">{{ value }}</pre></li>
+            <section>
+            <h3>{{ key|title }}</h3>
+            {{ display(value) }}
+            </section>
         {% endfor %}
+        </div>
     </ul>
     {% if artifacts_json %}
     <h2>Artifacts:</h2>

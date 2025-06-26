@@ -58,7 +58,9 @@ class LLMEnsemble:
     def _sample_model(self) -> LLMInterface:
         """Sample a model from the ensemble based on weights"""
         index = self.random_state.choices(range(len(self.models)), weights=self.weights, k=1)[0]
-        return self.models[index]
+        sampled_model = self.models[index]
+        logger.info(f"Sampled model: {vars(sampled_model)['model']}")
+        return sampled_model
 
     async def generate_multiple(self, prompt: str, n: int, **kwargs) -> List[str]:
         """Generate multiple texts in parallel"""
