@@ -1,0 +1,13 @@
+# R packages required for robust regression example
+# Install these packages in R with: install.packages(c("jsonlite"))
+
+# Core dependencies (installed via R):
+# - jsonlite: for JSON output from R scripts
+# - MASS: for robust regression methods (usually pre-installed)
+
+# System requirements:
+# - R (version 3.6 or higher)
+# - Rscript command available in PATH
+
+# Python requirements for the evaluator
+numpy>=1.22.0

@@ -1,0 +1,57 @@
+# Configuration for Rust Adaptive Sorting Evolution
+
+# General settings
+max_iterations: 150
+checkpoint_interval: 15
+log_level: "INFO"
+
+# LLM configuration
+llm:
+  primary_model: "gemini-2.5-flash-lite-preview-06-17"
+  primary_model_weight: 0.8
+  secondary_model: "gemini-2.5-flash"
+  secondary_model_weight: 0.2
+  api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
+  
+  temperature: 0.7
+  max_tokens: 4096
+  
+  # Custom system message for Rust performance programming
+  system_message: |
+    You are an expert Rust systems programmer specializing in high-performance algorithms.
+    Focus on creating adaptive sorting algorithms that can handle different data patterns efficiently.
+    Consider hybrid approaches like introsort, adaptive pivot selection, and data-aware optimizations.
+    Ensure memory safety and idiomatic Rust code. Use appropriate data structures and leverage Rust's zero-cost abstractions.
+
+# Prompt configuration
+prompt:
+  num_top_programs: 4
+  num_diverse_programs: 3
+  
+  # Include compilation errors and performance artifacts
+  include_artifacts: true
+  max_artifact_bytes: 8192
+
+# Database configuration
+database:
+  population_size: 150
+  num_islands: 4
+  
+  # Feature dimensions for sorting algorithms
+  feature_dimensions:
+    - "score"            # Overall performance score
+    - "performance_score"  # Speed performance
+    - "adaptability_score" # Adaptability to different data patterns
+  feature_bins: 8
+
+# Evaluator configuration
+evaluator:
+  timeout: 60  # Rust compilation can take time
+  parallel_evaluations: 3
+  
+  # Use cascade evaluation for performance testing
+  cascade_evaluation: true
+  cascade_thresholds:
+    - 0.5  # Compilation success and basic correctness
+    - 0.7  # Good performance
+    - 0.85 # Excellent adaptability
