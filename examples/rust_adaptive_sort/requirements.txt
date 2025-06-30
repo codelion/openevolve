@@ -1,0 +1,11 @@
+# System requirements for Rust adaptive sorting example
+
+# System dependencies:
+# - Rust toolchain (rustc, cargo) - install from https://rustup.rs/
+# - Cargo package manager (comes with Rust)
+
+# Python requirements for the evaluator
+numpy>=1.22.0
+
+# The Rust code will be compiled and run using Cargo,
+# so no additional Rust dependencies need to be pre-installed.
