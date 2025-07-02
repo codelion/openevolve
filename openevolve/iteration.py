@@ -26,6 +26,10 @@ class Result:
     parent: str = None
     child_metrics: str = None
     iteration_time: float = None
+    prompt: str = None
+    llm_response: str = None
+    artifacts: dict = None
+
 
 
 def run_iteration_sync(iteration: int, config: Config, evaluation_file: str, database_path: str):
@@ -59,10 +63,19 @@ def run_iteration_sync(iteration: int, config: Config, evaluation_file: str, dat
         evaluation_file,
         llm_evaluator_ensemble,
         evaluator_prompt_sampler,
+        database=database,
     )
 
     # Sample parent and inspirations from current island
     parent, inspirations = database.sample()
+
+    # Get artifacts for the parent program if available
+    parent_artifacts = database.get_artifacts(parent.id)
+
+    # Get actual top programs for prompt context (separate from inspirations)
+    # This ensures the LLM sees only high-performing programs as examples
+    actual_top_programs = database.get_top_programs(5)
+
 
     # Build prompt
     prompt = prompt_sampler.build_prompt(
@@ -70,10 +83,12 @@ def run_iteration_sync(iteration: int, config: Config, evaluation_file: str, dat
         parent_program=parent.code,  # We don't have the parent's code, use the same
         program_metrics=parent.metrics,
         previous_programs=[p.to_dict() for p in database.get_top_programs(3)],
-        top_programs=[p.to_dict() for p in inspirations],
+        top_programs=[p.to_dict() for p in actual_top_programs],
+        inspirations=[p.to_dict() for p in inspirations],
         language=config.language,
         evolution_round=iteration,
-        allow_full_rewrite=config.allow_full_rewrites,
+        diff_based_evolution=config.diff_based_evolution,
+        program_artifacts=parent_artifacts if parent_artifacts else None,
     )
 
     async def _run():
@@ -120,7 +135,8 @@ def run_iteration_sync(iteration: int, config: Config, evaluation_file: str, dat
             # Evaluate the child program
             child_id = str(uuid.uuid4())
             result.child_metrics = await evaluator.evaluate_program(child_code, child_id)
-
+            # Handle artifacts if they exist
+            artifacts = evaluator.get_pending_artifacts(child_id)
             # Create a child program
             result.child_program = Program(
                 id=child_id,
@@ -134,6 +150,10 @@ def run_iteration_sync(iteration: int, config: Config, evaluation_file: str, dat
                     "parent_metrics": parent.metrics,
                 },
             )
+            result.prompt = prompt
+            result.llm_response = llm_response
+            # Store artifacts in the result so they can be saved later
+            result.artifacts = artifacts
 
         except Exception as e:
             logger.exception("Error in PID %s:", os.getpid())
