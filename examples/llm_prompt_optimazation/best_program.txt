@@ -1,0 +1,19 @@
+"""Sentiment analysis prompt example for OpenEvolve"""
+
+# EVOLVE-BLOCK-START
+Please analyze the sentiment of the following sentence and provide a sentiment score using the following guidelines:
+- 0.0-2.9: Strongly negative sentiment (e.g., expresses anger, sadness, or despair)
+- 3.0-6.9: Neutral or mixed sentiment (e.g., factual statements, ambiguous content)
+- 7.0-10.0: Strongly positive sentiment (e.g., expresses joy, satisfaction, or hope)
+
+"{input_text}"
+
+Rate the sentiment on a scale from 0.0 to 10.0:
+- 0.0-2.9: Strongly negative (e.g., "This product is terrible")
+- 3.0-6.9: Neutral/mixed (e.g., "The sky is blue today")
+- 7.0-10.0: Strongly positive (e.g., "This is amazing!")
+
+Provide only the numeric score (e.g., "8.5") without any additional text:
+
+Score:
+# EVOLVE-BLOCK-END
