@@ -366,7 +366,7 @@ class OpenEvolve:
                     self.database.save(temp_db_path, iteration)
                     iteration += 1
                 except Exception as e:
-                    logger.error(f"Error in iteration {i+1}: {str(e)}")
+                    logger.error(f"Error in iteration {iteration}: {str(e)}")
                     continue
         shutil.rmtree(temp_db_path)
         # Get the best program using our tracking mechanism
