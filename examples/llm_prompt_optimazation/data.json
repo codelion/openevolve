@@ -1,0 +1,510 @@
+{
+  "book_reviews": [
+    {
+      "id": 1,
+      "text": "This book was absolutely phenomenal! The writing was masterful and the plot kept me captivated from start to finish.",
+      "sentiment_score": 9.5
+    },
+    {
+      "id": 2,
+      "text": "I was really disappointed with this novel. The story dragged on and the characters felt flat and uninteresting.",
+      "sentiment_score": 2.5
+    },
+    {
+      "id": 3,
+      "text": "An incredible literary masterpiece! Brilliant prose and outstanding character development throughout.",
+      "sentiment_score": 9.8
+    },
+    {
+      "id": 4,
+      "text": "This was one of the worst books I've ever read. Terrible pacing and a completely incoherent storyline.",
+      "sentiment_score": 0.5
+    },
+    {
+      "id": 5,
+      "text": "A true work of art. Every page was beautifully crafted and emotionally resonant.",
+      "sentiment_score": 10.0
+    },
+    {
+      "id": 6,
+      "text": "Completely underwhelming. I expected so much more but was left feeling bored and frustrated.",
+      "sentiment_score": 2.0
+    },
+    {
+      "id": 7,
+      "text": "Incredible storytelling with rich world-building. This book exceeded all my expectations.",
+      "sentiment_score": 9.2
+    },
+    {
+      "id": 8,
+      "text": "A waste of time and money. Poor writing, bad plot, and overall just a terrible reading experience.",
+      "sentiment_score": 0.8
+    },
+    {
+      "id": 9,
+      "text": "Outstanding narrative and compelling characters. This book will stay with me for a long time.",
+      "sentiment_score": 9.0
+    },
+    {
+      "id": 10,
+      "text": "Disappointing and predictable. The book felt like a cheap imitation of much better novels.",
+      "sentiment_score": 2.8
+    },
+    {
+      "id": 11,
+      "text": "The book was decent. Some chapters were good, others not so much. Overall an average read.",
+      "sentiment_score": 5.0
+    },
+    {
+      "id": 12,
+      "text": "Not the best novel ever written, but certainly readable. Has its moments of brilliance.",
+      "sentiment_score": 6.5
+    },
+    {
+      "id": 13,
+      "text": "Pretty good book with solid writing and an interesting premise. Worth reading if you have time.",
+      "sentiment_score": 7.2
+    },
+    {
+      "id": 14,
+      "text": "The book had potential but fell short in execution. Some good ideas but poorly implemented.",
+      "sentiment_score": 4.0
+    },
+    {
+      "id": 15,
+      "text": "A truly exceptional piece of literature that pushes the boundaries of storytelling. Pure genius!",
+      "sentiment_score": 10.0
+    },
+    {
+      "id": 16,
+      "text": "Absolutely terrible in every possible way. I want my money and time back. Avoid at all costs.",
+      "sentiment_score": 0.0
+    },
+    {
+      "id": 17,
+      "text": "Surprisingly good! Exceeded my expectations with clever plot twists and strong character arcs.",
+      "sentiment_score": 7.8
+    },
+    {
+      "id": 18,
+      "text": "Mediocre at best. Nothing particularly wrong with it, but nothing special either.",
+      "sentiment_score": 4.5
+    },
+    {
+      "id": 19,
+      "text": "A delightful surprise! Charming prose and a heartwarming story that left me smiling.",
+      "sentiment_score": 8.5
+    },
+    {
+      "id": 20,
+      "text": "Painfully slow and pretentious. The author seemed more interested in showing off than telling a story.",
+      "sentiment_score": 1.2
+    },
+    {
+      "id": 21,
+      "text": "An engaging thriller that kept me on the edge of my seat. Well-crafted suspense and believable characters.",
+      "sentiment_score": 8.3
+    },
+    {
+      "id": 22,
+      "text": "The romance was sweet but the plot was lacking. Some beautiful moments but overall forgettable.",
+      "sentiment_score": 5.5
+    },
+    {
+      "id": 23,
+      "text": "Brilliant science fiction with thought-provoking themes. The author's imagination is truly remarkable.",
+      "sentiment_score": 9.1
+    },
+    {
+      "id": 24,
+      "text": "Confusing and poorly structured. I struggled to follow the narrative and lost interest quickly.",
+      "sentiment_score": 2.3
+    },
+    {
+      "id": 25,
+      "text": "A masterful blend of history and fiction. Thoroughly researched and beautifully written.",
+      "sentiment_score": 8.9
+    },
+    {
+      "id": 26,
+      "text": "The characters felt one-dimensional and the dialogue was stilted. Not the author's best work.",
+      "sentiment_score": 3.2
+    },
+    {
+      "id": 27,
+      "text": "Captivating from the first page to the last. A true page-turner with excellent pacing.",
+      "sentiment_score": 8.7
+    },
+    {
+      "id": 28,
+      "text": "Boring and repetitive. The same themes rehashed over and over without any fresh perspective.",
+      "sentiment_score": 2.1
+    },
+    {
+      "id": 29,
+      "text": "A profound exploration of human nature. Deep, meaningful, and beautifully executed.",
+      "sentiment_score": 9.4
+    },
+    {
+      "id": 30,
+      "text": "The plot had too many holes and the ending was unsatisfying. Left me with more questions than answers.",
+      "sentiment_score": 3.5
+    },
+    {
+      "id": 31,
+      "text": "Solid character development and a compelling mystery. Kept me guessing until the very end.",
+      "sentiment_score": 7.6
+    },
+    {
+      "id": 32,
+      "text": "The writing style was difficult to follow and the story seemed to go nowhere. A disappointing read.",
+      "sentiment_score": 2.7
+    },
+    {
+      "id": 33,
+      "text": "Excellent world-building and imaginative storytelling. A fantasy epic that delivers on all fronts.",
+      "sentiment_score": 8.8
+    },
+    {
+      "id": 34,
+      "text": "The humor fell flat and the characters were annoying rather than endearing. Not my cup of tea.",
+      "sentiment_score": 3.0
+    },
+    {
+      "id": 35,
+      "text": "A gripping psychological thriller with complex characters and unexpected twists. Highly recommended.",
+      "sentiment_score": 8.4
+    },
+    {
+      "id": 36,
+      "text": "The book was okay but nothing groundbreaking. Decent enough to finish but not memorable.",
+      "sentiment_score": 5.2
+    },
+    {
+      "id": 37,
+      "text": "Beautifully written prose that flows like poetry. A literary gem that touched my soul.",
+      "sentiment_score": 9.3
+    },
+    {
+      "id": 38,
+      "text": "Too much exposition and not enough action. The story moved at a snail's pace throughout.",
+      "sentiment_score": 3.8
+    },
+    {
+      "id": 39,
+      "text": "An inspiring tale of resilience and hope. The characters' journeys were both realistic and uplifting.",
+      "sentiment_score": 8.1
+    },
+    {
+      "id": 40,
+      "text": "Clichéd and predictable. I saw every plot twist coming from miles away. Very disappointing.",
+      "sentiment_score": 2.4
+    },
+    {
+      "id": 41,
+      "text": "A thought-provoking exploration of social issues wrapped in an entertaining narrative.",
+      "sentiment_score": 7.9
+    },
+    {
+      "id": 42,
+      "text": "The book started strong but lost momentum halfway through. The ending felt rushed and unsatisfying.",
+      "sentiment_score": 4.3
+    },
+    {
+      "id": 43,
+      "text": "Exceptional character depth and emotional resonance. A story that will haunt you long after reading.",
+      "sentiment_score": 9.6
+    },
+    {
+      "id": 44,
+      "text": "Poorly edited with numerous grammatical errors. The story couldn't overcome the technical flaws.",
+      "sentiment_score": 1.8
+    },
+    {
+      "id": 45,
+      "text": "A delightful coming-of-age story with authentic characters and relatable struggles.",
+      "sentiment_score": 7.4
+    },
+    {
+      "id": 46,
+      "text": "The premise was interesting but the execution was lacking. Felt like a missed opportunity.",
+      "sentiment_score": 4.1
+    },
+    {
+      "id": 47,
+      "text": "Absolutely riveting! Could not put it down once I started. A masterclass in suspenseful storytelling.",
+      "sentiment_score": 9.7
+    },
+    {
+      "id": 48,
+      "text": "Overly complicated and pretentious. The author tried too hard to be clever and it backfired.",
+      "sentiment_score": 2.2
+    },
+    {
+      "id": 49,
+      "text": "A heartwarming family saga with memorable characters and beautiful storytelling.",
+      "sentiment_score": 8.2
+    },
+    {
+      "id": 50,
+      "text": "The dialogue was unrealistic and the plot was full of convenient coincidences. Hard to believe.",
+      "sentiment_score": 3.3
+    },
+    {
+      "id": 51,
+      "text": "An ambitious epic that mostly succeeds in its grand vision. Some pacing issues but overall impressive.",
+      "sentiment_score": 7.7
+    },
+    {
+      "id": 52,
+      "text": "Dull and lifeless. The characters had no personality and the story lacked any real conflict.",
+      "sentiment_score": 2.6
+    },
+    {
+      "id": 53,
+      "text": "A beautiful meditation on love, loss, and redemption. Emotionally powerful and deeply moving.",
+      "sentiment_score": 8.9
+    },
+    {
+      "id": 54,
+      "text": "The book felt incomplete, like the author ran out of ideas halfway through. Very unsatisfying.",
+      "sentiment_score": 3.4
+    },
+    {
+      "id": 55,
+      "text": "Clever and witty with sharp social commentary. An entertaining read that also makes you think.",
+      "sentiment_score": 7.8
+    },
+    {
+      "id": 56,
+      "text": "Repetitive and boring. The same points made over and over without adding anything new.",
+      "sentiment_score": 2.9
+    },
+    {
+      "id": 57,
+      "text": "A stunning work of historical fiction that brings the past to life with vivid detail.",
+      "sentiment_score": 8.6
+    },
+    {
+      "id": 58,
+      "text": "The mystery was easy to solve and the red herrings were obvious. Not very engaging.",
+      "sentiment_score": 3.7
+    },
+    {
+      "id": 59,
+      "text": "Outstanding world-building and character development. A fantasy series starter that promises great things.",
+      "sentiment_score": 8.3
+    },
+    {
+      "id": 60,
+      "text": "Too many subplots that went nowhere. The main story got lost in all the unnecessary complexity.",
+      "sentiment_score": 3.6
+    },
+    {
+      "id": 61,
+      "text": "A perfectly crafted thriller with tight pacing and genuine surprises. Everything a good book should be.",
+      "sentiment_score": 9.0
+    },
+    {
+      "id": 62,
+      "text": "The writing was awkward and the story felt forced. Could have used more time in development.",
+      "sentiment_score": 2.8
+    },
+    {
+      "id": 63,
+      "text": "An enchanting tale that captures the magic of childhood while addressing serious themes.",
+      "sentiment_score": 7.9
+    },
+    {
+      "id": 64,
+      "text": "The book was reasonably entertaining but nothing I hadn't seen before. Average in every way.",
+      "sentiment_score": 5.0
+    },
+    {
+      "id": 65,
+      "text": "Brilliant use of multiple perspectives to tell a complex story. Masterfully woven narrative threads.",
+      "sentiment_score": 9.2
+    },
+    {
+      "id": 66,
+      "text": "The pacing was all wrong - too slow in places, too rushed in others. Needed better editing.",
+      "sentiment_score": 3.9
+    },
+    {
+      "id": 67,
+      "text": "A touching story of friendship and loyalty that resonated deeply with me. Highly recommended.",
+      "sentiment_score": 8.0
+    },
+    {
+      "id": 68,
+      "text": "Confusing timeline and unclear motivations made this a frustrating read. Lost potential.",
+      "sentiment_score": 3.1
+    },
+    {
+      "id": 69,
+      "text": "Exceptional prose and a story that stays with you. A modern classic in the making.",
+      "sentiment_score": 9.5
+    },
+    {
+      "id": 70,
+      "text": "The book tried to do too much and ended up accomplishing very little. Unfocused and scattered.",
+      "sentiment_score": 2.5
+    },
+    {
+      "id": 71,
+      "text": "A solid mystery with well-developed characters and a satisfying resolution. Good entertainment.",
+      "sentiment_score": 7.3
+    },
+    {
+      "id": 72,
+      "text": "Derivative and unoriginal. Felt like I'd read this exact story multiple times before.",
+      "sentiment_score": 2.0
+    },
+    {
+      "id": 73,
+      "text": "Beautiful, lyrical writing that creates an immersive reading experience. A true work of art.",
+      "sentiment_score": 8.8
+    },
+    {
+      "id": 74,
+      "text": "The book was readable but forgettable. Nothing particularly good or bad about it.",
+      "sentiment_score": 5.1
+    },
+    {
+      "id": 75,
+      "text": "An epic adventure with memorable characters and breathtaking scope. Fantasy at its finest.",
+      "sentiment_score": 9.1
+    },
+    {
+      "id": 76,
+      "text": "Poor character development and a weak plot made this a chore to finish. Very disappointing.",
+      "sentiment_score": 1.9
+    },
+    {
+      "id": 77,
+      "text": "A compelling drama with realistic characters facing believable challenges. Well worth reading.",
+      "sentiment_score": 7.6
+    },
+    {
+      "id": 78,
+      "text": "The book meandered without purpose and the ending came out of nowhere. Poorly structured.",
+      "sentiment_score": 3.2
+    },
+    {
+      "id": 79,
+      "text": "Absolutely captivating! A page-turner that combines great writing with an irresistible plot.",
+      "sentiment_score": 8.7
+    },
+    {
+      "id": 80,
+      "text": "Too many clichés and stereotypes. The author relied on tired tropes instead of original ideas.",
+      "sentiment_score": 2.3
+    },
+    {
+      "id": 81,
+      "text": "A thoughtful exploration of complex themes with nuanced characters and elegant prose.",
+      "sentiment_score": 8.4
+    },
+    {
+      "id": 82,
+      "text": "The story had potential but was ruined by poor execution and sloppy writing. What a waste.",
+      "sentiment_score": 2.7
+    },
+    {
+      "id": 83,
+      "text": "An outstanding debut novel that announces the arrival of a major new talent. Brilliant work.",
+      "sentiment_score": 9.3
+    },
+    {
+      "id": 84,
+      "text": "Bland and uninspiring. The characters were flat and the story lacked any real emotion.",
+      "sentiment_score": 2.1
+    },
+    {
+      "id": 85,
+      "text": "A gripping tale of survival and redemption that kept me reading late into the night.",
+      "sentiment_score": 8.1
+    },
+    {
+      "id": 86,
+      "text": "The book was okay for what it was, but it didn't really grab me. Decent but unremarkable.",
+      "sentiment_score": 4.8
+    },
+    {
+      "id": 87,
+      "text": "Masterful storytelling with rich imagery and profound insights into the human condition.",
+      "sentiment_score": 9.4
+    },
+    {
+      "id": 88,
+      "text": "Choppy writing and an incoherent plot made this difficult to follow and even harder to enjoy.",
+      "sentiment_score": 1.7
+    },
+    {
+      "id": 89,
+      "text": "A delightful romantic comedy with sparkling dialogue and charming characters. Pure enjoyment.",
+      "sentiment_score": 7.8
+    },
+    {
+      "id": 90,
+      "text": "The book started promisingly but quickly devolved into nonsense. Very disappointing conclusion.",
+      "sentiment_score": 3.0
+    },
+    {
+      "id": 91,
+      "text": "An intelligent and well-researched novel that educates as much as it entertains. Excellent work.",
+      "sentiment_score": 8.2
+    },
+    {
+      "id": 92,
+      "text": "Boring and predictable with cardboard characters and a paint-by-numbers plot. Skip this one.",
+      "sentiment_score": 1.4
+    },
+    {
+      "id": 93,
+      "text": "A powerful and moving story that tackles difficult subjects with sensitivity and grace.",
+      "sentiment_score": 8.9
+    },
+    {
+      "id": 94,
+      "text": "The author clearly didn't know how to end the story. The conclusion was abrupt and unsatisfying.",
+      "sentiment_score": 3.5
+    },
+    {
+      "id": 95,
+      "text": "Extraordinary! A once-in-a-generation masterpiece that redefines what literature can achieve.",
+      "sentiment_score": 10.0
+    },
+    {
+      "id": 96,
+      "text": "Terrible pacing and wooden dialogue made this one of the worst books I've read this year.",
+      "sentiment_score": 0.9
+    },
+    {
+      "id": 97,
+      "text": "A satisfying read with good character arcs and a well-constructed plot. Solid entertainment.",
+      "sentiment_score": 7.1
+    },
+    {
+      "id": 98,
+      "text": "The book felt like a rough draft that was published too early. Needed much more work.",
+      "sentiment_score": 2.4
+    },
+    {
+      "id": 99,
+      "text": "Brilliant, innovative, and utterly engaging. A book that changes how you think about storytelling.",
+      "sentiment_score": 9.8
+    },
+    {
+      "id": 100,
+      "text": "Completely unreadable. Poor grammar, worse plotting, and characters with no redeeming qualities.",
+      "sentiment_score": 0.2
+    }
+  ],
+  "metadata": {
+    "description": "Synthesised book review sentiment analysis dataset",
+    "total_reviews": 100,
+    "sentiment_scale": "0.0 (extremely negative) to 10.0 (extremely positive)",
+    "created": "2025-07-01"
+  }
+}
