@@ -364,7 +364,7 @@ class OpenEvolve:
                             )
                             break
                     self.database.save(temp_db_path, iteration)
-
+                    iteration += 1
                 except Exception as e:
                     logger.error(f"Error in iteration {i+1}: {str(e)}")
                     continue
