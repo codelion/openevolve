@@ -151,7 +151,6 @@ class DatabaseConfig:
 
     # Evolutionary parameters
     population_size: int = 1000
-    allowed_population_overflow: int = 50
     archive_size: int = 100
     num_islands: int = 5
 

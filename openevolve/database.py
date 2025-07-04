@@ -6,12 +6,9 @@ import base64
 import json
 import logging
 import os
-import shutil
 import random
 import time
 from dataclasses import asdict, dataclass, field, fields
-from pathlib import Path
-from Levenshtein import ratio
 from filelock import FileLock, Timeout
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -358,9 +355,6 @@ class ProgramDatabase:
         lock_path = os.path.join("tmp/locks", lock_name)
         try:
             with FileLock(lock_path, timeout=10):
-                # Create directory and remove old path if it exists
-                # if os.path.exists(save_path):
-                #     shutil.rmtree(save_path)
                 # create directory if it doesn't exist
                 os.makedirs(save_path, exist_ok=True)
 
@@ -590,7 +584,7 @@ class ProgramDatabase:
             if dim == "complexity":
                 # Use code length as complexity measure
                 complexity = len(program.code)
-                bin_idx = min(int(complexity / 1000), self.feature_bins - 1)
+                bin_idx = min(int(complexity / 1000 * self.feature_bins), self.feature_bins - 1)
                 coords.append(bin_idx)
             elif dim == "diversity":
                 # Use average edit distance to other programs
@@ -600,10 +594,13 @@ class ProgramDatabase:
                     sample_programs = random.sample(
                         list(self.programs.values()), min(5, len(self.programs))
                     )
-                    avg_distance_ratio = sum(
-                        1 - calculate_edit_distance(program.code, other.code) for other in sample_programs
+                    avg_distance = sum(
+                        calculate_edit_distance(program.code, other.code)
+                        for other in sample_programs
                     ) / len(sample_programs)
-                    bin_idx = min(int(avg_distance_ratio * 20), self.feature_bins - 1)
+                    bin_idx = min(
+                        int(avg_distance / 1000 * self.feature_bins), self.feature_bins - 1
+                    )
                 coords.append(bin_idx)
             elif dim == "score":
                 # Use average of numeric metrics
@@ -611,7 +608,7 @@ class ProgramDatabase:
                     bin_idx = 0
                 else:
                     avg_score = safe_numeric_average(program.metrics)
-                    bin_idx = max(0, min(int(avg_score * self.feature_bins), self.feature_bins - 1))
+                    bin_idx = min(int(avg_score * self.feature_bins), self.feature_bins - 1)
                 coords.append(bin_idx)
             elif dim in program.metrics:
                 # Use specific metric
@@ -960,10 +957,7 @@ class ProgramDatabase:
         """
         Enforce the population size limit by removing worst programs if needed
         """
-        if (
-            len(self.programs)
-            <= self.config.population_size + self.config.allowed_population_overflow
-        ):
+        if len(self.programs) <= self.config.population_size:
             return
 
         # Calculate how many programs to remove
@@ -1148,7 +1142,7 @@ class ProgramDatabase:
         if len(programs) < 2:
             return 0.0
 
-        total_diversity_ratio = 0
+        total_diversity = 0
         comparisons = 0
 
         # Use deterministic sampling instead of random.sample() to ensure consistent results
@@ -1165,12 +1159,46 @@ class ProgramDatabase:
 
         for i, prog1 in enumerate(sample_programs):
             for prog2 in sample_programs[i + 1 :]:
-                total_diversity_ratio += 1 - ratio(
-                    prog1.code, prog2.code
-                )  # ratio measures similarity
+                if comparisons >= max_comparisons:
+                    break
+
+                # Use fast approximation instead of expensive edit distance
+                diversity = self._fast_code_diversity(prog1.code, prog2.code)
+                total_diversity += diversity
                 comparisons += 1
 
-        return total_diversity_ratio / max(1, comparisons)
+            if comparisons >= max_comparisons:
+                break
+
+        return total_diversity / max(1, comparisons)
+
+    def _fast_code_diversity(self, code1: str, code2: str) -> float:
+        """
+        Fast approximation of code diversity using simple metrics
+
+        Returns diversity score (higher = more diverse)
+        """
+        if code1 == code2:
+            return 0.0
+
+        # Length difference (scaled to reasonable range)
+        len1, len2 = len(code1), len(code2)
+        length_diff = abs(len1 - len2)
+
+        # Line count difference
+        lines1 = code1.count("\n")
+        lines2 = code2.count("\n")
+        line_diff = abs(lines1 - lines2)
+
+        # Simple character set difference
+        chars1 = set(code1)
+        chars2 = set(code2)
+        char_diff = len(chars1.symmetric_difference(chars2))
+
+        # Combine metrics (scaled to match original edit distance range)
+        diversity = length_diff * 0.1 + line_diff * 10 + char_diff * 0.5
+
+        return diversity
 
     def log_island_status(self) -> None:
         """Log current status of all islands"""
