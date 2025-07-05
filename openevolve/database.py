@@ -9,7 +9,7 @@ import os
 import random
 import time
 from dataclasses import asdict, dataclass, field, fields
-from pathlib import Path
+from filelock import FileLock, Timeout
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
@@ -164,9 +164,6 @@ class ProgramDatabase:
 
         self.programs[program.id] = program
 
-        # Enforce population size limit
-        self._enforce_population_limit()
-
         # Calculate feature coordinates for MAP-Elites
         feature_coords = self._calculate_feature_coords(program)
 
@@ -209,6 +206,10 @@ class ProgramDatabase:
             self._save_program(program)
 
         logger.debug(f"Added program {program.id} to island {island_idx}")
+
+        # Enforce population size limit
+        self._enforce_population_limit()
+
         return program.id
 
     def get(self, program_id: str) -> Optional[Program]:
@@ -350,19 +351,26 @@ class ProgramDatabase:
             logger.warning("No database path specified, skipping save")
             return
 
-        # Create directory if it doesn't exist
-        os.makedirs(save_path, exist_ok=True)
+        lock_name = os.path.basename(save_path) + ".lock"
+        lock_path = os.path.join("tmp/locks", lock_name)
+        try:
+            with FileLock(lock_path, timeout=10):
+                # create directory if it doesn't exist
+                os.makedirs(save_path, exist_ok=True)
 
-        # Save each program
-        for program in self.programs.values():
-            prompts = None
-            if (
-                self.config.log_prompts
-                and self.prompts_by_program
-                and program.id in self.prompts_by_program
-            ):
-                prompts = self.prompts_by_program[program.id]
-            self._save_program(program, save_path, prompts=prompts)
+                # Save each program
+                for program in self.programs.values():
+                    prompts = None
+                    if (
+                        self.config.log_prompts
+                        and self.prompts_by_program
+                        and program.id in self.prompts_by_program
+                    ):
+                        prompts = self.prompts_by_program[program.id]
+                    self._save_program(program, save_path, prompts=prompts)
+                    
+        except Timeout:
+            logger.exception("Could not acquire the lock within 10 seconds")
 
         # Save metadata
         metadata = {
@@ -411,19 +419,25 @@ class ProgramDatabase:
             logger.info(f"Loaded database metadata with last_iteration={self.last_iteration}")
 
         # Load programs
+        lock_name = os.path.basename(path) + ".lock"
+        lock_path = os.path.join("tmp/locks", lock_name)
         programs_dir = os.path.join(path, "programs")
-        if os.path.exists(programs_dir):
-            for program_file in os.listdir(programs_dir):
-                if program_file.endswith(".json"):
-                    program_path = os.path.join(programs_dir, program_file)
-                    try:
-                        with open(program_path, "r") as f:
-                            program_data = json.load(f)
+        try:
+            with FileLock(lock_path, timeout=10):
+                if os.path.exists(programs_dir):
+                    for program_file in os.listdir(programs_dir):
+                        if program_file.endswith(".json"):
+                            program_path = os.path.join(programs_dir, program_file)
+                            try:
+                                with open(program_path, "r") as f:
+                                    program_data = json.load(f)
 
-                        program = Program.from_dict(program_data)
-                        self.programs[program.id] = program
-                    except Exception as e:
-                        logger.warning(f"Error loading program {program_file}: {str(e)}")
+                                program = Program.from_dict(program_data)
+                                self.programs[program.id] = program
+                            except Exception as e:
+                                logger.warning(f"Error loading program {program_file}: {str(e)}")
+        except Timeout:
+            logger.exception("Could not acquire the lock within 10 seconds")
 
         # Reconstruct island assignments from metadata
         self._reconstruct_islands(saved_islands)
@@ -604,7 +618,10 @@ class ProgramDatabase:
             else:
                 # Default to middle bin if feature not found
                 coords.append(self.feature_bins // 2)
-
+        logging.info(
+            "MAP-Elites coords: %s",
+            str({self.config.feature_dimensions[i]: coords[i] for i in range(len(coords))}),
+        )
         return coords
 
     def _feature_coords_to_key(self, coords: List[int]) -> str:
