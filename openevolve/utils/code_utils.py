@@ -179,6 +179,7 @@ def calculate_edit_distance(code1: str, code2: str) -> int:
 
     return dp[m][n]
 
+
 def extract_code_language(code: str) -> str:
     """
     Try to determine the language of a code snippet

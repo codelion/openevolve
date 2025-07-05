@@ -32,6 +32,7 @@ __all__ = [
     "retry_async",
     "run_in_executor",
     "apply_diff",
+    "calculate_edit_distance",
     "extract_code_language",
     "extract_diffs",
     "format_diff_summary",
