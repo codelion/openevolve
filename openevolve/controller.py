@@ -72,7 +72,7 @@ class OpenEvolve:
 
     def __init__(
         self,
-        initial_program_path: str,
+        initial_programs_paths: List[str],
         evaluation_file: str,
         config_path: Optional[str] = None,
         config: Optional[Config] = None,
@@ -86,9 +86,15 @@ class OpenEvolve:
             # Load from file or use defaults
             self.config = load_config(config_path)
 
-        # Set up output directory
+        # Assert that initial_programs_paths is a list, and not empty
+        if not initial_programs_paths:
+            raise ValueError("initial_programs_paths must be a non-empty list of file paths")
+
+        # Set up output directory.
+        # If output_dir is specified, use it
+        # Otherwise, if initial_programs_paths has a single path, use the directory of the initial program.
         self.output_dir = output_dir or os.path.join(
-            os.path.dirname(initial_program_path), "openevolve_output"
+            os.path.dirname(initial_programs_paths[0]), "openevolve_output"
         )
         os.makedirs(self.output_dir, exist_ok=True)
 
@@ -122,13 +128,15 @@ class OpenEvolve:
             logger.debug(f"Generated LLM seed: {llm_seed}")
 
         # Load initial program
-        self.initial_program_path = initial_program_path
-        self.initial_program_code = self._load_initial_program()
+        self.initial_programs_paths = initial_programs_paths
+        self.initial_programs_code = self._load_initial_programs()
+
+        # Assume all initial programs are in the same language
         if not self.config.language:
-            self.config.language = extract_code_language(self.initial_program_code)
+            self.config.language = extract_code_language(self.initial_programs_code[0])
 
         # Extract file extension from initial program
-        self.file_extension = os.path.splitext(initial_program_path)[1]
+        self.file_extension = os.path.splitext(initial_programs_paths[0])[1]
         if not self.file_extension:
             # Default to .py if no extension found
             self.file_extension = ".py"
@@ -136,6 +144,15 @@ class OpenEvolve:
             # Make sure it starts with a dot
             if not self.file_extension.startswith("."):
                 self.file_extension = f".{self.file_extension}"
+        
+        # Check that all files have the same extension
+        for path in initial_programs_paths[1:]:
+            ext = os.path.splitext(path)[1]
+            if ext != self.file_extension:
+                raise ValueError(
+                    f"All initial program files must have the same extension. "
+                    f"Expected {self.file_extension}, but got {ext} for {path}"
+                )
 
         # Initialize components
         self.llm_ensemble = LLMEnsemble(self.config.llm.models)
@@ -160,7 +177,7 @@ class OpenEvolve:
         )
         self.evaluation_file = evaluation_file
 
-        logger.info(f"Initialized OpenEvolve with {initial_program_path}")
+        logger.info(f"Initialized OpenEvolve with {initial_programs_paths}")
         
         # Initialize improved parallel processing components
         self.parallel_controller = None
@@ -189,10 +206,13 @@ class OpenEvolve:
 
         logger.info(f"Logging to {log_file}")
 
-    def _load_initial_program(self) -> str:
-        """Load the initial program from file"""
-        with open(self.initial_program_path, "r") as f:
-            return f.read()
+    def _load_initial_programs(self) -> str:
+        """Load the initial programs from file"""
+        programs = []
+        for path in self.initial_programs_paths:
+            with open(path, "r") as f:
+                programs.append(f.read())
+        return programs
 
     async def run(
         self,
@@ -226,29 +246,28 @@ class OpenEvolve:
         should_add_initial = (
             start_iteration == 0
             and len(self.database.programs) == 0
-            and not any(
-                p.code == self.initial_program_code for p in self.database.programs.values()
-            )
         )
 
         if should_add_initial:
-            logger.info("Adding initial program to database")
-            initial_program_id = str(uuid.uuid4())
+            logger.info("Adding initial programs to database")
+            for code in self.initial_programs_code:
+                initial_program_id = str(uuid.uuid4())
 
-            # Evaluate the initial program
-            initial_metrics = await self.evaluator.evaluate_program(
-                self.initial_program_code, initial_program_id
-            )
+                # Evaluate the initial program
+                initial_metrics = await self.evaluator.evaluate_program(
+                    code, initial_program_id
+                )
 
-            initial_program = Program(
-                id=initial_program_id,
-                code=self.initial_program_code,
-                language=self.config.language,
-                metrics=initial_metrics,
-                iteration_found=start_iteration,
-            )
+                initial_program = Program(
+                    id=initial_program_id,
+                    code=code,
+                    language=self.config.language,
+                    metrics=initial_metrics,
+                    iteration_found=start_iteration,
+                )
 
-            self.database.add(initial_program)
+                # TODO. Should the island be incremented and reset here?
+                self.database.add(initial_program)
         else:
             logger.info(
                 f"Skipping initial program addition (resuming from iteration {start_iteration} "
