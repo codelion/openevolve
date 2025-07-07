@@ -9,7 +9,7 @@ import os
 import random
 import time
 from dataclasses import asdict, dataclass, field, fields
-from pathlib import Path
+# FileLock removed - no longer needed with threaded parallel processing
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
@@ -164,9 +164,6 @@ class ProgramDatabase:
 
         self.programs[program.id] = program
 
-        # Enforce population size limit
-        self._enforce_population_limit()
-
         # Calculate feature coordinates for MAP-Elites
         feature_coords = self._calculate_feature_coords(program)
 
@@ -209,6 +206,10 @@ class ProgramDatabase:
             self._save_program(program)
 
         logger.debug(f"Added program {program.id} to island {island_idx}")
+
+        # Enforce population size limit
+        self._enforce_population_limit()
+
         return program.id
 
     def get(self, program_id: str) -> Optional[Program]:
@@ -350,7 +351,7 @@ class ProgramDatabase:
             logger.warning("No database path specified, skipping save")
             return
 
-        # Create directory if it doesn't exist
+        # create directory if it doesn't exist
         os.makedirs(save_path, exist_ok=True)
 
         # Save each program
@@ -604,7 +605,10 @@ class ProgramDatabase:
             else:
                 # Default to middle bin if feature not found
                 coords.append(self.feature_bins // 2)
-
+        logging.info(
+            "MAP-Elites coords: %s",
+            str({self.config.feature_dimensions[i]: coords[i] for i in range(len(coords))}),
+        )
         return coords
 
     def _feature_coords_to_key(self, coords: List[int]) -> str:

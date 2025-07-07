@@ -56,7 +56,10 @@ class LLMConfig(LLMModelConfig):
     retry_delay: int = 5
 
     # n-model configuration for evolution LLM ensemble
-    models: List[LLMModelConfig] = field(default_factory=lambda: [LLMModelConfig()])
+    models: List[LLMModelConfig] = field(default_factory=lambda: [
+        LLMModelConfig(name="gpt-4o-mini", weight=0.8),
+        LLMModelConfig(name="gpt-4o", weight=0.2)
+    ])
 
     # n-model configuration for evaluator LLM ensemble
     evaluator_models: List[LLMModelConfig] = field(default_factory=lambda: [])
@@ -195,7 +198,7 @@ class EvaluatorConfig:
     cascade_thresholds: List[float] = field(default_factory=lambda: [0.5, 0.75, 0.9])
 
     # Parallel evaluation
-    parallel_evaluations: int = 4
+    parallel_evaluations: int = 1
     distributed: bool = False
 
     # LLM-based feedback
@@ -217,6 +220,7 @@ class Config:
     log_level: str = "INFO"
     log_dir: Optional[str] = None
     random_seed: Optional[int] = 42
+    language: str = None
 
     # Component configurations
     llm: LLMConfig = field(default_factory=LLMConfig)
