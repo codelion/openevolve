@@ -250,7 +250,13 @@ class OpenEvolve:
 
         if should_add_initial:
             logger.info("Adding initial programs to database")
-            for code in self.initial_programs_code:
+
+            if len(self.initial_programs_code) > len(self.database.islands):
+                raise ValueError(
+                    "Number of initial programs exceeds number of islands."
+                )
+
+            for i, code in enumerate(self.initial_programs_code):
                 initial_program_id = str(uuid.uuid4())
 
                 # Evaluate the initial program
@@ -267,7 +273,7 @@ class OpenEvolve:
                 )
 
                 # TODO. Should the island be incremented and reset here?
-                self.database.add(initial_program)
+                self.database.add(initial_program, 0, i)
         else:
             logger.info(
                 f"Skipping initial program addition (resuming from iteration {start_iteration} "

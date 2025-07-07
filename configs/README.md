@@ -5,7 +5,9 @@ This directory contains configuration files for OpenEvolve with examples for dif
 ## Configuration Files
 
 ### `default_config.yaml`
+
 The main configuration file containing all available options with sensible defaults. This file includes:
+
 - Complete documentation for all configuration parameters
 - Default values for all settings
 - **Island-based evolution parameters** for proper evolutionary diversity
@@ -13,15 +15,19 @@ The main configuration file containing all available options with sensible defau
 Use this file as a template for your own configurations.
 
 ### `island_config_example.yaml`
+
 A practical example configuration demonstrating proper island-based evolution setup. Shows:
+
 - Recommended island settings for most use cases
 - Balanced migration parameters
 - Complete working configuration
 
 ### `island_examples.yaml`
+
 Multiple example configurations for different scenarios:
+
 - **Maximum Diversity**: Many islands, frequent migration
-- **Focused Exploration**: Few islands, rare migration  
+- **Focused Exploration**: Few islands, rare migration
 - **Balanced Approach**: Default recommended settings
 - **Quick Exploration**: Small-scale rapid testing
 - **Large-Scale Evolution**: Complex optimization runs
@@ -34,9 +40,9 @@ The key new parameters for proper evolutionary diversity are:
 
 ```yaml
 database:
-  num_islands: 5                      # Number of separate populations
-  migration_interval: 50              # Migrate every N generations  
-  migration_rate: 0.1                 # Fraction of top programs to migrate
+  num_islands: 5 # Number of separate populations
+  migration_interval: 50 # Migrate every N generations
+  migration_rate: 0.1 # Fraction of top programs to migrate
 ```
 
 ### Parameter Guidelines
@@ -66,8 +72,8 @@ Then use with OpenEvolve:
 ```python
 from openevolve import OpenEvolve
 evolve = OpenEvolve(
-    initial_program_path="program.py",
-    evaluation_file="evaluator.py", 
+    initial_program_paths=["program.py"],
+    evaluation_file="evaluator.py",
     config_path="my_config.yaml"
 )
 ```

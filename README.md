@@ -9,6 +9,7 @@ An open-source implementation of the AlphaEvolve system described in the Google 
 OpenEvolve is an evolutionary coding agent that uses Large Language Models to optimize code through an iterative process. It orchestrates a pipeline of LLM-based code generation, evaluation, and selection to continuously improve programs for a variety of tasks.
 
 Key features:
+
 - Evolution of entire code files, not just single functions
 - Support for multiple programming languages
 - Supports OpenAI-compatible APIs for any LLM
@@ -34,6 +35,7 @@ The controller orchestrates interactions between these components in an asynchro
 ### Installation
 
 To install natively, use:
+
 ```bash
 git clone https://github.com/codelion/openevolve.git
 cd openevolve
@@ -51,7 +53,7 @@ from openevolve import OpenEvolve
 
 # Initialize the system
 evolve = OpenEvolve(
-    initial_program_path="path/to/initial_program.py",
+    initial_programs_paths=["path/to/initial_program.py"],
     evaluation_file="path/to/evaluator.py",
     config_path="path/to/config.yaml"
 )
@@ -83,6 +85,7 @@ python openevolve-run.py path/to/initial_program.py path/to/evaluator.py \
 ```
 
 When resuming from a checkpoint:
+
 - The system loads all previously evolved programs and their metrics
 - Checkpoint numbering continues from where it left off (e.g., if loaded from checkpoint_50, the next checkpoint will be checkpoint_60)
 - All evolution state is preserved (best programs, feature maps, archives, etc.)
@@ -145,6 +148,7 @@ python scripts/visualizer.py --path examples/function_minimization/openevolve_ou
 ```
 
 In the visualization UI, you can
+
 - see the branching of your program evolution in a network visualization, with node radius chosen by the program fitness (= the currently selected metric),
 - see the parent-child relationship of nodes and click through them in the sidebar (use the yellow locator icon in the sidebar to center the node in the graph),
 - select the metric of interest (with the available metric choices depending on your data set),
@@ -157,6 +161,7 @@ In the visualization UI, you can
 ### Docker
 
 You can also install and execute via Docker:
+
 ```bash
 docker build -t openevolve .
 docker run --rm -v $(pwd):/app --network="host" openevolve examples/function_minimization/initial_program.py examples/function_minimization/evaluator.py --config examples/function_minimization/config.yaml --iterations 1000
@@ -179,6 +184,7 @@ database:
 ```
 
 Sample configuration files are available in the `configs/` directory:
+
 - `default_config.yaml`: Comprehensive configuration with all available options
 
 See the [Configuration Guide](configs/default_config.yaml) for a full list of options.
@@ -205,18 +211,23 @@ return EvaluationResult(
 ```
 
 The next generation prompt will include:
+
 ```markdown
 ## Last Execution Output
+
 ### Stderr
+
 SyntaxError: invalid syntax (line 15)
 
 ### Traceback
+
 ...
 ```
 
 ## Example: LLM Feedback
 
 An example for an LLM artifact side channel is part of the default evaluation template, which ends with
+
 ```markdown
 Return your evaluation as a JSON object with the following format:
 {{
@@ -226,6 +237,7 @@ Return your evaluation as a JSON object with the following format:
     "reasoning": "[brief explanation of scores]"
 }}
 ```
+
 The non-float values, in this case the "reasoning" key of the json response that the evaluator LLM generates, will be available within the next generation prompt.
 
 ### Configuration
@@ -239,7 +251,7 @@ evaluator:
 
 prompt:
   include_artifacts: true
-  max_artifact_bytes: 4096  # 4KB limit in prompts
+  max_artifact_bytes: 4096 # 4KB limit in prompts
   artifact_security_filter: true
 ```
 
@@ -266,6 +278,7 @@ A comprehensive example demonstrating OpenEvolve's application to symbolic regre
 [Explore the Symbolic Regression Example](examples/symbolic_regression/)
 
 Key features:
+
 - Automatic generation of initial programs from benchmark tasks
 - Evolution from simple linear models to complex mathematical expressions
 - Evaluation on physics, chemistry, biology, and material science datasets

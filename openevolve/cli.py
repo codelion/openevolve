@@ -19,10 +19,14 @@ def parse_args() -> argparse.Namespace:
     """Parse command-line arguments"""
     parser = argparse.ArgumentParser(description="OpenEvolve - Evolutionary coding agent")
 
-    parser.add_argument("initial_program", help="Path to the initial program file", default=None)
-
     parser.add_argument(
         "evaluation_file", help="Path to the evaluation file containing an 'evaluate' function"
+    )
+    parser.add_argument(
+        "initial_program",
+        nargs="?",
+        help="Path to the initial program file",
+        default=None,
     )
 
     parser.add_argument("--config", "-c", help="Path to configuration file (YAML)", default=None)
