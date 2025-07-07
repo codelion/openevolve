@@ -9,7 +9,7 @@ import os
 import random
 import time
 from dataclasses import asdict, dataclass, field, fields
-from filelock import FileLock, Timeout
+# FileLock removed - no longer needed with threaded parallel processing
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
@@ -351,26 +351,19 @@ class ProgramDatabase:
             logger.warning("No database path specified, skipping save")
             return
 
-        lock_name = os.path.basename(save_path) + ".lock"
-        lock_path = os.path.join("tmp/locks", lock_name)
-        try:
-            with FileLock(lock_path, timeout=10):
-                # create directory if it doesn't exist
-                os.makedirs(save_path, exist_ok=True)
+        # create directory if it doesn't exist
+        os.makedirs(save_path, exist_ok=True)
 
-                # Save each program
-                for program in self.programs.values():
-                    prompts = None
-                    if (
-                        self.config.log_prompts
-                        and self.prompts_by_program
-                        and program.id in self.prompts_by_program
-                    ):
-                        prompts = self.prompts_by_program[program.id]
-                    self._save_program(program, save_path, prompts=prompts)
-                    
-        except Timeout:
-            logger.exception("Could not acquire the lock within 10 seconds")
+        # Save each program
+        for program in self.programs.values():
+            prompts = None
+            if (
+                self.config.log_prompts
+                and self.prompts_by_program
+                and program.id in self.prompts_by_program
+            ):
+                prompts = self.prompts_by_program[program.id]
+            self._save_program(program, save_path, prompts=prompts)
 
         # Save metadata
         metadata = {
@@ -419,25 +412,19 @@ class ProgramDatabase:
             logger.info(f"Loaded database metadata with last_iteration={self.last_iteration}")
 
         # Load programs
-        lock_name = os.path.basename(path) + ".lock"
-        lock_path = os.path.join("tmp/locks", lock_name)
         programs_dir = os.path.join(path, "programs")
-        try:
-            with FileLock(lock_path, timeout=10):
-                if os.path.exists(programs_dir):
-                    for program_file in os.listdir(programs_dir):
-                        if program_file.endswith(".json"):
-                            program_path = os.path.join(programs_dir, program_file)
-                            try:
-                                with open(program_path, "r") as f:
-                                    program_data = json.load(f)
+        if os.path.exists(programs_dir):
+            for program_file in os.listdir(programs_dir):
+                if program_file.endswith(".json"):
+                    program_path = os.path.join(programs_dir, program_file)
+                    try:
+                        with open(program_path, "r") as f:
+                            program_data = json.load(f)
 
-                                program = Program.from_dict(program_data)
-                                self.programs[program.id] = program
-                            except Exception as e:
-                                logger.warning(f"Error loading program {program_file}: {str(e)}")
-        except Timeout:
-            logger.exception("Could not acquire the lock within 10 seconds")
+                        program = Program.from_dict(program_data)
+                        self.programs[program.id] = program
+                    except Exception as e:
+                        logger.warning(f"Error loading program {program_file}: {str(e)}")
 
         # Reconstruct island assignments from metadata
         self._reconstruct_islands(saved_islands)

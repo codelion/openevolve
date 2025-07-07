@@ -5,21 +5,18 @@ Main controller for OpenEvolve
 import asyncio
 import logging
 import os
-import shutil
-import re
+import signal
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
-import traceback
-import concurrent.futures
+from typing import Any, Dict, List, Optional, Union
 
 from openevolve.config import Config, load_config
 from openevolve.database import Program, ProgramDatabase
 from openevolve.evaluator import Evaluator
 from openevolve.llm.ensemble import LLMEnsemble
 from openevolve.prompt.sampler import PromptSampler
-from openevolve.iteration import run_iteration_sync, Result
+from openevolve.threaded_parallel import ImprovedParallelController
 from openevolve.utils.code_utils import (
     extract_code_language,
 )
@@ -164,6 +161,9 @@ class OpenEvolve:
         self.evaluation_file = evaluation_file
 
         logger.info(f"Initialized OpenEvolve with {initial_program_path}")
+        
+        # Initialize improved parallel processing components
+        self.parallel_controller = None
 
     def _setup_logging(self) -> None:
         """Set up logging"""
@@ -198,24 +198,31 @@ class OpenEvolve:
         self,
         iterations: Optional[int] = None,
         target_score: Optional[float] = None,
-    ) -> Program:
+        checkpoint_path: Optional[str] = None,
+    ) -> Optional[Program]:
         """
-        Run the evolution process
+        Run the evolution process with improved parallel processing
 
         Args:
             iterations: Maximum number of iterations (uses config if None)
             target_score: Target score to reach (continues until reached if specified)
+            checkpoint_path: Path to resume from checkpoint
 
         Returns:
             Best program found
         """
         max_iterations = iterations or self.config.max_iterations
-
-        # Define start_iteration before creating the initial program
-        start_iteration = self.database.last_iteration
+        
+        # Determine starting iteration
+        start_iteration = 0
+        if checkpoint_path and os.path.exists(checkpoint_path):
+            self._load_checkpoint(checkpoint_path)
+            start_iteration = self.database.last_iteration + 1
+            logger.info(f"Resuming from checkpoint at iteration {start_iteration}")
+        else:
+            start_iteration = self.database.last_iteration
 
         # Only add initial program if starting fresh (not resuming from checkpoint)
-        # Check if we're resuming AND no program matches initial code to avoid pollution
         should_add_initial = (
             start_iteration == 0
             and len(self.database.programs) == 0
@@ -244,144 +251,49 @@ class OpenEvolve:
             self.database.add(initial_program)
         else:
             logger.info(
-                f"Skipping initial program addition (resuming from iteration {start_iteration} with {len(self.database.programs)} existing programs)"
+                f"Skipping initial program addition (resuming from iteration {start_iteration} "
+                f"with {len(self.database.programs)} existing programs)"
             )
 
-        # Main evolution loop
-        total_iterations = start_iteration + max_iterations
+        # Initialize improved parallel processing
+        try:
+            self.parallel_controller = ImprovedParallelController(
+                self.config, self.evaluation_file, self.database
+            )
+            
+            # Set up signal handlers for graceful shutdown
+            def signal_handler(signum, frame):
+                logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+                self.parallel_controller.request_shutdown()
+            
+            signal.signal(signal.SIGINT, signal_handler)
+            signal.signal(signal.SIGTERM, signal_handler)
+            
+            self.parallel_controller.start()
+            
+            # Run evolution with improved parallel processing and checkpoint callback
+            await self._run_evolution_with_checkpoints(
+                start_iteration, max_iterations, target_score
+            )
+            
+        finally:
+            # Clean up parallel processing resources
+            if self.parallel_controller:
+                self.parallel_controller.stop()
+                self.parallel_controller = None
 
-        logger.info(
-            f"Starting evolution from iteration {start_iteration} for {max_iterations} iterations (total: {total_iterations})"
-        )
-
-        # Island-based evolution variables
-        programs_per_island = max(
-            1, max_iterations // (self.config.database.num_islands * 10)
-        )  # Dynamic allocation
-        current_island_counter = 0
-
-        logger.info(f"Using island-based evolution with {self.config.database.num_islands} islands")
-        self.database.log_island_status()
-
-        # create temp file to save database snapshots to for process workers to load from
-        temp_db_path = "tmp/" + str(uuid.uuid4())
-        self.database.save(temp_db_path, start_iteration)
-
-        with concurrent.futures.ProcessPoolExecutor(
-            max_workers=self.config.evaluator.parallel_evaluations
-        ) as executor:
-            futures = []
-            for i in range(start_iteration, total_iterations):
-                futures.append(
-                    executor.submit(
-                        run_iteration_sync, i, self.config, self.evaluation_file, temp_db_path
-                    )
-                )
-
-            iteration = start_iteration + 1
-            for future in concurrent.futures.as_completed(futures):
-                logger.info(f"Completed iteration {iteration}")
-                try:
-                    result: Result = future.result()
-                    # if result is nonType
-                    if not isinstance(result, Result):
-                        logger.warning(f"No valid diffs or program length exceeded limit")
-                        continue
-                    # Manage island evolution - switch islands periodically
-                    if (
-                        iteration - 1 > start_iteration
-                        and current_island_counter >= programs_per_island
-                    ):
-                        self.database.next_island()
-                        current_island_counter = 0
-                        logger.debug(f"Switched to island {self.database.current_island}")
-
-                    current_island_counter += 1
-
-                    # Add to database (will be added to current island)
-                    self.database.add(result.child_program, iteration=iteration)
-
-                    # Log prompts
-                    self.database.log_prompt(
-                        template_key=(
-                            "full_rewrite_user" if not self.config.diff_based_evolution else "diff_user"
-                        ),
-                        program_id=result.child_program.id,
-                        prompt=result.prompt,
-                        responses=[result.llm_response],
-                    )
-
-                    # Store artifacts if they exist (after program is added to database)
-                    if result.artifacts:
-                        self.database.store_artifacts(result.child_program.id, result.artifacts)
-
-                    # Log prompts
-                    self.database.log_prompt(
-                        template_key=(
-                            "full_rewrite_user" if not self.config.diff_based_evolution else "diff_user"
-                        ),
-                        program_id=result.child_program.id,
-                        prompt=result.prompt,
-                        responses=[result.llm_response],
-                    )
-
-                    # Increment generation for current island
-                    self.database.increment_island_generation()
-
-                    # Check if migration should occur
-                    if self.database.should_migrate():
-                        logger.info(f"Performing migration at iteration {iteration}")
-                        self.database.migrate_programs()
-                        self.database.log_island_status()
-
-                    # Log progress
-                    self._log_iteration(
-                        iteration, result.parent, result.child_program, result.iteration_time
-                    )
-
-                    # Specifically check if this is the new best program
-                    if self.database.best_program_id == result.child_program.id:
-                        logger.info(
-                            f"🌟 New best solution found at iteration {iteration}: {result.child_program.id}"
-                        )
-                        logger.info(f"Metrics: {format_metrics_safe(result.child_program.metrics)}")
-
-                    # Save checkpoint
-                    if (iteration) % self.config.checkpoint_interval == 0:
-                        self._save_checkpoint(iteration)
-                        # Also log island status at checkpoints
-                        logger.info(f"Island status at checkpoint {iteration}:")
-                        self.database.log_island_status()
-
-                    # Check if target score reached
-                    if target_score is not None:
-                        avg_score = sum(result["child_metrics"].values()) / max(
-                            1, len(result.child_metrics)
-                        )
-                        if avg_score >= target_score:
-                            logger.info(
-                                f"Target score {target_score} reached after {iteration} iterations"
-                            )
-                            break
-                    self.database.save(temp_db_path, iteration)
-                    iteration += 1
-                except Exception as e:
-                    logger.error(f"Error in iteration {iteration}: {str(e)}")
-                    continue
-        shutil.rmtree(temp_db_path)
-        # Get the best program using our tracking mechanism
+        # Get the best program
         best_program = None
         if self.database.best_program_id:
             best_program = self.database.get(self.database.best_program_id)
             logger.info(f"Using tracked best program: {self.database.best_program_id}")
 
-        # Fallback to calculating best program if tracked program not found
         if best_program is None:
             best_program = self.database.get_best_program()
             logger.info("Using calculated best program (tracked program not found)")
 
         # Check if there's a better program by combined_score that wasn't tracked
-        if "combined_score" in best_program.metrics:
+        if best_program and "combined_score" in best_program.metrics:
             best_by_combined = self.database.get_best_program(metric="combined_score")
             if (
                 best_by_combined
@@ -397,7 +309,8 @@ class OpenEvolve:
                         f"Found program with better combined_score: {best_by_combined.id}"
                     )
                     logger.warning(
-                        f"Score difference: {best_program.metrics['combined_score']:.4f} vs {best_by_combined.metrics['combined_score']:.4f}"
+                        f"Score difference: {best_program.metrics['combined_score']:.4f} vs "
+                        f"{best_by_combined.metrics['combined_score']:.4f}"
                     )
                     best_program = best_by_combined
 
@@ -406,14 +319,10 @@ class OpenEvolve:
                 f"Evolution complete. Best program has metrics: "
                 f"{format_metrics_safe(best_program.metrics)}"
             )
-
-            # Save the best program (using our tracked best program)
             self._save_best_program(best_program)
-
             return best_program
         else:
             logger.warning("No valid programs found during evolution")
-            # Return None if no programs found instead of undefined initial_program
             return None
 
     def _log_iteration(
@@ -498,6 +407,35 @@ class OpenEvolve:
             )
 
         logger.info(f"Saved checkpoint at iteration {iteration} to {checkpoint_path}")
+
+    def _load_checkpoint(self, checkpoint_path: str) -> None:
+        """Load state from a checkpoint directory"""
+        if not os.path.exists(checkpoint_path):
+            raise FileNotFoundError(f"Checkpoint directory {checkpoint_path} not found")
+        
+        logger.info(f"Loading checkpoint from {checkpoint_path}")
+        self.database.load(checkpoint_path)
+        logger.info(
+            f"Checkpoint loaded successfully (iteration {self.database.last_iteration})"
+        )
+
+    async def _run_evolution_with_checkpoints(
+        self, start_iteration: int, max_iterations: int, target_score: Optional[float]
+    ) -> None:
+        """Run evolution with checkpoint saving support"""
+        logger.info(f"Using island-based evolution with {self.config.database.num_islands} islands")
+        self.database.log_island_status()
+        
+        # Run the evolution process with checkpoint callback
+        await self.parallel_controller.run_evolution(
+            start_iteration, max_iterations, target_score,
+            checkpoint_callback=self._save_checkpoint
+        )
+        
+        # Save final checkpoint if needed
+        final_iteration = start_iteration + max_iterations - 1
+        if final_iteration > 0 and final_iteration % self.config.checkpoint_interval == 0:
+            self._save_checkpoint(final_iteration)
 
     def _save_best_program(self, program: Optional[Program] = None) -> None:
         """

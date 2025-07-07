@@ -126,6 +126,7 @@ async def main_async() -> int:
         best_program = await openevolve.run(
             iterations=args.iterations,
             target_score=args.target_score,
+            checkpoint_path=args.checkpoint,
         )
 
         # Get the checkpoint path
