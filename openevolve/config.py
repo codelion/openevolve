@@ -32,7 +32,7 @@ class LLMModelConfig:
     timeout: int = None
     retries: int = None
     retry_delay: int = None
-    
+
     # Reproducibility
     random_seed: Optional[int] = None
 
@@ -56,10 +56,12 @@ class LLMConfig(LLMModelConfig):
     retry_delay: int = 5
 
     # n-model configuration for evolution LLM ensemble
-    models: List[LLMModelConfig] = field(default_factory=lambda: [
-        LLMModelConfig(name="gpt-4o-mini", weight=0.8),
-        LLMModelConfig(name="gpt-4o", weight=0.2)
-    ])
+    models: List[LLMModelConfig] = field(
+        default_factory=lambda: [
+            LLMModelConfig(name="gpt-4o-mini", weight=0.8),
+            LLMModelConfig(name="gpt-4o", weight=0.2),
+        ]
+    )
 
     # n-model configuration for evaluator LLM ensemble
     evaluator_models: List[LLMModelConfig] = field(default_factory=lambda: [])
@@ -264,7 +266,7 @@ class Config:
             config.prompt = PromptConfig(**config_dict["prompt"])
         if "database" in config_dict:
             config.database = DatabaseConfig(**config_dict["database"])
-        
+
         # Ensure database inherits the random seed if not explicitly set
         if config.database.random_seed is None and config.random_seed is not None:
             config.database.random_seed = config.random_seed

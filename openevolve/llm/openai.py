@@ -32,7 +32,7 @@ class OpenAILLM(LLMInterface):
         self.retry_delay = model_cfg.retry_delay
         self.api_base = model_cfg.api_base
         self.api_key = model_cfg.api_key
-        self.random_seed = getattr(model_cfg, 'random_seed', None)
+        self.random_seed = getattr(model_cfg, "random_seed", None)
 
         # Set up API client
         self.client = openai.OpenAI(
@@ -40,7 +40,13 @@ class OpenAILLM(LLMInterface):
             base_url=self.api_base,
         )
 
-        logger.info(f"Initialized OpenAI LLM with model: {self.model}")
+        # Only log unique models to reduce duplication
+        if not hasattr(logger, "_initialized_models"):
+            logger._initialized_models = set()
+
+        if self.model not in logger._initialized_models:
+            logger.info(f"Initialized OpenAI LLM with model: {self.model}")
+            logger._initialized_models.add(self.model)
 
     async def generate(self, prompt: str, **kwargs) -> str:
         """Generate text from a prompt"""
@@ -74,7 +80,7 @@ class OpenAILLM(LLMInterface):
                 "top_p": kwargs.get("top_p", self.top_p),
                 "max_tokens": kwargs.get("max_tokens", self.max_tokens),
             }
-        
+
         # Add seed parameter for reproducibility if configured
         # Skip seed parameter for Google AI Studio endpoint as it doesn't support it
         seed = kwargs.get("seed", self.random_seed)

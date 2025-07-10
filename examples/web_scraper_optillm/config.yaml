@@ -1,0 +1,77 @@
+# optillm configuration demonstrating readurls plugin and Mixture of Agents (MoA)
+# This config shows both capabilities in a single configuration
+
+# Evolution settings
+max_iterations: 100
+checkpoint_interval: 10
+parallel_evaluations: 1
+
+# LLM configuration - using optillm proxy with different techniques
+llm:
+  # Point to optillm proxy instead of direct LLM
+  api_base: "http://localhost:8000/v1"
+  
+  # Demonstrate both optillm capabilities in one config
+  models:
+    # Primary model: readurls plugin for URL fetching
+    - name: "readurls-Qwen/Qwen3-1.7B-MLX-bf16"
+      weight: 0.9
+    
+    # Secondary model: MoA + readurls for improved accuracy
+    - name: "moa&readurls-Qwen/Qwen3-1.7B-MLX-bf16"
+      weight: 0.1
+  
+  # Generation settings optimized for both techniques
+  temperature: 0.6
+  max_tokens: 16000  # Higher for MoA's multiple generations and critiques
+  top_p: 0.95
+  
+  # Request parameters optimized for local models
+  timeout: 600  # Extended timeout for local model generation (10 minutes)
+  retries: 3
+  retry_delay: 5
+
+# Database configuration
+database:
+  population_size: 50
+  num_islands: 3
+  migration_interval: 10
+  feature_dimensions:
+    - "score"
+    - "complexity"
+  
+# Evaluation settings
+evaluator:
+  timeout: 300  # Extended timeout for local model evaluation (5 minutes)
+  max_retries: 3
+  
+# Prompt configuration
+prompt:
+  # Enhanced system message that leverages both readurls and MoA
+  system_message: |
+    You are an expert Python developer tasked with evolving a web scraper for API documentation.
+    
+    Your goal is to improve the scraper's ability to extract function signatures, parameters, and descriptions
+    from HTML documentation pages. The scraper should be robust and handle various documentation formats.
+    
+    Key considerations:
+    1. Parse HTML efficiently using BeautifulSoup
+    2. Extract function names, signatures, and descriptions accurately
+    3. Handle different documentation structures (Python docs, library docs, etc.)
+    4. Provide meaningful error handling
+    5. Return structured data in the expected format
+    
+    When analyzing documentation structures, refer to actual documentation pages like:
+    - https://docs.python.org/3/library/json.html
+    - https://requests.readthedocs.io/en/latest/api/
+    - https://www.crummy.com/software/BeautifulSoup/bs4/doc/
+    
+    Focus on improving the EVOLVE-BLOCK sections to make the scraper more accurate and robust.
+    Consider multiple parsing strategies and implement the most effective approach.
+  
+  # Include more examples for better context
+  num_top_programs: 3
+  num_diverse_programs: 2
+
+# General settings
+log_level: "INFO"

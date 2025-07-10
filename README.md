@@ -1,34 +1,104 @@
 # OpenEvolve
 
-An open-source implementation of the AlphaEvolve system described in the Google DeepMind paper "AlphaEvolve: A coding agent for scientific and algorithmic discovery" (2025).
+An open-source evolutionary coding agent that began as a faithful implementation of AlphaEvolve and has evolved far beyond it, enabling automated scientific and algorithmic discovery.
 
 ![OpenEvolve Logo](openevolve-logo.png)
 
 ## Overview
 
-OpenEvolve is an evolutionary coding agent that uses Large Language Models to optimize code through an iterative process. It orchestrates a pipeline of LLM-based code generation, evaluation, and selection to continuously improve programs for a variety of tasks.
+OpenEvolve is an evolutionary coding agent that uses Large Language Models to automatically optimize and discover algorithms through iterative improvement. Starting from the AlphaEvolve research, it incorporates advanced features for reproducibility, multi-language support, sophisticated evaluation pipelines, and integration with cutting-edge LLM optimization techniques. It serves as both a research platform for evolutionary AI and a practical tool for automated code optimization.
 
-Key features:
+### Key Features
 
-- Evolution of entire code files, not just single functions
-- Support for multiple programming languages
-- Supports OpenAI-compatible APIs for any LLM
-- Multi-objective optimization
-- Flexible prompt engineering
-- Distributed evaluation
+OpenEvolve implements a comprehensive evolutionary coding system with:
+
+- **Evolutionary Coding Agent**: LLM-guided evolution of entire code files (not just functions)
+- **Distributed Controller Loop**: Asynchronous pipeline coordinating LLMs, evaluators, and databases
+- **Program Database**: Storage and sampling of evolved programs with evaluation metrics
+- **Prompt Sampling**: Context-rich prompts with past programs, scores, and problem descriptions
+- **LLM Ensemble**: Multiple language models working together for code generation
+- **Multi-objective Optimization**: Simultaneous optimization of multiple evaluation metrics
+- **Checkpoint System**: Automatic saving and resuming of evolution state
+
+#### 🔬 **Scientific Reproducibility**
+
+- **Comprehensive Seeding**: Full deterministic reproduction with hash-based component isolation
+- **Default Reproducibility**: Seed=42 by default for immediate reproducible results
+- **Granular Control**: Per-component seeding for LLMs, database, and evaluation pipeline
+
+#### 🤖 **Advanced LLM Integration**
+
+- **Ensemble Sophistication**: Weighted model combinations with intelligent fallback strategies
+- **Test-Time Compute**: Integration with [optillm](https://github.com/codelion/optillm) for Mixture of Agents (MoA) and enhanced reasoning
+- **Universal API Support**: Works with any OpenAI-compatible endpoint (Anthropic, Google, local models)
+- **Plugin Ecosystem**: Support for optillm plugins (readurls, executecode, z3_solver, etc.)
+
+#### 🧬 **Evolution Algorithm Innovations**
+
+- **MAP-Elites Implementation**: Quality-diversity algorithm for balanced exploration/exploitation
+- **Island-Based Evolution**: Multiple populations with periodic migration for diversity maintenance
+- **Inspiration vs Performance**: Sophisticated prompt engineering separating top performers from diverse inspirations
+- **Multi-Strategy Selection**: Elite, diverse, and exploratory program sampling strategies
+
+#### 📊 **Evaluation & Feedback Systems**
+
+- **Artifacts Side-Channel**: Capture build errors, profiling data, and execution feedback for LLM improvement
+- **Cascade Evaluation**: Multi-stage testing with progressive complexity for efficient resource usage
+- **LLM-Based Feedback**: Automated code quality assessment and reasoning capture
+- **Comprehensive Error Handling**: Graceful recovery from evaluation failures with detailed diagnostics
+
+#### 🌐 **Multi-Language & Platform Support**
+
+- **Language Agnostic**: Python, Rust, R, Metal shaders, and more
+- **Platform Optimization**: Apple Silicon GPU kernels, CUDA optimization, CPU-specific tuning
+- **Framework Integration**: MLX, PyTorch, scientific computing libraries
+
+#### 🔧 **Developer Experience & Tooling**
+
+- **Real-Time Visualization**: Interactive web-based evolution tree viewer with performance analytics
+- **Advanced CLI**: Rich command-line interface with checkpoint management and configuration override
+- **Comprehensive Examples**: 12+ diverse examples spanning optimization, ML, systems programming, and scientific computing
+- **Error Recovery**: Robust checkpoint loading with automatic fix for common serialization issues
+
+#### 🚀 **Performance & Scalability**
+
+- **Threaded Parallelism**: High-throughput asynchronous evaluation pipeline
+- **Resource Management**: Memory limits, timeouts, and resource monitoring
+- **Efficient Storage**: Optimized database with artifact management and cleanup policies
 
 ## How It Works
 
-OpenEvolve follows an evolutionary approach with the following components:
+OpenEvolve orchestrates a sophisticated evolutionary pipeline:
 
 ![OpenEvolve Architecture](openevolve-architecture.png)
 
-1. **Prompt Sampler**: Creates context-rich prompts containing past programs, their scores, and problem descriptions
-2. **LLM Ensemble**: Generates code modifications via an ensemble of language models
-3. **Evaluator Pool**: Tests generated programs and assigns scores
-4. **Program Database**: Stores programs and their evaluation metrics, guiding future evolution
+### Core Evolution Loop
 
-The controller orchestrates interactions between these components in an asynchronous pipeline, maximizing throughput to evaluate as many candidate solutions as possible.
+1. **Enhanced Prompt Sampler**: Creates rich prompts containing:
+
+   - Top-performing programs (for optimization guidance)
+   - Diverse inspiration programs (for creative exploration)
+   - Execution artifacts and error feedback
+   - Dynamic documentation fetching (via optillm plugins)
+
+2. **Intelligent LLM Ensemble**:
+
+   - Weighted model combinations for quality/speed tradeoffs
+   - Test-time compute techniques (MoA, chain-of-thought, reflection)
+   - Deterministic selection with comprehensive seeding
+
+3. **Advanced Evaluator Pool**:
+
+   - Multi-stage cascade evaluation
+   - Artifact collection for detailed feedback
+   - LLM-based code quality assessment
+   - Parallel execution with resource limits
+
+4. **Sophisticated Program Database**:
+   - MAP-Elites algorithm for quality-diversity balance
+   - Island-based populations with migration
+   - Feature map clustering and archive management
+   - Comprehensive metadata and lineage tracking
 
 ## Getting Started
 
@@ -44,12 +114,40 @@ pip install -e .
 
 ### Quick Start
 
-We use the OpenAI SDK, so you can use any LLM or provider that supports an OpenAI compatible API. Just set the `OPENAI_API_KEY` environment variable
-and update the `api_base` in config.yaml if you are using a provider other than OpenAI. For local models, you can use
-an inference server like [optillm](https://github.com/codelion/optillm).
+#### Setting up LLM Access
+
+OpenEvolve uses the OpenAI SDK, which means it works with any LLM provider that supports an OpenAI-compatible API:
+
+1. **Set the API Key**: Export the `OPENAI_API_KEY` environment variable:
+
+   ```bash
+   export OPENAI_API_KEY=your-api-key-here
+   ```
+
+2. **Using Alternative LLM Providers**:
+   - For providers other than OpenAI (e.g., Anthropic, Cohere, local models), update the `api_base` in your config.yaml:
+   ```yaml
+   llm:
+     api_base: "https://your-provider-endpoint.com/v1"
+   ```
+3. **Maximum Flexibility with optillm**:
+   - For advanced routing, rate limiting, or using multiple providers, we recommend [optillm](https://github.com/codelion/optillm)
+   - optillm acts as a proxy that can route requests to different LLMs based on your rules
+   - Simply point `api_base` to your optillm instance:
+   ```yaml
+   llm:
+     api_base: "http://localhost:8000/v1"
+   ```
+
+This setup ensures OpenEvolve can work with any LLM provider - OpenAI, Anthropic, Google, Cohere, local models via Ollama/vLLM, or any OpenAI-compatible endpoint.
 
 ```python
+import os
 from openevolve import OpenEvolve
+
+# Ensure API key is set
+if not os.environ.get("OPENAI_API_KEY"):
+    raise ValueError("Please set OPENAI_API_KEY environment variable")
 
 # Initialize the system
 evolve = OpenEvolve(
@@ -169,23 +267,46 @@ docker run --rm -v $(pwd):/app --network="host" openevolve examples/function_min
 
 ## Configuration
 
-OpenEvolve is highly configurable. You can specify configuration options in a YAML file:
+OpenEvolve is highly configurable with advanced options:
 
 ```yaml
-# Example configuration
+# Example configuration showcasing advanced features
 max_iterations: 1000
+random_seed: 42 # Full reproducibility by default
+
 llm:
-  primary_model: "gemini-2.0-flash-lite"
-  secondary_model: "gemini-2.0-flash"
+  # Advanced ensemble configuration
+  models:
+    - name: "gemini-2.0-flash-lite"
+      weight: 0.7
+    - name: "moa&readurls-gemini-2.0-flash" # optillm test-time compute
+      weight: 0.3
   temperature: 0.7
+
 database:
+  # MAP-Elites configuration
   population_size: 500
-  num_islands: 5
+  num_islands: 5 # Island-based evolution
+  migration_interval: 20
+  feature_dimensions: ["score", "complexity"] # Quality-diversity features
+
+evaluator:
+  # Advanced evaluation features
+  enable_artifacts: true # Capture execution feedback
+  cascade_evaluation: true # Multi-stage testing
+  use_llm_feedback: true # AI-based code quality assessment
+
+prompt:
+  # Sophisticated prompt engineering
+  num_top_programs: 3 # Performance examples
+  num_diverse_programs: 2 # Creative inspiration
+  include_artifacts: true # Execution feedback
 ```
 
 Sample configuration files are available in the `configs/` directory:
 
 - `default_config.yaml`: Comprehensive configuration with all available options
+- `island_config_example.yaml`: Advanced island-based evolution setup
 
 See the [Configuration Guide](configs/default_config.yaml) for a full list of options.
 
@@ -271,38 +392,79 @@ export ENABLE_ARTIFACTS=false
 
 See the `examples/` directory for complete examples of using OpenEvolve on various problems:
 
-### Symbolic Regression
+### Mathematical Optimization
 
-A comprehensive example demonstrating OpenEvolve's application to symbolic regression tasks using the LLM-SRBench benchmark. This example shows how OpenEvolve can evolve simple mathematical expressions (like linear models) into complex symbolic formulas that accurately fit scientific datasets.
+#### [Function Minimization](examples/function_minimization/)
 
-[Explore the Symbolic Regression Example](examples/symbolic_regression/)
+A comprehensive example demonstrating evolution from random search to sophisticated simulated annealing.
 
+#### [Circle Packing](examples/circle_packing/)
+
+Our implementation of the circle packing problem. For the n=26 case, we achieve state-of-the-art results matching published benchmarks.
+
+<<<<<<< HEAD
 Key features:
 
 - Automatic generation of initial programs from benchmark tasks
 - Evolution from simple linear models to complex mathematical expressions
 - Evaluation on physics, chemistry, biology, and material science datasets
-- Competitive results compared to state-of-the-art symbolic regression methods
+- # Competitive results compared to state-of-the-art symbolic regression methods
+  Below is the optimal packing found by OpenEvolve after 800 iterations:
+  > > > > > > > upstream/main
 
-### Circle Packing
+![circle-packing-result](https://github.com/user-attachments/assets/00100f9e-2ac3-445b-9266-0398b7174193)
 
-Our implementation of the circle packing problem from the AlphaEvolve paper. For the n=26 case, where one needs to pack 26 circles in a unit square we also obtain SOTA results.
+### Advanced AI & LLM Integration
 
-[Explore the Circle Packing Example](examples/circle_packing/)
+#### [Web Scraper with optillm](examples/web_scraper_optillm/)
 
-We have sucessfully replicated the results from the AlphaEvolve paper, below is the packing found by OpenEvolve after 800 iterations
+Demonstrates integration with [optillm](https://github.com/codelion/optillm) for test-time compute optimization, including:
 
-![alpha-evolve-replication](https://github.com/user-attachments/assets/00100f9e-2ac3-445b-9266-0398b7174193)
+- **readurls plugin**: Automatic documentation fetching
+- **Mixture of Agents (MoA)**: Multi-response synthesis for improved accuracy
+- **Local model optimization**: Enhanced reasoning with smaller models
 
-This is exactly the packing reported by AlphaEvolve in their paper (Figure 14):
+#### [LLM Prompt Optimization](examples/llm_prompt_optimazation/)
 
-![alpha-evolve-results](https://github.com/user-attachments/assets/0c9affa5-053d-404e-bb2d-11479ab248c9)
+Evolving prompts themselves for better LLM performance, demonstrating self-improving AI systems.
 
-### Function Minimization
+### Systems & Performance Optimization
 
-An example showing how OpenEvolve can transform a simple random search algorithm into a sophisticated simulated annealing approach.
+#### [MLX Metal Kernel Optimization](examples/mlx_metal_kernel_opt/)
 
-[Explore the Function Minimization Example](examples/function_minimization/)
+Automated discovery of custom GPU kernels for Apple Silicon, achieving:
+
+- **2-3x speedup** over baseline attention implementations
+- **Hardware-aware optimizations** for unified memory architecture
+- **Metal shader evolution** with numerical correctness validation
+
+#### [Rust Adaptive Sort](examples/rust_adaptive_sort/)
+
+Evolution of sorting algorithms that adapt to data patterns, showcasing OpenEvolve's language-agnostic capabilities.
+
+### Scientific Computing & Discovery
+
+#### [Symbolic Regression](examples/symbolic_regression/)
+
+A comprehensive example demonstrating automated discovery of mathematical expressions from scientific datasets using the LLM-SRBench benchmark.
+
+#### [R Robust Regression](examples/r_robust_regression/)
+
+Developing robust regression methods resistant to outliers using R language support.
+
+#### [Signal Processing](examples/signal_processing/)
+
+Automated design of digital filters with superior performance characteristics.
+
+### Web and Integration Examples
+
+#### [Online Judge Programming](examples/online_judge_programming/)
+
+Automated competitive programming solution generation with external evaluation systems.
+
+#### [LM-Eval Integration](examples/lm_eval/)
+
+Working with standard ML evaluation harnesses for automated benchmark improvement.
 
 ## Preparing Your Own Problems
 
@@ -319,7 +481,7 @@ If you use OpenEvolve in your research, please cite:
 
 ```
 @software{openevolve,
-  title = {OpenEvolve: Open-source implementation of AlphaEvolve},
+  title = {OpenEvolve: an open-source evolutionary coding agent},
   author = {Asankhaya Sharma},
   year = {2025},
   publisher = {GitHub},

@@ -31,24 +31,21 @@ class Result:
     artifacts: dict = None
 
 
-
-
-
 async def run_iteration_with_shared_db(
-    iteration: int, 
-    config: Config, 
+    iteration: int,
+    config: Config,
     database: ProgramDatabase,
     evaluator: Evaluator,
     llm_ensemble: LLMEnsemble,
-    prompt_sampler: PromptSampler
+    prompt_sampler: PromptSampler,
 ):
     """
     Run a single iteration using shared memory database
-    
+
     This is optimized for use with persistent worker processes.
     """
     logger = logging.getLogger(__name__)
-    
+
     try:
         # Sample parent and inspirations from database
         parent, inspirations = database.sample()
@@ -115,10 +112,10 @@ async def run_iteration_with_shared_db(
         # Evaluate the child program
         child_id = str(uuid.uuid4())
         result.child_metrics = await evaluator.evaluate_program(child_code, child_id)
-        
+
         # Handle artifacts if they exist
         artifacts = evaluator.get_pending_artifacts(child_id)
-        
+
         # Create a child program
         result.child_program = Program(
             id=child_id,
@@ -133,13 +130,13 @@ async def run_iteration_with_shared_db(
                 "parent_metrics": parent.metrics,
             },
         )
-        
+
         result.prompt = prompt
         result.llm_response = llm_response
         result.artifacts = artifacts
         result.iteration_time = time.time() - iteration_start
         result.iteration = iteration
-        
+
         return result
 
     except Exception as e:

@@ -110,20 +110,20 @@ class OpenEvolve:
             # Set global random seeds
             random.seed(self.config.random_seed)
             np.random.seed(self.config.random_seed)
-            
+
             # Create hash-based seeds for different components
-            base_seed = str(self.config.random_seed).encode('utf-8')
-            llm_seed = int(hashlib.md5(base_seed + b'llm').hexdigest()[:8], 16) % (2**31)
-            
+            base_seed = str(self.config.random_seed).encode("utf-8")
+            llm_seed = int(hashlib.md5(base_seed + b"llm").hexdigest()[:8], 16) % (2**31)
+
             # Propagate seed to LLM configurations
             self.config.llm.random_seed = llm_seed
             for model_cfg in self.config.llm.models:
-                if not hasattr(model_cfg, 'random_seed') or model_cfg.random_seed is None:
+                if not hasattr(model_cfg, "random_seed") or model_cfg.random_seed is None:
                     model_cfg.random_seed = llm_seed
             for model_cfg in self.config.llm.evaluator_models:
-                if not hasattr(model_cfg, 'random_seed') or model_cfg.random_seed is None:
+                if not hasattr(model_cfg, "random_seed") or model_cfg.random_seed is None:
                     model_cfg.random_seed = llm_seed
-            
+
             logger.info(f"Set random seed to {self.config.random_seed} for reproducibility")
             logger.debug(f"Generated LLM seed: {llm_seed}")
 
@@ -206,9 +206,9 @@ class OpenEvolve:
 
         logger.info(f"Logging to {log_file}")
 
-    def _load_initial_programs(self) -> str:
+    def _load_initial_programs(self) -> List[str]:
         """Load the initial programs from file"""
-        programs = []
+        programs: List[str] = []
         for path in self.initial_programs_paths:
             with open(path, "r") as f:
                 programs.append(f.read())
@@ -232,7 +232,7 @@ class OpenEvolve:
             Best program found
         """
         max_iterations = iterations or self.config.max_iterations
-        
+
         # Determine starting iteration
         start_iteration = 0
         if checkpoint_path and os.path.exists(checkpoint_path):
@@ -285,22 +285,31 @@ class OpenEvolve:
             self.parallel_controller = ImprovedParallelController(
                 self.config, self.evaluation_file, self.database
             )
-            
+
             # Set up signal handlers for graceful shutdown
             def signal_handler(signum, frame):
                 logger.info(f"Received signal {signum}, initiating graceful shutdown...")
                 self.parallel_controller.request_shutdown()
-            
+
+                # Set up a secondary handler for immediate exit if user presses Ctrl+C again
+                def force_exit_handler(signum, frame):
+                    logger.info("Force exit requested - terminating immediately")
+                    import sys
+
+                    sys.exit(0)
+
+                signal.signal(signal.SIGINT, force_exit_handler)
+
             signal.signal(signal.SIGINT, signal_handler)
             signal.signal(signal.SIGTERM, signal_handler)
-            
+
             self.parallel_controller.start()
-            
+
             # Run evolution with improved parallel processing and checkpoint callback
             await self._run_evolution_with_checkpoints(
                 start_iteration, max_iterations, target_score
             )
-            
+
         finally:
             # Clean up parallel processing resources
             if self.parallel_controller:
@@ -437,12 +446,10 @@ class OpenEvolve:
         """Load state from a checkpoint directory"""
         if not os.path.exists(checkpoint_path):
             raise FileNotFoundError(f"Checkpoint directory {checkpoint_path} not found")
-        
+
         logger.info(f"Loading checkpoint from {checkpoint_path}")
         self.database.load(checkpoint_path)
-        logger.info(
-            f"Checkpoint loaded successfully (iteration {self.database.last_iteration})"
-        )
+        logger.info(f"Checkpoint loaded successfully (iteration {self.database.last_iteration})")
 
     async def _run_evolution_with_checkpoints(
         self, start_iteration: int, max_iterations: int, target_score: Optional[float]
@@ -450,13 +457,17 @@ class OpenEvolve:
         """Run evolution with checkpoint saving support"""
         logger.info(f"Using island-based evolution with {self.config.database.num_islands} islands")
         self.database.log_island_status()
-        
+
         # Run the evolution process with checkpoint callback
         await self.parallel_controller.run_evolution(
-            start_iteration, max_iterations, target_score,
-            checkpoint_callback=self._save_checkpoint
+            start_iteration, max_iterations, target_score, checkpoint_callback=self._save_checkpoint
         )
-        
+
+        # Check if shutdown was requested
+        if self.parallel_controller.shutdown_flag.is_set():
+            logger.info("Evolution stopped due to shutdown request")
+            return
+
         # Save final checkpoint if needed
         final_iteration = start_iteration + max_iterations - 1
         if final_iteration > 0 and final_iteration % self.config.checkpoint_interval == 0:

@@ -28,7 +28,10 @@ class PromptSampler:
         self.system_template_override = None
         self.user_template_override = None
 
-        logger.info("Initialized prompt sampler")
+        # Only log once to reduce duplication
+        if not hasattr(logger, "_prompt_sampler_logged"):
+            logger.info("Initialized prompt sampler")
+            logger._prompt_sampler_logged = True
 
     def set_templates(
         self, system_template: Optional[str] = None, user_template: Optional[str] = None
@@ -409,39 +412,39 @@ class PromptSampler:
     ) -> str:
         """
         Format the inspirations section for the prompt
-        
+
         Args:
             inspirations: List of inspiration programs
             language: Programming language
-            
+
         Returns:
             Formatted inspirations section string
         """
         if not inspirations:
             return ""
-            
+
         # Get templates
         inspirations_section_template = self.template_manager.get_template("inspirations_section")
         inspiration_program_template = self.template_manager.get_template("inspiration_program")
-        
+
         inspiration_programs_str = ""
-        
+
         for i, program in enumerate(inspirations):
             # Extract a snippet (first 8 lines) for display
             program_code = program.get("code", "")
             program_snippet = "\n".join(program_code.split("\n")[:8])
             if len(program_code.split("\n")) > 8:
                 program_snippet += "\n# ... (truncated for brevity)"
-            
+
             # Calculate a composite score using safe numeric average
             score = safe_numeric_average(program.get("metrics", {}))
-            
+
             # Determine program type based on metadata and score
             program_type = self._determine_program_type(program)
-            
+
             # Extract unique features (emphasizing diversity rather than just performance)
             unique_features = self._extract_unique_features(program)
-            
+
             inspiration_programs_str += (
                 inspiration_program_template.format(
                     program_number=i + 1,
@@ -453,24 +456,24 @@ class PromptSampler:
                 )
                 + "\n\n"
             )
-        
+
         return inspirations_section_template.format(
             inspiration_programs=inspiration_programs_str.strip()
         )
-        
+
     def _determine_program_type(self, program: Dict[str, Any]) -> str:
         """
         Determine the type/category of an inspiration program
-        
+
         Args:
             program: Program dictionary
-            
+
         Returns:
             String describing the program type
         """
         metadata = program.get("metadata", {})
         score = safe_numeric_average(program.get("metrics", {}))
-        
+
         # Check metadata for explicit type markers
         if metadata.get("diverse", False):
             return "Diverse"
@@ -478,7 +481,7 @@ class PromptSampler:
             return "Migrant"
         if metadata.get("random", False):
             return "Random"
-            
+
         # Classify based on score ranges
         if score >= 0.8:
             return "High-Performer"
@@ -488,26 +491,26 @@ class PromptSampler:
             return "Experimental"
         else:
             return "Exploratory"
-            
+
     def _extract_unique_features(self, program: Dict[str, Any]) -> str:
         """
         Extract unique features of an inspiration program
-        
+
         Args:
             program: Program dictionary
-            
+
         Returns:
             String describing unique aspects of the program
         """
         features = []
-        
+
         # Extract from metadata if available
         metadata = program.get("metadata", {})
         if "changes" in metadata:
             changes = metadata["changes"]
             if isinstance(changes, str) and len(changes) < 100:
                 features.append(f"Modification: {changes}")
-        
+
         # Analyze metrics for standout characteristics
         metrics = program.get("metrics", {})
         for metric_name, value in metrics.items():
@@ -516,7 +519,7 @@ class PromptSampler:
                     features.append(f"Excellent {metric_name} ({value:.3f})")
                 elif value <= 0.3:
                     features.append(f"Alternative {metric_name} approach")
-        
+
         # Code-based features (simple heuristics)
         code = program.get("code", "")
         if code:
@@ -531,12 +534,12 @@ class PromptSampler:
                 features.append("Concise implementation")
             elif len(code.split("\n")) > 50:
                 features.append("Comprehensive implementation")
-        
+
         # Default if no specific features found
         if not features:
             program_type = self._determine_program_type(program)
             features.append(f"{program_type} approach to the problem")
-            
+
         return ", ".join(features[:3])  # Limit to top 3 features
 
     def _apply_template_variations(self, template: str) -> str:

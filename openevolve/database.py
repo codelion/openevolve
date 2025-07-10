@@ -9,6 +9,7 @@ import os
 import random
 import time
 from dataclasses import asdict, dataclass, field, fields
+
 # FileLock removed - no longer needed with threaded parallel processing
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -198,7 +199,11 @@ class ProgramDatabase:
         # Update archive
         self._update_archive(program)
 
-        # Update the absolute best program tracking
+        # Enforce population size limit BEFORE updating best program tracking
+        # This ensures newly added programs aren't immediately removed
+        self._enforce_population_limit(exclude_program_id=program.id)
+
+        # Update the absolute best program tracking (after population enforcement)
         self._update_best_program(program)
 
         # Save to disk if configured
@@ -206,9 +211,6 @@ class ProgramDatabase:
             self._save_program(program)
 
         logger.debug(f"Added program {program.id} to island {island_idx}")
-
-        # Enforce population size limit
-        self._enforce_population_limit()
 
         return program.id
 
@@ -254,9 +256,15 @@ class ProgramDatabase:
             return None
 
         # If no specific metric and we have a tracked best program, return it
-        if metric is None and self.best_program_id and self.best_program_id in self.programs:
-            logger.debug(f"Using tracked best program: {self.best_program_id}")
-            return self.programs[self.best_program_id]
+        if metric is None and self.best_program_id:
+            if self.best_program_id in self.programs:
+                logger.debug(f"Using tracked best program: {self.best_program_id}")
+                return self.programs[self.best_program_id]
+            else:
+                logger.warning(
+                    f"Tracked best program {self.best_program_id} no longer exists, will recalculate"
+                )
+                self.best_program_id = None
 
         if metric:
             # Sort by specific metric
@@ -713,7 +721,15 @@ class ProgramDatabase:
             logger.debug(f"Set initial best program to {program.id}")
             return
 
-        # Compare with current best program
+        # Compare with current best program (if it still exists)
+        if self.best_program_id not in self.programs:
+            logger.warning(
+                f"Best program {self.best_program_id} no longer exists, clearing reference"
+            )
+            self.best_program_id = program.id
+            logger.info(f"Set new best program to {program.id}")
+            return
+
         current_best = self.programs[self.best_program_id]
 
         # Update if the new program is better
@@ -940,9 +956,12 @@ class ProgramDatabase:
 
         return inspirations[:n]
 
-    def _enforce_population_limit(self) -> None:
+    def _enforce_population_limit(self, exclude_program_id: Optional[str] = None) -> None:
         """
         Enforce the population size limit by removing worst programs if needed
+
+        Args:
+            exclude_program_id: Program ID to never remove (e.g., newly added program)
         """
         if len(self.programs) <= self.config.population_size:
             return
@@ -963,22 +982,24 @@ class ProgramDatabase:
             key=lambda p: safe_numeric_average(p.metrics),
         )
 
-        # Remove worst programs, but never remove the best program
+        # Remove worst programs, but never remove the best program or excluded program
         programs_to_remove = []
+        protected_ids = {self.best_program_id, exclude_program_id} - {None}
+
         for program in sorted_programs:
             if len(programs_to_remove) >= num_to_remove:
                 break
-            # Don't remove the best program
-            if program.id != self.best_program_id:
+            # Don't remove the best program or excluded program
+            if program.id not in protected_ids:
                 programs_to_remove.append(program)
 
-        # If we still need to remove more and only have the best program protected,
-        # remove from the remaining programs anyway (but keep the absolute best)
+        # If we still need to remove more and only have protected programs,
+        # remove from the remaining programs anyway (but keep the protected ones)
         if len(programs_to_remove) < num_to_remove:
             remaining_programs = [
                 p
                 for p in sorted_programs
-                if p not in programs_to_remove and p.id != self.best_program_id
+                if p not in programs_to_remove and p.id not in protected_ids
             ]
             additional_removals = remaining_programs[: num_to_remove - len(programs_to_remove)]
             programs_to_remove.extend(additional_removals)
