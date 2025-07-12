@@ -194,12 +194,12 @@ class ProgramDatabase:
             
             if feature_key not in self.feature_map:
                 # New cell occupation
-                logging.info("New MAP-Elites cell occupied: %s", coords_dict)
+                logger.info("New MAP-Elites cell occupied: %s", coords_dict)
                 # Check coverage milestone
                 total_possible_cells = self.feature_bins ** len(self.config.feature_dimensions)
                 coverage = (len(self.feature_map) + 1) / total_possible_cells
                 if coverage in [0.1, 0.25, 0.5, 0.75, 0.9]:
-                    logging.info("MAP-Elites coverage reached %.1f%% (%d/%d cells)", 
+                    logger.info("MAP-Elites coverage reached %.1f%% (%d/%d cells)", 
                                coverage * 100, len(self.feature_map) + 1, total_possible_cells)
             else:
                 # Cell replacement - existing program being replaced
@@ -208,7 +208,7 @@ class ProgramDatabase:
                     existing_program = self.programs[existing_program_id]
                     new_fitness = safe_numeric_average(program.metrics)
                     existing_fitness = safe_numeric_average(existing_program.metrics)
-                    logging.info("MAP-Elites cell improved: %s (fitness: %.3f -> %.3f)", 
+                    logger.info("MAP-Elites cell improved: %s (fitness: %.3f -> %.3f)", 
                                coords_dict, existing_fitness, new_fitness)
             
             self.feature_map[feature_key] = program.id
@@ -667,7 +667,7 @@ class ProgramDatabase:
                 # Default to middle bin if feature not found
                 coords.append(self.feature_bins // 2)
         # Only log coordinates at debug level for troubleshooting
-        logging.debug(
+        logger.debug(
             "MAP-Elites coords: %s",
             str({self.config.feature_dimensions[i]: coords[i] for i in range(len(coords))}),
         )

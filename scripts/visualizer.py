@@ -7,7 +7,7 @@ import re as _re
 from flask import Flask, render_template, render_template_string, jsonify
 
 
-logger = logging.getLogger("openevolve.visualizer")
+logger = logging.getLogger(__name__)
 app = Flask(__name__, template_folder="templates")
 
 
@@ -164,7 +164,7 @@ def run_static_export(args):
         shutil.rmtree(static_dst)
     shutil.copytree(static_src, static_dst)
 
-    logging.info(
+    logger.info(
         f"Static export written to {output_dir}/\nNote: This will only work correctly with a web server, not by opening the HTML file directly in a browser. Try $ python3 -m http.server --directory {output_dir} 8080"
     )
 
