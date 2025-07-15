@@ -86,7 +86,7 @@ def evaluate(program_path):
                 mock_evaluator_class.return_value = mock_evaluator
 
                 controller = OpenEvolve(
-                    initial_program_path=self.test_program_path,
+                    initial_programs_paths=[self.test_program_path],
                     evaluation_file=self.evaluator_path,
                     config=self.config,
                     output_dir=self.test_dir,
@@ -133,7 +133,7 @@ def evaluate(program_path):
                 mock_evaluator_class.return_value = mock_evaluator
 
                 controller = OpenEvolve(
-                    initial_program_path=self.test_program_path,
+                    initial_programs_paths=[self.test_program_path],
                     evaluation_file=self.evaluator_path,
                     config=self.config,
                     output_dir=self.test_dir,
@@ -181,7 +181,7 @@ def evaluate(program_path):
                 mock_evaluator_class.return_value = mock_evaluator
 
                 controller = OpenEvolve(
-                    initial_program_path=self.test_program_path,
+                    initial_programs_paths=[self.test_program_path],
                     evaluation_file=self.evaluator_path,
                     config=self.config,
                     output_dir=self.test_dir,
@@ -237,7 +237,7 @@ def evaluate(program_path):
                 mock_evaluator_class.return_value = mock_evaluator
 
                 controller = OpenEvolve(
-                    initial_program_path=self.test_program_path,
+                    initial_programs_paths=[self.test_program_path],
                     evaluation_file=self.evaluator_path,
                     config=self.config,
                     output_dir=self.test_dir,
@@ -293,7 +293,7 @@ def evaluate(program_path):
                 mock_evaluator_class.return_value = mock_evaluator
 
                 controller = OpenEvolve(
-                    initial_program_path=self.test_program_path,
+                    initial_programs_paths=[self.test_program_path],
                     evaluation_file=self.evaluator_path,
                     config=self.config,
                     output_dir=self.test_dir,

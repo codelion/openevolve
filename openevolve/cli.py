@@ -19,10 +19,15 @@ def parse_args() -> argparse.Namespace:
     """Parse command-line arguments"""
     parser = argparse.ArgumentParser(description="OpenEvolve - Evolutionary coding agent")
 
-    parser.add_argument("initial_program", help="Path to the initial program file")
-
     parser.add_argument(
         "evaluation_file", help="Path to the evaluation file containing an 'evaluate' function"
+    )
+
+    parser.add_argument(
+        "initial_programs",
+        nargs="+",
+        help="Path(s) to one or more initial program files",
+        default=None,
     )
 
     parser.add_argument("--config", "-c", help="Path to configuration file (YAML)", default=None)
@@ -69,11 +74,13 @@ async def main_async() -> int:
     """
     args = parse_args()
 
-    # Check if files exist
-    if not os.path.exists(args.initial_program):
-        print(f"Error: Initial program file '{args.initial_program}' not found")
-        return 1
+    # Check if files exist.
 
+    for program in args.initial_programs:
+        if not os.path.isfile(program):
+            print(f"Error: Initial program file '{program}' does not exist")
+            return 1
+        
     if not os.path.exists(args.evaluation_file):
         print(f"Error: Evaluation file '{args.evaluation_file}' not found")
         return 1
@@ -100,7 +107,7 @@ async def main_async() -> int:
     # Initialize OpenEvolve
     try:
         openevolve = OpenEvolve(
-            initial_program_path=args.initial_program,
+            initial_programs_paths=args.initial_programs,
             evaluation_file=args.evaluation_file,
             config=config,
             config_path=args.config if config is None else None,
