@@ -12,6 +12,8 @@ import openai
 from openevolve.config import LLMConfig
 from openevolve.llm.base import LLMInterface
 
+from openai import AzureOpenAI
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,9 +37,13 @@ class OpenAILLM(LLMInterface):
         self.random_seed = getattr(model_cfg, "random_seed", None)
 
         # Set up API client
+        print("##########################")
+    
         self.client = openai.OpenAI(
-            api_key=self.api_key,
-            base_url=self.api_base,
+            api_key      = self.api_key,
+            base_url     = self.api_base,
+            default_headers={"api-key": self.api_key},
+            default_query = {"api-version": "2025-01-01-preview"},
         )
 
         # Only log unique models to reduce duplication
@@ -71,6 +77,14 @@ class OpenAILLM(LLMInterface):
                 "model": self.model,
                 "messages": formatted_messages,
                 "max_completion_tokens": kwargs.get("max_tokens", self.max_tokens),
+            }
+        # if we use aifoundry we need to get rid of max_completion_tokens
+        elif self.api_base.startswith('https://aispocuksouth'):
+            params = {
+                "model": self.model,
+                "messages": formatted_messages,
+                "temperature": kwargs.get("temperature", self.temperature),
+                "top_p": kwargs.get("top_p", self.top_p),
             }
         else:
             params = {
@@ -121,6 +135,16 @@ class OpenAILLM(LLMInterface):
 
     async def _call_api(self, params: Dict[str, Any]) -> str:
         """Make the actual API call"""
+        # ----- Azure o-series models need max_completion_tokens -----
+        if "max_tokens" in params:
+            params = params.copy()                               # don’t mutate caller’s dict
+            params["extra_body"] = {"max_completion_tokens": params.pop("max_tokens")}
+        # -----------------------------------------------------------
+        # ⬇ NEW: drop sampling knobs that o-series refuses
+        for unsupported in ("temperature", "top_p",
+                            "frequency_penalty", "presence_penalty"):
+            params.pop(unsupported, None)
+        # ------------------------------------------------------------------
         # Use asyncio to run the blocking API call in a thread pool
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
