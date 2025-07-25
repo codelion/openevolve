@@ -16,11 +16,17 @@ def find_latest_checkpoint(base_folder):
     if os.path.basename(base_folder).startswith("checkpoint_"):
         return base_folder
 
-    checkpoint_folders = glob.glob("**/checkpoint_*", root_dir=base_folder, recursive=True)
+    # checkpoint_folders = glob.glob("**/checkpoint_*", root_dir=base_folder, recursive=True)
+    # glob.glob 没有 root_dir 参数，需手动递归遍历
+    checkpoint_folders = []
+    for root, dirs, files in os.walk(base_folder):
+        for d in dirs:
+            if d.startswith("checkpoint_"):
+                checkpoint_folders.append(os.path.join(root, d))
+
     if not checkpoint_folders:
         logger.info(f"No checkpoint folders found in {base_folder}")
         return None
-    checkpoint_folders = [os.path.join(base_folder, folder) for folder in checkpoint_folders]
     checkpoint_folders.sort(key=lambda x: os.path.getmtime(x), reverse=True)
     logger.debug(f"Found checkpoint folder: {checkpoint_folders[0]}")
     return checkpoint_folders[0]
