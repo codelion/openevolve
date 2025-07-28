@@ -68,7 +68,6 @@ class OpenAILLM(LLMInterface):
         formatted_messages = [{"role": "system", "content": system_message}]
         formatted_messages.extend(messages)
 
-        kwargs.setdefault("temperature", self.temperature)
         # define params
         params: Dict[str, Any] = {
             "model": self.model,
@@ -101,10 +100,12 @@ class OpenAILLM(LLMInterface):
         get_model = str(self.model).lower()
         if self.api_base == "https://api.openai.com/v1" and get_model in _O_SERIES_MODELS:
             # if user sets up temperature in config, will have a warning
-            if "temperature" in kwargs:
+            if self.temperature is not None:
                 logger.warning(
                     f"Model {self.model!r} doesn't support temperature"
                 )
+            kwargs.pop("temperature", None)
+            kwargs.pop("top_p", None)
 
         else:
             params["temperature"] = kwargs.get("temperature", self.temperature)
