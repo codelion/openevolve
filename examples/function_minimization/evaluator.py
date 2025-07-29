@@ -38,8 +38,7 @@ def safe_float(value):
     try:
         return float(value)
     except (TypeError, ValueError):
-        print(
-            f"Warning: Could not convert {value} of type {type(value)} to float")
+        print(f"Warning: Could not convert {value} of type {type(value)} to float")
         return 0.0
 
 
@@ -101,19 +100,13 @@ def evaluate(program_path):
                         # Assume it's (x, y) and calculate value
                         x, y = result
                         # Calculate the function value since it wasn't returned
-                        value = np.sin(x) * np.cos(y) + \
-                            np.sin(x * y) + (x**2 + y**2) / 20
-                        print(
-                            f"Trial {trial}: Got 2 values, calculated function value: {value}")
+                        value = np.sin(x) * np.cos(y) + np.sin(x * y) + (x**2 + y**2) / 20
+                        print(f"Trial {trial}: Got 2 values, calculated function value: {value}")
                     else:
-                        print(
-                            f"Trial {trial}: Invalid result format, expected tuple of 2 or 3 values but got {len(result)}"
-                        )
+                        print(f"Trial {trial}: Invalid result format, expected tuple of 2 or 3 values but got {len(result)}")
                         continue
                 else:
-                    print(
-                        f"Trial {trial}: Invalid result format, expected tuple but got {type(result)}"
-                    )
+                    print(f"Trial {trial}: Invalid result format, expected tuple but got {type(result)}")
                     continue
 
                 end_time = time.time()
@@ -132,8 +125,7 @@ def evaluate(program_path):
                     or np.isinf(y)
                     or np.isinf(value)
                 ):
-                    print(
-                        f"Trial {trial}: Invalid result, got x={x}, y={y}, value={value}")
+                    print(f"Trial {trial}: Invalid result, got x={x}, y={y}, value={value}")
                     continue
 
                 # Calculate metrics
@@ -154,9 +146,7 @@ def evaluate(program_path):
             except IndexError as e:
                 # Specifically handle IndexError which often happens with early termination checks
                 print(f"Trial {trial}: IndexError - {str(e)}")
-                print(
-                    "This is likely due to a list index check before the list is fully populated."
-                )
+                print("This is likely due to a list index check before the list is fully populated.")
                 continue
             except Exception as e:
                 print(f"Trial {trial}: Error - {str(e)}")
@@ -279,13 +269,10 @@ def evaluate_stage1(program_path):
                     print(
                         f"Stage 1: Got 2 values, calculated function value: {value}")
                 else:
-                    print(
-                        f"Stage 1: Invalid result format, expected tuple of 2 or 3 values but got {len(result)}"
-                    )
+                    print(f"Stage 1: Invalid result format, expected tuple of 2 or 3 values but got {len(result)}")
                     return {"runs_successfully": 0.0, "error": "Invalid result format"}
             else:
-                print(
-                    f"Stage 1: Invalid result format, expected tuple but got {type(result)}")
+                print(f"Stage 1: Invalid result format, expected tuple but got {type(result)}")
                 return {"runs_successfully": 0.0, "error": "Invalid result format"}
 
             # Ensure all values are float
@@ -336,8 +323,7 @@ def evaluate_stage1(program_path):
         except IndexError as e:
             # Specifically handle IndexError which often happens with early termination checks
             print(f"Stage 1 evaluation failed with IndexError: {e}")
-            print(
-                "This is likely due to a list index check before the list is fully populated.")
+            print("This is likely due to a list index check before the list is fully populated.")
             return {"runs_successfully": 0.0, "error": f"IndexError: {str(e)}"}
         except Exception as e:
             print(f"Stage 1 evaluation failed: {e}")
