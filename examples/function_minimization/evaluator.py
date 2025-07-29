@@ -100,10 +100,8 @@ def evaluate(program_path):
                         # Assume it's (x, y) and calculate value
                         x, y = result
                         # Calculate the function value since it wasn't returned
-                        value = np.sin(x) * np.cos(y) + \
-                            np.sin(x * y) + (x**2 + y**2) / 20
-                        print(
-                            f"Trial {trial}: Got 2 values, calculated function value: {value}")
+                         value = np.sin(x) * np.cos(y) + np.sin(x * y) + (x**2 + y**2) / 20
+                        print(f"Trial {trial}: Got 2 values, calculated function value: {value}")
                     else:
                         print(f"Trial {trial}: Invalid result format, expected tuple of 2 or 3 values but got {len(result)}")
                         continue
@@ -127,8 +125,7 @@ def evaluate(program_path):
                     or np.isinf(y)
                     or np.isinf(value)
                 ):
-                    print(
-                        f"Trial {trial}: Invalid result, got x={x}, y={y}, value={value}")
+                    print(f"Trial {trial}: Invalid result, got x={x}, y={y}, value={value}")
                     continue
 
                 # Calculate metrics
