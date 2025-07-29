@@ -186,7 +186,7 @@ def evaluate(program_path):
 
         # calculate standard deviation scores
         x_std_score = float(1.0 / (1.0 + np.std(x_values)))
-        y_std_score = float(1.0 / (1.0 + np.std(y_values)))
+        y_std_score = float(1.0 / (1.0 + np.std(x_values)))
         standard_deviation_score = (x_std_score + y_std_score) / 2.0
 
         # Normalize speed score (so it doesn't dominate)
