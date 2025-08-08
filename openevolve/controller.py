@@ -154,6 +154,7 @@ class OpenEvolve:
         self.evaluator = Evaluator(
             self.config.evaluator,
             evaluation_file,
+            Path(self.initial_program_path).suffix,
             self.llm_evaluator_ensemble,
             self.evaluator_prompt_sampler,
             database=self.database,

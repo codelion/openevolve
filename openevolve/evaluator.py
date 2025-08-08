@@ -41,12 +41,14 @@ class Evaluator:
         self,
         config: EvaluatorConfig,
         evaluation_file: str,
+        suffix: str,
         llm_ensemble: Optional[LLMEnsemble] = None,
         prompt_sampler: Optional[PromptSampler] = None,
         database: Optional[ProgramDatabase] = None,
     ):
         self.config = config
         self.evaluation_file = evaluation_file
+        self.program_suffix = suffix
         self.llm_ensemble = llm_ensemble
         self.prompt_sampler = prompt_sampler
         self.database = database
@@ -152,7 +154,7 @@ class Evaluator:
         last_exception = None
         for attempt in range(self.config.max_retries + 1):
             # Create a temporary file for the program
-            with tempfile.NamedTemporaryFile(suffix=".py", delete=False) as temp_file:
+            with tempfile.NamedTemporaryFile(suffix=self.program_suffix, delete=False) as temp_file:
                 temp_file.write(program_code.encode("utf-8"))
                 temp_file_path = temp_file.name
 
