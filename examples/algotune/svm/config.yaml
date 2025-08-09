@@ -1,0 +1,83 @@
+# Configuration for svm task with baseline comparison
+max_iterations: 100
+checkpoint_interval: 10
+log_level: "INFO"
+
+# LLM configuration
+llm:
+  primary_model: "gpt-4o-mini"
+  primary_model_weight: 0.8
+  secondary_model: "gpt-4o"
+  secondary_model_weight: 0.2
+  api_base: "https://api.openai.com/v1"
+  temperature: 0.7
+  top_p: 0.95
+  max_tokens: 4096
+
+# Prompt configuration
+prompt:
+  system_message: "SETTING:
+You're an autonomous programmer tasked with solving a specific problem. You are to use the commands defined below to accomplish this task. Every message you send incurs a cost—you will be informed of your usage and remaining budget by the system.
+You will be evaluated based on the best-performing piece of code you produce, even if the final code doesn't work or compile (as long as it worked at some point and achieved a score, you will be eligible).
+Apart from the default Python packages, you have access to the following additional packages:
+ - cryptography
+ - cvxpy
+ - cython
+ - dace
+ - dask
+ - diffrax
+ - ecos
+ - faiss-cpu
+ - hdbscan
+ - highspy
+ - jax
+ - networkx
+ - numba
+ - numpy
+ - ortools
+ - pandas
+ - pot
+ - psutil
+ - pulp
+ - pyomo
+ - python-sat
+ - pythran
+ - scikit-learn
+ - scipy
+ - sympy
+ - torch
+Your primary objective is to optimize the `solve` function to run as as fast as possible, while returning the optimal solution.
+You will receive better scores the quicker your solution runs, and you will be penalized for exceeding the time limit or returning non-optimal solutions.
+
+Below you find the description of the task you will have to solve. Read it carefully and understand what the problem is and what your solver should do.
+
+You are an expert programmer specializing in convex_optimization algorithms. Your task is to improve the svm algorithm implementation with baseline comparison. The problem description is: SVM Task\nGiven labels y ∈ {-1, 1}^n and a feature matrix X ∈ R^{n x p} with rows x_1,...,x_n, solve the support vector machine (SVM) task\n\nmin        1/2 || β ||_2^2 + C sum_{i=1}^n ξ_i\nβ,β_0,ξ  \n\nsubject to ξ_i ≥ 0, i = 1,...,n\n\t   y_i (x_i^T β + β_0) ≥ 1 - ξ_i, i = 1,...,n. Focus on improving the solve method to correctly handle the input format and produce valid solutions efficiently. Your solution will be compared against the reference AlgoTune baseline implementation to measure speedup and correctness."
+  num_top_programs: 3
+  use_template_stochasticity: true
+
+# Database configuration
+database:
+  population_size: 50
+  archive_size: 20
+  num_islands: 3
+  elite_selection_ratio: 0.2
+  exploitation_ratio: 0.7
+
+# Evaluator configuration
+evaluator:
+  cascade_evaluation: true
+  cascade_thresholds: [0.5, 0.75]
+  parallel_evaluations: 4
+  use_llm_feedback: false
+
+# AlgoTune task-specific configuration with baseline comparison
+algotune:
+  num_trials: 5
+  data_size: 5
+  timeout: 30
+  num_runs: 3
+  warmup_runs: 1
+
+# Evolution settings
+diff_based_evolution: true
+allow_full_rewrites: false
