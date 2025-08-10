@@ -111,7 +111,7 @@ class Evaluator:
                     f"Evaluation file {self.evaluation_file} does not contain an 'evaluate' function"
                 )
 
-            self.evaluation_object = module.evaluate
+            self.evaluation_object = module
             logger.info(f"Successfully loaded evaluation function from {self.evaluation_file}")
 
             # Validate cascade configuration
