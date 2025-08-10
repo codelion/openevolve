@@ -13,8 +13,9 @@ import tempfile
 import time
 import traceback
 import uuid
+import warnings
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, Protocol, cast
 import traceback
 
 from openevolve.config import EvaluatorConfig
@@ -29,6 +30,22 @@ from openevolve.utils.format_utils import format_metrics_safe
 logger = logging.getLogger(__name__)
 
 
+class EvaluationObject(Protocol):
+    def evaluate(self, program_path: str) -> EvaluationResult:
+        ...
+
+
+class CascadeEvaluationObject(Protocol):
+    def evaluate_stage1(self, program_path: str) -> EvaluationResult:
+        ...
+
+    def evaluate_stage2(self, program_path: str) -> EvaluationResult:
+        ...
+
+    def evaluate_stage3(self, program_path: str) -> EvaluationResult:
+        ...
+
+
 class Evaluator:
     """
     Evaluates programs and assigns scores
@@ -41,14 +58,18 @@ class Evaluator:
         self,
         config: EvaluatorConfig,
         evaluation_file: str,
+        evaluation_object: Optional[EvaluationObject] = None,
         llm_ensemble: Optional[LLMEnsemble] = None,
         prompt_sampler: Optional[PromptSampler] = None,
         database: Optional[ProgramDatabase] = None,
         suffix: Optional[str]=".py",
     ):
+        if evaluation_file and evaluation_object:
+            warnings.warn("Both evaluation_file and evaluation_object provided - evaluation_object overrides evaluation_file")
         self.config = config
         self.evaluation_file = evaluation_file
         self.program_suffix = suffix
+        self.evaluation_object = evaluation_object
         self.llm_ensemble = llm_ensemble
         self.prompt_sampler = prompt_sampler
         self.database = database
@@ -56,8 +77,9 @@ class Evaluator:
         # Create a task pool for parallel evaluation
         self.task_pool = TaskPool(max_concurrency=config.parallel_evaluations)
 
-        # Set up evaluation function if file exists
-        self._load_evaluation_function()
+        if self.evaluation_object is None:
+            # Set up evaluation module if file exists
+            self._load_evaluation_function()
 
         # Pending artifacts storage for programs
         self._pending_artifacts: Dict[str, Dict[str, Union[str, bytes]]] = {}
@@ -89,7 +111,7 @@ class Evaluator:
                     f"Evaluation file {self.evaluation_file} does not contain an 'evaluate' function"
                 )
 
-            self.evaluate_function = module.evaluate
+            self.evaluation_object = module.evaluate
             logger.info(f"Successfully loaded evaluation function from {self.evaluation_file}")
 
             # Validate cascade configuration
@@ -348,7 +370,7 @@ class Evaluator:
         # Create a coroutine that runs the evaluation function in an executor
         async def run_evaluation():
             loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(None, self.evaluate_function, program_path)
+            return await loop.run_in_executor(None, self.evaluation_object.evaluate, program_path)
 
         # Run the evaluation with timeout - let exceptions bubble up for retry handling
         result = await asyncio.wait_for(run_evaluation(), timeout=self.config.timeout)
@@ -369,23 +391,11 @@ class Evaluator:
         Returns:
             Dictionary of metrics or EvaluationResult with metrics and artifacts
         """
-        # Import the evaluation module to get cascade functions if they exist
+        # This cast just makes static type checkers happy; actual checking is still done using hasattr
+        evaluation_object = cast(CascadeEvaluationObject, self.evaluation_object)
         try:
-            # Add the evaluation file's directory to Python path so it can import local modules
-            eval_dir = os.path.dirname(os.path.abspath(self.evaluation_file))
-            if eval_dir not in sys.path:
-                sys.path.insert(0, eval_dir)
-                logger.debug(f"Added {eval_dir} to Python path for cascade evaluation")
-
-            spec = importlib.util.spec_from_file_location("evaluation_module", self.evaluation_file)
-            if spec is None or spec.loader is None:
-                return await self._direct_evaluate(program_path)
-
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-
             # Check if cascade functions exist
-            if not hasattr(module, "evaluate_stage1"):
+            if not hasattr(evaluation_object, "evaluate_stage1"):
                 return await self._direct_evaluate(program_path)
 
             # Run first stage with timeout
@@ -393,7 +403,7 @@ class Evaluator:
 
                 async def run_stage1():
                     loop = asyncio.get_event_loop()
-                    return await loop.run_in_executor(None, module.evaluate_stage1, program_path)
+                    return await loop.run_in_executor(None, evaluation_object.evaluate_stage1, program_path)
 
                 stage1_result = await asyncio.wait_for(run_stage1(), timeout=self.config.timeout)
                 stage1_eval_result = self._process_evaluation_result(stage1_result)
@@ -426,7 +436,7 @@ class Evaluator:
                 return stage1_eval_result
 
             # Check if second stage exists
-            if not hasattr(module, "evaluate_stage2"):
+            if not hasattr(evaluation_object, "evaluate_stage2"):
                 return stage1_eval_result
 
             # Run second stage with timeout
@@ -434,7 +444,7 @@ class Evaluator:
 
                 async def run_stage2():
                     loop = asyncio.get_event_loop()
-                    return await loop.run_in_executor(None, module.evaluate_stage2, program_path)
+                    return await loop.run_in_executor(None, evaluation_object.evaluate_stage2, program_path)
 
                 stage2_result = await asyncio.wait_for(run_stage2(), timeout=self.config.timeout)
                 stage2_eval_result = self._process_evaluation_result(stage2_result)
@@ -488,7 +498,7 @@ class Evaluator:
                 return merged_result
 
             # Check if third stage exists
-            if not hasattr(module, "evaluate_stage3"):
+            if not hasattr(evaluation_object, "evaluate_stage3"):
                 return merged_result
 
             # Run third stage with timeout
@@ -496,7 +506,7 @@ class Evaluator:
 
                 async def run_stage3():
                     loop = asyncio.get_event_loop()
-                    return await loop.run_in_executor(None, module.evaluate_stage3, program_path)
+                    return await loop.run_in_executor(None, evaluation_object.evaluate_stage3, program_path)
 
                 stage3_result = await asyncio.wait_for(run_stage3(), timeout=self.config.timeout)
                 stage3_eval_result = self._process_evaluation_result(stage3_result)
