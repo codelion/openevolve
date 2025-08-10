@@ -262,7 +262,7 @@ def _run_iteration_worker(
 class ProcessParallelController:
     """Controller for process-based parallel evolution"""
 
-    def __init__(self, config: Config, evaluation_file: str, evaluation_object: EvaluationObject, database: ProgramDatabase):
+    def __init__(self, config: Config, evaluation_file: str, evaluation_object: Optional[EvaluationObject], database: ProgramDatabase):
         self.config = config
         self.evaluation_file = evaluation_file
         self.evaluation_object = evaluation_object
