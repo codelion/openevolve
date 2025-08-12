@@ -190,12 +190,16 @@ class PromptSampler:
                 # Only compare numeric metrics
                 if not isinstance(value, (int, float)) or isinstance(value, bool):
                     continue
+                
+                # if metric ends with (-), then it is a metric that we want to minimize
+                if metric.endswith("(-)"):
+                    value = -value
 
                 improved = True
                 regressed = True
 
                 for attempt in recent_attempts:
-                    attempt_value = attempt["metrics"].get(metric, 0)
+                    attempt_value = -attempt["metrics"].get(metric, 0) if metric.endswith("(-)") else attempt["metrics"].get(metric, 0)
                     # Only compare if both values are numeric
                     if isinstance(value, (int, float)) and isinstance(attempt_value, (int, float)):
                         if attempt_value <= value:
