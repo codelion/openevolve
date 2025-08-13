@@ -1,8 +1,15 @@
 """
 OpenAI API interface for LLMs
 """
-
 import asyncio
+
+try:
+    asyncio.get_running_loop()
+except RuntimeError:
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
 import logging
 import time
 from typing import Any, Dict, List, Optional, Union
@@ -13,6 +20,10 @@ from openevolve.config import LLMConfig
 from openevolve.llm.base import LLMInterface
 
 logger = logging.getLogger(__name__)
+
+_O_SERIES_MODELS = {"o1", "o1-mini", "o1-pro"
+                    "o-3", "o3-mini", "o3-pro",
+                    "o4-mini"}
 
 
 class OpenAILLM(LLMInterface):
@@ -65,22 +76,50 @@ class OpenAILLM(LLMInterface):
         formatted_messages = [{"role": "system", "content": system_message}]
         formatted_messages.extend(messages)
 
+        # define params
+        params: Dict[str, Any] = {
+            "model": self.model,
+            "messages": formatted_messages,
+        }
+
         # Set up generation parameters
-        if self.api_base == "https://api.openai.com/v1" and str(self.model).lower().startswith("o"):
-            # For o-series models
-            params = {
-                "model": self.model,
-                "messages": formatted_messages,
-                "max_completion_tokens": kwargs.get("max_tokens", self.max_tokens),
-            }
+        # if self.api_base == "https://api.openai.com/v1" and str(self.model).lower().startswith("o"):
+        #     # For o-series models
+        #     params = {
+        #         "model": self.model,
+        #         "messages": formatted_messages,
+        #         "max_completion_tokens": kwargs.get("max_tokens", self.max_tokens),
+        #     }
+        # else:
+        #     params = {
+        #         "model": self.model,
+        #         "messages": formatted_messages,
+        #         "temperature": kwargs.get("temperature", self.temperature),
+        #         "top_p": kwargs.get("top_p", self.top_p),
+        #         "max_tokens": kwargs.get("max_tokens", self.max_tokens),
+        #     }
+
+        if self.api_base == "https://api.openai.com/v1":
+            params["max_completion_tokens"] = kwargs.get(
+                "max_tokens", self.max_tokens)
         else:
-            params = {
-                "model": self.model,
-                "messages": formatted_messages,
-                "temperature": kwargs.get("temperature", self.temperature),
-                "top_p": kwargs.get("top_p", self.top_p),
-                "max_tokens": kwargs.get("max_tokens", self.max_tokens),
-            }
+            params["max_tokens"] = kwargs.get("max_tokens", self.max_tokens)
+
+        get_model = str(self.model).lower()
+        if self.api_base == "https://api.openai.com/v1" and get_model in _O_SERIES_MODELS:
+            # if user sets up temperature in config, will have a warning
+            if self.temperature is not None:
+                logger.warning(
+                    f"Model {self.model!r} doesn't support temperature"
+                )
+            kwargs.pop("temperature", None)
+            kwargs.pop("top_p", None)
+
+        else:
+            params["temperature"] = kwargs.get("temperature", self.temperature)
+            params["top_p"] = kwargs.get("top_p",    self.top_p)
+
+        print("[DEBUG] LLM params:", params.keys())
 
         # Add seed parameter for reproducibility if configured
         # Skip seed parameter for Google AI Studio endpoint as it doesn't support it
@@ -105,10 +144,12 @@ class OpenAILLM(LLMInterface):
                 return response
             except asyncio.TimeoutError:
                 if attempt < retries:
-                    logger.warning(f"Timeout on attempt {attempt + 1}/{retries + 1}. Retrying...")
+                    logger.warning(
+                        f"Timeout on attempt {attempt + 1}/{retries + 1}. Retrying...")
                     await asyncio.sleep(retry_delay)
                 else:
-                    logger.error(f"All {retries + 1} attempts failed with timeout")
+                    logger.error(
+                        f"All {retries + 1} attempts failed with timeout")
                     raise
             except Exception as e:
                 if attempt < retries:
@@ -117,7 +158,8 @@ class OpenAILLM(LLMInterface):
                     )
                     await asyncio.sleep(retry_delay)
                 else:
-                    logger.error(f"All {retries + 1} attempts failed with error: {str(e)}")
+                    logger.error(
+                        f"All {retries + 1} attempts failed with error: {str(e)}")
                     raise
 
     async def _call_api(self, params: Dict[str, Any]) -> str:
