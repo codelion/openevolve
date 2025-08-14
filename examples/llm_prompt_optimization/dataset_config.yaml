@@ -1,0 +1,9 @@
+# Default dataset configuration (fallback when not using run_evolution.sh)
+# This is used when OpenEvolve is called directly without setting OPENEVOLVE_PROMPT
+dataset_name: "stanfordnlp/imdb"
+input_field: "text"
+target_field: "label"  # 0 or 1
+split: "test"
+
+# Evaluation samples
+max_samples: 50

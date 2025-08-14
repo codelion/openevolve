@@ -1,0 +1,59 @@
+# Configuration for baseline benchmarking with Qwen3-8B
+# Using OpenRouter API for model access
+
+# General settings
+max_iterations: 1  # Just one iteration for baseline
+checkpoint_interval: 1
+log_level: "INFO"
+diff_based_evolution: false
+max_code_length: 10000
+language: "text"
+
+# LLM Configuration for Qwen3-8B via OpenRouter
+llm:
+  api_base: "https://openrouter.ai/api/v1"
+  models:
+    - name: "qwen/qwen3-8b"  # Using exact Qwen3-8B model for GEPA comparison
+      weight: 1.0
+  
+  temperature: 0.1  # Low temperature for consistent baseline results
+  max_tokens: 4096  # Reasonable context for Qwen
+  timeout: 300  # Longer timeout for full dataset evaluation
+  retries: 3
+
+# Prompt Configuration - Not used for baseline but required
+prompt:
+  template_dir: "templates"
+  num_top_programs: 3
+  num_diverse_programs: 2
+  include_artifacts: true
+  
+  system_message: |
+    You are a helpful assistant.
+
+# Database Configuration - Minimal for baseline
+database:
+  population_size: 1
+  archive_size: 1
+  num_islands: 1
+  
+  feature_dimensions: ["prompt_length", "reasoning_strategy"]
+  feature_bins: 10
+  
+  elite_selection_ratio: 1.0
+  exploration_ratio: 0.0
+  exploitation_ratio: 0.0
+  
+  migration_interval: 10
+  migration_rate: 0.0
+
+# Evaluator Configuration for baseline
+evaluator:
+  timeout: 3600  # 1 hour timeout for full dataset
+  max_retries: 3
+  parallel_evaluations: 1  # Sequential for baseline
+  cascade_evaluation: false  # No cascading for baseline
+  
+  # Disable LLM feedback for baseline
+  use_llm_feedback: false
+  llm_feedback_weight: 0.0

@@ -3,8 +3,8 @@
 # You can use this as a template for your own configuration
 
 # General settings
-max_iterations: 1000                  # Maximum number of evolution iterations
-checkpoint_interval: 50               # Save checkpoints every N iterations
+max_iterations: 100                  # Maximum number of evolution iterations
+checkpoint_interval: 10               # Save checkpoints every N iterations
 log_level: "INFO"                     # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 log_dir: null                         # Custom directory for logs (default: output_dir/logs)
 random_seed: 42                       # Random seed for reproducibility (null = random, 42 = default)
@@ -63,6 +63,18 @@ prompt:
       - "I suggest the following improvements:"
       - "We can enhance this code by:"
 
+  # Artifact rendering
+  include_artifacts: true             # Include execution outputs/errors in prompt
+  max_artifact_bytes: 20480           # Maximum artifact size in bytes (20KB default)
+  artifact_security_filter: true      # Apply security filtering to artifacts
+
+  # Feature extraction and program labeling thresholds
+  # These control how the LLM perceives and categorizes programs
+  suggest_simplification_after_chars: 500     # Suggest simplifying if program exceeds this many characters
+  include_changes_under_chars: 100           # Include change descriptions in features if under this length  
+  concise_implementation_max_lines: 10        # Label as "concise" if program has this many lines or fewer
+  comprehensive_implementation_min_lines: 50  # Label as "comprehensive" if program has this many lines or more
+
   # Note: meta-prompting features are not yet implemented
 
 # Database configuration
@@ -90,10 +102,32 @@ database:
   # Note: diversity_metric is fixed to "edit_distance" (feature_based not implemented)
 
   # Feature map dimensions for MAP-Elites
+  # Default if not specified: ["complexity", "diversity"]
+  # 
+  # Built-in features (always available, computed by OpenEvolve):
+  #   - "complexity": Code length
+  #   - "diversity": Code structure diversity
+  #
+  # You can mix built-in features with custom metrics from your evaluator:
   feature_dimensions:                 # Dimensions for MAP-Elites feature map
-    - "score"                         # Performance score
-    - "complexity"                    # Code complexity (length)
+    - "complexity"                    # Code length (built-in)
+    - "diversity"                     # Code diversity (built-in)
+  # Example with custom features:
+  # feature_dimensions:
+  #   - "performance"                 # Must be returned by your evaluator
+  #   - "correctness"                 # Must be returned by your evaluator
+  #   - "memory_efficiency"           # Must be returned by your evaluator
+  
+  # Number of bins per dimension
+  # Can be a single integer (same for all dimensions) or a dict
   feature_bins: 10                    # Number of bins per dimension
+  # Example of per-dimension configuration:
+  # feature_bins:
+  #   complexity: 10                  # 10 bins for complexity
+  #   diversity: 15                   # 15 bins for diversity
+  #   performance: 20                 # 20 bins for custom metric
+  
+  diversity_reference_size: 20        # Size of reference set for diversity calculation
 
 # Evaluator configuration
 evaluator:

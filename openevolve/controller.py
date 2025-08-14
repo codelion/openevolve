@@ -16,7 +16,7 @@ from openevolve.database import Program, ProgramDatabase
 from openevolve.evaluator import Evaluator
 from openevolve.llm.ensemble import LLMEnsemble
 from openevolve.prompt.sampler import PromptSampler
-from openevolve.threaded_parallel import ImprovedParallelController
+from openevolve.process_parallel import ProcessParallelController
 from openevolve.utils.code_utils import (
     extract_code_language,
 )
@@ -104,20 +104,20 @@ class OpenEvolve:
             # Set global random seeds
             random.seed(self.config.random_seed)
             np.random.seed(self.config.random_seed)
-            
+
             # Create hash-based seeds for different components
-            base_seed = str(self.config.random_seed).encode('utf-8')
-            llm_seed = int(hashlib.md5(base_seed + b'llm').hexdigest()[:8], 16) % (2**31)
-            
+            base_seed = str(self.config.random_seed).encode("utf-8")
+            llm_seed = int(hashlib.md5(base_seed + b"llm").hexdigest()[:8], 16) % (2**31)
+
             # Propagate seed to LLM configurations
             self.config.llm.random_seed = llm_seed
             for model_cfg in self.config.llm.models:
-                if not hasattr(model_cfg, 'random_seed') or model_cfg.random_seed is None:
+                if not hasattr(model_cfg, "random_seed") or model_cfg.random_seed is None:
                     model_cfg.random_seed = llm_seed
             for model_cfg in self.config.llm.evaluator_models:
-                if not hasattr(model_cfg, 'random_seed') or model_cfg.random_seed is None:
+                if not hasattr(model_cfg, "random_seed") or model_cfg.random_seed is None:
                     model_cfg.random_seed = llm_seed
-            
+
             logger.info(f"Set random seed to {self.config.random_seed} for reproducibility")
             logger.debug(f"Generated LLM seed: {llm_seed}")
 
@@ -157,11 +157,12 @@ class OpenEvolve:
             self.llm_evaluator_ensemble,
             self.evaluator_prompt_sampler,
             database=self.database,
+            suffix=Path(self.initial_program_path).suffix,
         )
         self.evaluation_file = evaluation_file
 
         logger.info(f"Initialized OpenEvolve with {initial_program_path}")
-        
+
         # Initialize improved parallel processing components
         self.parallel_controller = None
 
@@ -212,7 +213,7 @@ class OpenEvolve:
             Best program found
         """
         max_iterations = iterations or self.config.max_iterations
-        
+
         # Determine starting iteration
         start_iteration = 0
         if checkpoint_path and os.path.exists(checkpoint_path):
@@ -249,6 +250,23 @@ class OpenEvolve:
             )
 
             self.database.add(initial_program)
+
+            # Check if combined_score is present in the metrics
+            if "combined_score" not in initial_metrics:
+                # Calculate average of numeric metrics
+                numeric_metrics = [
+                    v
+                    for v in initial_metrics.values()
+                    if isinstance(v, (int, float)) and not isinstance(v, bool)
+                ]
+                if numeric_metrics:
+                    avg_score = sum(numeric_metrics) / len(numeric_metrics)
+                    logger.warning(
+                        f"⚠️  No 'combined_score' metric found in evaluation results. "
+                        f"Using average of all numeric metrics ({avg_score:.4f}) for evolution guidance. "
+                        f"For better evolution results, please modify your evaluator to return a 'combined_score' "
+                        f"metric that properly weights different aspects of program performance."
+                    )
         else:
             logger.info(
                 f"Skipping initial program addition (resuming from iteration {start_iteration} "
@@ -257,33 +275,45 @@ class OpenEvolve:
 
         # Initialize improved parallel processing
         try:
-            self.parallel_controller = ImprovedParallelController(
+            self.parallel_controller = ProcessParallelController(
                 self.config, self.evaluation_file, self.database
             )
-            
+
             # Set up signal handlers for graceful shutdown
             def signal_handler(signum, frame):
                 logger.info(f"Received signal {signum}, initiating graceful shutdown...")
                 self.parallel_controller.request_shutdown()
-                
+
                 # Set up a secondary handler for immediate exit if user presses Ctrl+C again
                 def force_exit_handler(signum, frame):
                     logger.info("Force exit requested - terminating immediately")
                     import sys
+
                     sys.exit(0)
-                
+
                 signal.signal(signal.SIGINT, force_exit_handler)
-            
+
             signal.signal(signal.SIGINT, signal_handler)
             signal.signal(signal.SIGTERM, signal_handler)
-            
+
             self.parallel_controller.start()
-            
+
+            # When starting from iteration 0, we've already done the initial program evaluation
+            # So we need to adjust the start_iteration for the actual evolution
+            evolution_start = start_iteration
+            evolution_iterations = max_iterations
+
+            # If we just added the initial program at iteration 0, start evolution from iteration 1
+            if should_add_initial and start_iteration == 0:
+                evolution_start = 1
+                # User expects max_iterations evolutionary iterations AFTER the initial program
+                # So we don't need to reduce evolution_iterations
+
             # Run evolution with improved parallel processing and checkpoint callback
             await self._run_evolution_with_checkpoints(
-                start_iteration, max_iterations, target_score
+                evolution_start, evolution_iterations, target_score
             )
-            
+
         finally:
             # Clean up parallel processing resources
             if self.parallel_controller:
@@ -420,12 +450,10 @@ class OpenEvolve:
         """Load state from a checkpoint directory"""
         if not os.path.exists(checkpoint_path):
             raise FileNotFoundError(f"Checkpoint directory {checkpoint_path} not found")
-        
+
         logger.info(f"Loading checkpoint from {checkpoint_path}")
         self.database.load(checkpoint_path)
-        logger.info(
-            f"Checkpoint loaded successfully (iteration {self.database.last_iteration})"
-        )
+        logger.info(f"Checkpoint loaded successfully (iteration {self.database.last_iteration})")
 
     async def _run_evolution_with_checkpoints(
         self, start_iteration: int, max_iterations: int, target_score: Optional[float]
@@ -433,19 +461,20 @@ class OpenEvolve:
         """Run evolution with checkpoint saving support"""
         logger.info(f"Using island-based evolution with {self.config.database.num_islands} islands")
         self.database.log_island_status()
-        
+
         # Run the evolution process with checkpoint callback
         await self.parallel_controller.run_evolution(
-            start_iteration, max_iterations, target_score,
-            checkpoint_callback=self._save_checkpoint
+            start_iteration, max_iterations, target_score, checkpoint_callback=self._save_checkpoint
         )
-        
+
         # Check if shutdown was requested
-        if self.parallel_controller.shutdown_flag.is_set():
+        if self.parallel_controller.shutdown_event.is_set():
             logger.info("Evolution stopped due to shutdown request")
             return
-        
+
         # Save final checkpoint if needed
+        # Note: start_iteration here is the evolution start (1 for fresh start, not 0)
+        # max_iterations is the number of evolution iterations to run
         final_iteration = start_iteration + max_iterations - 1
         if final_iteration > 0 and final_iteration % self.config.checkpoint_interval == 0:
             self._save_checkpoint(final_iteration)

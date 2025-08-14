@@ -178,8 +178,10 @@ def evaluate(program_path):
         speed_score = float(1.0 / avg_time) if avg_time > 0 else 0.0
 
         # calculate standard deviation scores
+        # get x_std_score
         x_std_score = float(1.0 / (1.0 + np.std(x_values)))
-        y_std_score = float(1.0 / (1.0 + np.std(x_values)))
+        # get y_std_score
+        y_std_score = float(1.0 / (1.0 + np.std(y_values)))
         standard_deviation_score = (x_std_score + y_std_score) / 2.0
 
         # Normalize speed score (so it doesn't dominate)

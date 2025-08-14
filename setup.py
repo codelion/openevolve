@@ -1,8 +1,3 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 
-setup(
-    name="openevolve",
-    version="0.0.13",
-    packages=find_packages(),
-    include_package_data=True,
-)
+setup()  # All config in pyproject.toml

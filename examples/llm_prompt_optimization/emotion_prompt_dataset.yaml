@@ -1,0 +1,18 @@
+# HuggingFace dataset configuration for emotion classification
+# This is a standard benchmark used by DSPy and others
+dataset_name: "dair-ai/emotion"
+input_field: "text"
+target_field: "label"  # 0-5: sadness, joy, love, anger, fear, surprise
+split: "test"
+
+# Evaluation samples
+max_samples: 200  # Larger sample for 6-class problem
+
+# Labels mapping for reference
+label_names:
+  0: "sadness"
+  1: "joy" 
+  2: "love"
+  3: "anger"
+  4: "fear"
+  5: "surprise"

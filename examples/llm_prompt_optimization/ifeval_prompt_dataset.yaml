@@ -1,0 +1,13 @@
+# IFEval (Instruction Following Evaluation) dataset configuration
+dataset_name: "google/IFEval"  # Official IFEval dataset from Google
+input_field: "prompt"  # The instruction to follow
+target_field: "instruction_id_list"  # For matching instruction requirements
+split: "train"  # IFEval only has train split
+
+# Evaluation parameters
+max_samples: 200  # Number of samples to evaluate during evolution
+full_eval_samples: 541  # Full dataset size
+
+# Special processing flags
+is_ifeval: true  # Enable special processing for instruction following
+# Note: IFEval requires checking multiple constraints per instruction

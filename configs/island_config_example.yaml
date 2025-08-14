@@ -33,8 +33,14 @@ database:
   # Note: diversity_metric fixed to "edit_distance"
   
   # Feature map dimensions for MAP-Elites
-  feature_dimensions: ["score", "complexity"]
+  # Default if not specified: ["complexity", "diversity"]
+  # Comment out the line below to use the defaults
+  # feature_dimensions: ["complexity", "diversity"]
   feature_bins: 10
+  # Can also use per-dimension bins:
+  # feature_bins:
+  #   performance: 20
+  #   correctness: 10
 
 # Prompt configuration
 prompt:

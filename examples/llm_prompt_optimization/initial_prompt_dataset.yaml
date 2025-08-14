@@ -1,0 +1,8 @@
+# HuggingFace dataset configuration
+dataset_name: "stanfordnlp/imdb"
+input_field: "text"
+target_field: "label"
+split: "test"  # Will fallback to train if not available
+
+# Evaluation samples
+max_samples: 50  # Number of samples to evaluate

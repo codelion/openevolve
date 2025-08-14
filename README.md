@@ -36,6 +36,7 @@ OpenEvolve implements a comprehensive evolutionary coding system with:
 - **Island-Based Evolution**: Multiple populations with periodic migration for diversity maintenance
 - **Inspiration vs Performance**: Sophisticated prompt engineering separating top performers from diverse inspirations
 - **Multi-Strategy Selection**: Elite, diverse, and exploratory program sampling strategies
+- **Adaptive Feature Dimensions**: Default features (complexity & diversity) with customizable multi-dimensional search spaces
 
 #### 📊 **Evaluation & Feedback Systems**
 - **Artifacts Side-Channel**: Capture build errors, profiling data, and execution feedback for LLM improvement
@@ -55,7 +56,7 @@ OpenEvolve implements a comprehensive evolutionary coding system with:
 - **Error Recovery**: Robust checkpoint loading with automatic fix for common serialization issues
 
 #### 🚀 **Performance & Scalability**
-- **Threaded Parallelism**: High-throughput asynchronous evaluation pipeline
+- **Process-Based Parallelism**: True parallel execution bypassing Python's GIL for CPU-bound tasks
 - **Resource Management**: Memory limits, timeouts, and resource monitoring
 - **Efficient Storage**: Optimized database with artifact management and cleanup policies
 
@@ -274,7 +275,7 @@ database:
   population_size: 500
   num_islands: 5  # Island-based evolution
   migration_interval: 20
-  feature_dimensions: ["score", "complexity"]  # Quality-diversity features
+  feature_dimensions: ["complexity", "diversity"]  # Default quality-diversity features
   
 evaluator:
   # Advanced evaluation features
@@ -287,13 +288,106 @@ prompt:
   num_top_programs: 3      # Performance examples
   num_diverse_programs: 2  # Creative inspiration
   include_artifacts: true  # Execution feedback
+  
+  # Template customization
+  template_dir: null               # Directory for custom prompt templates
+  use_template_stochasticity: true # Enable random variations in prompts
+  template_variations: {}          # Define variation placeholders
 ```
 
 Sample configuration files are available in the `configs/` directory:
 - `default_config.yaml`: Comprehensive configuration with all available options
 - `island_config_example.yaml`: Advanced island-based evolution setup
 
+### Template Customization
+
+OpenEvolve supports advanced prompt template customization to increase diversity in code evolution:
+
+#### Custom Templates with `template_dir`
+
+You can override the default prompt templates by providing custom ones:
+
+```yaml
+prompt:
+  template_dir: "path/to/your/templates"
+```
+
+Create `.txt` files in your template directory with these names:
+- `diff_user.txt` - Template for diff-based evolution
+- `full_rewrite_user.txt` - Template for full code rewrites  
+- `evolution_history.txt` - Format for presenting evolution history
+- `top_program.txt` - Format for top-performing programs
+- `previous_attempt.txt` - Format for previous attempts
+
+See these directories for complete examples of custom templates:
+- `examples/lm_eval/prompts/` - Custom templates for evaluation tasks
+- `examples/llm_prompt_optimization/templates/` - Templates for evolving prompts instead of code
+
+#### Template Variations with Stochasticity
+
+To add randomness to your prompts and prevent getting stuck in local optima:
+
+1. **Enable stochasticity** in your config:
+```yaml
+prompt:
+  use_template_stochasticity: true
+  template_variations:
+    greeting:
+      - "Let's improve this code."
+      - "Time to enhance this program."
+      - "Here's how we can optimize:"
+    analysis_intro:
+      - "Current metrics show"
+      - "Performance analysis indicates"
+      - "The evaluation reveals"
+```
+
+2. **Use variation placeholders** in your custom templates:
+```
+# custom_template.txt
+{greeting}
+{analysis_intro} the following results:
+{metrics}
+```
+
+The system will randomly select one variation for each placeholder during prompt generation, creating diverse prompts that can lead to more creative code evolutions.
+
+**Note**: The default templates don't include variation placeholders, so you'll need to create custom templates to use this feature effectively.
+
+### Feature Dimensions in MAP-Elites
+
+Feature dimensions control how programs are organized in the MAP-Elites quality-diversity grid:
+
+**Default Features**: If `feature_dimensions` is NOT specified in your config, OpenEvolve uses `["complexity", "diversity"]` as defaults.
+
+**Built-in Features** (always computed internally by OpenEvolve):
+- **complexity**: Code length (recommended default)
+- **diversity**: Code structure diversity compared to other programs (recommended default)
+
+Only `complexity` and `diversity` are used as defaults because they work well across all program types.
+
+**Custom Features**: You can mix built-in features with metrics from your evaluator:
+```yaml
+database:
+  feature_dimensions: ["complexity", "performance", "correctness"]  # Mix of built-in and custom
+  # Per-dimension bin configuration (optional)
+  feature_bins: 
+    complexity: 10        # 10 bins for complexity
+    performance: 20       # 20 bins for performance (from YOUR evaluator)
+    correctness: 15       # 15 bins for correctness (from YOUR evaluator)
+```
+
+**Important**: OpenEvolve will raise an error if a specified feature is not found in the evaluator's metrics. This ensures your configuration is correct. The error message will show available metrics to help you fix the configuration.
+
 See the [Configuration Guide](configs/default_config.yaml) for a full list of options.
+
+### Default Metric for Program Selection
+
+When comparing and selecting programs, OpenEvolve uses the following priority:
+1. **combined_score**: If your evaluator returns a `combined_score` metric, it will be used as the primary fitness measure
+2. **Average of all metrics**: If no `combined_score` is provided, OpenEvolve calculates the average of all numeric metrics returned by your evaluator
+
+This ensures programs can always be compared even without explicit fitness definitions. For best results, consider having your evaluator return a `combined_score` that represents overall program fitness.
 
 ## Artifacts Channel
 
@@ -391,8 +485,12 @@ Demonstrates integration with [optillm](https://github.com/codelion/optillm) for
 - **Mixture of Agents (MoA)**: Multi-response synthesis for improved accuracy  
 - **Local model optimization**: Enhanced reasoning with smaller models
 
-#### [LLM Prompt Optimization](examples/llm_prompt_optimazation/)
-Evolving prompts themselves for better LLM performance, demonstrating self-improving AI systems.
+#### [LLM Prompt Optimization](examples/llm_prompt_optimization/)
+Evolving prompts for better LLM performance on HuggingFace datasets. Features:
+- Custom templates for evolving prompts instead of code
+- Two-stage cascading evaluation for efficiency
+- Support for any HuggingFace dataset
+- Automatic prompt improvement through evolution
 
 ### Systems & Performance Optimization
 

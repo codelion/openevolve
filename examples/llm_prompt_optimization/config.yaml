@@ -1,0 +1,74 @@
+# Configuration for HuggingFace prompt optimization
+# Based on optimized settings from config2.yaml
+
+# General settings
+max_iterations: 50
+checkpoint_interval: 10
+log_level: "INFO"
+diff_based_evolution: false  # Full rewrite mode (best for prompt optimization)
+max_code_length: 10000
+language: "text"  # Explicitly set language to text for prompt evolution
+
+# LLM Configuration
+llm:
+  api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
+  models:
+    - name: "gemini-2.5-flash-lite"  # Using Gemini 2.5 Flash Lite
+      weight: 1.0
+  
+  temperature: 0.4  # Optimal from experiments
+  max_tokens: 16000  # Optimal context
+  timeout: 150
+  retries: 3
+
+# Prompt Configuration - Optimal settings discovered
+prompt:
+  template_dir: "templates"  # Use custom templates for prompt evolution
+  num_top_programs: 3      # Best balance
+  num_diverse_programs: 2  # Best balance
+  include_artifacts: true  # +20.7% improvement when enabled
+  
+  # System message for prompt evolution
+  system_message: |
+    You are an expert prompt engineer. Your task is to revise an existing prompt designed for large language models (LLMs), without being explicitly told what the task is.
+
+    Your improvements should:
+
+    * Infer the intended task and expected output format based on the structure and language of the original prompt.
+    * Clarify vague instructions, eliminate ambiguity, and improve overall interpretability for the LLM.
+    * Strengthen alignment between the prompt and the desired task outcome, ensuring more consistent and accurate responses.
+    * Improve robustness against edge cases or unclear input phrasing.
+    * If helpful, include formatting instructions, boundary conditions, or illustrative examples that reinforce the LLM's expected behavior.
+    * Avoid adding unnecessary verbosity or assumptions not grounded in the original prompt.
+
+    The revised prompt should maintain the same input interface but be more effective, reliable, and production-ready for LLM use.
+
+    Return only the improved prompt text. Do not include explanations or additional comments. Your output should be a clean, high-quality replacement that enhances clarity, consistency, and LLM performance.
+
+# Database Configuration
+database:
+  population_size: 1000
+  archive_size: 100
+  num_islands: 4
+  
+  # Feature dimensions for MAP-Elites
+  # Using custom features returned by the evaluator
+  feature_dimensions: ["prompt_length", "reasoning_strategy"]
+  feature_bins: 10  # 10x10 grid = 100 cells
+  
+  # Selection parameters - Optimal ratios from testing
+  elite_selection_ratio: 0.1   # 10% elite selection
+  exploration_ratio: 0.3       # 30% exploration
+  exploitation_ratio: 0.6      # 60% exploitation
+  
+  # Migration parameters - Optimal settings
+  migration_interval: 10
+  migration_rate: 0.1
+
+# Evaluator Configuration
+evaluator:
+  timeout: 1800
+  max_retries: 3
+  parallel_evaluations: 4
+  cascade_evaluation: true  # Two-stage cascading evaluation
+  cascade_thresholds: [0.9]  # Stage 1 must achieve 90% accuracy to proceed to stage 2

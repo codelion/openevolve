@@ -1,0 +1,8 @@
+Answer the following question using the provided context. The answer requires information from multiple paragraphs.
+
+Context:
+{context}
+
+Question: {question}
+
+Provide a clear, concise answer based on the information in the context.

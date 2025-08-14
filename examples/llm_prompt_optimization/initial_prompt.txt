@@ -1,0 +1,5 @@
+Analyze the sentiment of the following text and classify it as positive (1) or negative (0).
+
+Text: "{input_text}"
+
+Label:

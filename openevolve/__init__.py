@@ -2,8 +2,7 @@
 OpenEvolve: An open-source implementation of AlphaEvolve
 """
 
-__version__ = "0.1.0"
-
+from openevolve._version import __version__
 from openevolve.controller import OpenEvolve
 
-__all__ = ["OpenEvolve"]
+__all__ = ["OpenEvolve", "__version__"]

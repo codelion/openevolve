@@ -32,7 +32,7 @@ class LLMModelConfig:
     timeout: int = None
     retries: int = None
     retry_delay: int = None
-    
+
     # Reproducibility
     random_seed: Optional[int] = None
 
@@ -56,10 +56,12 @@ class LLMConfig(LLMModelConfig):
     retry_delay: int = 5
 
     # n-model configuration for evolution LLM ensemble
-    models: List[LLMModelConfig] = field(default_factory=lambda: [
-        LLMModelConfig(name="gpt-4o-mini", weight=0.8),
-        LLMModelConfig(name="gpt-4o", weight=0.2)
-    ])
+    models: List[LLMModelConfig] = field(
+        default_factory=lambda: [
+            LLMModelConfig(name="gpt-4o-mini", weight=0.8),
+            LLMModelConfig(name="gpt-4o", weight=0.2),
+        ]
+    )
 
     # n-model configuration for evaluator LLM ensemble
     evaluator_models: List[LLMModelConfig] = field(default_factory=lambda: [])
@@ -140,6 +142,25 @@ class PromptConfig:
     max_artifact_bytes: int = 20 * 1024  # 20KB in prompt
     artifact_security_filter: bool = True
 
+    # Feature extraction and program labeling
+    suggest_simplification_after_chars: Optional[int] = (
+        500  # Suggest simplifying if program exceeds this many characters
+    )
+    include_changes_under_chars: Optional[int] = (
+        100  # Include change descriptions in features if under this length
+    )
+    concise_implementation_max_lines: Optional[int] = (
+        10  # Label as "concise" if program has this many lines or fewer
+    )
+    comprehensive_implementation_min_lines: Optional[int] = (
+        50  # Label as "comprehensive" if program has this many lines or more
+    )
+
+    # Backward compatibility - deprecated
+    code_length_threshold: Optional[int] = (
+        None  # Deprecated: use suggest_simplification_after_chars
+    )
+
 
 @dataclass
 class DatabaseConfig:
@@ -164,8 +185,10 @@ class DatabaseConfig:
     diversity_metric: str = "edit_distance"  # Options: "edit_distance", "feature_based"
 
     # Feature map dimensions for MAP-Elites
-    feature_dimensions: List[str] = field(default_factory=lambda: ["score", "complexity"])
-    feature_bins: int = 10
+    # Default to complexity and diversity for better exploration
+    feature_dimensions: List[str] = field(default_factory=lambda: ["complexity", "diversity"])
+    feature_bins: Union[int, Dict[str, int]] = 10  # Can be int (all dims) or dict (per-dim)
+    diversity_reference_size: int = 20  # Size of reference set for diversity calculation
 
     # Migration parameters for island-based evolution
     migration_interval: int = 50  # Migrate every N generations
@@ -269,7 +292,7 @@ class Config:
             config.prompt = PromptConfig(**config_dict["prompt"])
         if "database" in config_dict:
             config.database = DatabaseConfig(**config_dict["database"])
-        
+
         # Ensure database inherits the random seed if not explicitly set
         if config.database.random_seed is None and config.random_seed is not None:
             config.database.random_seed = config.random_seed

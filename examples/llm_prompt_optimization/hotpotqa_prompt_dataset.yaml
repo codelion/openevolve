@@ -1,0 +1,17 @@
+# HotpotQA dataset configuration
+dataset_name: "hotpot_qa"  # Using the full dataset
+dataset_config: "distractor"  # Using distractor setting with 10 paragraphs
+input_field: "question"  # The question to answer
+target_field: "answer"  # The correct answer
+split: "validation"  # Using validation split for evaluation
+
+# Context handling
+context_field: "context"  # Contains the paragraphs
+supporting_facts_field: "supporting_facts"  # For explainability
+
+# Evaluation parameters
+max_samples: 200  # Number of samples to evaluate during evolution
+full_eval_samples: 5447  # Full validation set size
+
+# Special processing flags
+is_hotpotqa: true  # Enable special processing for multi-hop QA

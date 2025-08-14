@@ -49,9 +49,5 @@ evaluator:
   timeout: 60  # Rust compilation can take time
   parallel_evaluations: 3
   
-  # Use cascade evaluation for performance testing
-  cascade_evaluation: true
-  cascade_thresholds:
-    - 0.5  # Compilation success and basic correctness
-    - 0.7  # Good performance
-    - 0.85 # Excellent adaptability
+  # Direct evaluation - evaluator doesn't implement cascade functions
+  cascade_evaluation: false

@@ -1,0 +1,5 @@
+Determine whether the following claim is SUPPORTED or NOT SUPPORTED based on factual evidence.
+
+Claim: {claim}
+
+Analyze the claim carefully and provide your verdict as either "SUPPORTED" or "NOT SUPPORTED".

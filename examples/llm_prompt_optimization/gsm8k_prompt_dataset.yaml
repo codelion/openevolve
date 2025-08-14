@@ -1,0 +1,14 @@
+# HuggingFace dataset configuration for GSM8K (Grade School Math)
+# DSPy achieved 97.1% accuracy with GPT-4 on this benchmark
+dataset_name: "openai/gsm8k"
+dataset_config: "main"  # GSM8K requires config name
+input_field: "question"
+target_field: "answer"  # Contains step-by-step solution ending with #### followed by the numeric answer
+split: "test"
+
+# Evaluation samples
+max_samples: 200  # Start with subset, full test set has 1,319 problems
+
+# Note: The answer field contains the full solution with the format:
+# "Step 1 explanation... Step 2... #### numeric_answer"
+# The evaluator will need to extract the number after ####

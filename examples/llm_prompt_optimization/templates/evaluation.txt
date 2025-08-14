@@ -1,0 +1,31 @@
+Evaluate the following prompt designed for large language models on a scale of 0.0 to 1.0 for these metrics:
+
+1. **Clarity** (0.0-1.0): How clear and unambiguous are the instructions? Are there any confusing or contradictory elements?
+
+2. **Specificity** (0.0-1.0): Does the prompt provide appropriate detail and constraints without being overly restrictive? Does it guide the model effectively?
+
+3. **Robustness** (0.0-1.0): Will this prompt handle edge cases and varied inputs well? Is it resilient to different phrasings or unexpected scenarios?
+
+4. **Format_specification** (0.0-1.0): Is the expected output format clearly defined? Will the model know exactly how to structure its response?
+
+Prompt to evaluate:
+```
+{current_program}
+```
+
+Consider that this prompt is designed for a task involving mathematical problem-solving, classification, or similar structured tasks where accuracy and consistency are important.
+
+Evaluation guidelines:
+- A score of 1.0 means excellent/optimal for that dimension
+- A score of 0.5 means adequate but with room for improvement
+- A score of 0.0 means severely lacking in that dimension
+- Consider how well the prompt would work across different models and contexts
+
+Return your evaluation as a JSON object with the following format:
+{{
+    "clarity": [score],
+    "specificity": [score],
+    "robustness": [score],
+    "format_specification": [score],
+    "reasoning": "[brief explanation of scores, highlighting strengths and areas for improvement]"
+}}

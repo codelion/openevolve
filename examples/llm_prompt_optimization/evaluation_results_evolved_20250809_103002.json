@@ -1,0 +1,50 @@
+{
+  "prompt_type": "evolved",
+  "model": "qwen/qwen3-8b",
+  "samples_per_dataset": null,
+  "timestamp": "2025-08-09T10:30:02.992077",
+  "results": [
+    {
+      "dataset": "ifeval",
+      "prompt_type": "evolved",
+      "accuracy": 0.9741219963031423,
+      "baseline_accuracy": null,
+      "improvement_percent": 0,
+      "correct": 527,
+      "total": 541,
+      "empty_responses": 13,
+      "elapsed_time": 22343.144572734833,
+      "timestamp": "2025-08-06T19:35:07.434548"
+    },
+    {
+      "dataset": "hover",
+      "prompt_type": "evolved",
+      "accuracy": 0.429,
+      "baseline_accuracy": null,
+      "improvement_percent": 0,
+      "correct": 1716,
+      "total": 4000,
+      "empty_responses": 2,
+      "elapsed_time": 72344.81149506569,
+      "timestamp": "2025-08-07T15:40:52.247854"
+    },
+    {
+      "dataset": "hotpotqa",
+      "prompt_type": "evolved",
+      "accuracy": 0.8861580013504389,
+      "baseline_accuracy": null,
+      "improvement_percent": 0,
+      "correct": 6562,
+      "total": 7405,
+      "empty_responses": 72,
+      "elapsed_time": 154150.74191999435,
+      "timestamp": "2025-08-09T10:30:02.992027"
+    }
+  ],
+  "summary": {
+    "aggregate_accuracy": 0.7370668006027122,
+    "total_correct": 8805,
+    "total_samples": 11946,
+    "datasets_evaluated": 3
+  }
+}

@@ -1,0 +1,50 @@
+# OpenEvolve configuration for MLIR attention optimization
+
+# LLM configuration
+llm:
+  primary_model: "gpt-4.1-nano"
+  #  secondary_models: ["gpt-4.1-mini"]
+  temperature: 0.7
+  max_tokens: 2048
+
+# Evolution parameters
+evolution:
+  max_iterations: 500
+  population_size: 50
+  mutation_rate: 0.15
+  crossover_rate: 0.8
+  selection_strategy: "tournament"
+  tournament_size: 5
+
+# Database configuration  
+database:
+  population_size: 100
+  num_islands: 3
+  migration_rate: 0.1
+
+# Evaluation settings
+evaluation:
+  timeout_seconds: 120
+  max_retries: 3
+  parallel_evaluations: 4
+
+# Checkpoint settings
+checkpoints:
+  enabled: true
+  interval: 10
+  keep_best: true
+  save_all_programs: false
+
+# Optimization targets
+optimization:
+  target_metric: "speedup"
+  target_value: 1.32  # 32% speedup like AlphaEvolve paper
+  minimize: false
+  convergence_threshold: 0.001
+  early_stopping_patience: 50
+
+# Logging
+logging:
+  level: "INFO"
+  save_logs: true
+  verbose: true

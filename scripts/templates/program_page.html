@@ -5,7 +5,18 @@
     <title>Program {{ program_data.id }}</title>
     <style>
         body { font-family: Arial, sans-serif; padding: 20px; }
-        pre { background: #f0f0f0; padding: 10px; border-radius: 5px; }
+        /* Text wrapping for <pre> elements */
+        pre {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            white-space: pre-wrap;     /* Preserve formatting, allow wrapping */
+            overflow-wrap: break-word; /* Break long words */
+        }
+        /* Text wrapping for list elements */
+        li {
+            overflow-wrap: break-word;
+        }
     </style>
 </head>
 <body>

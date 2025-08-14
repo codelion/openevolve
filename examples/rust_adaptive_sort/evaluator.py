@@ -19,7 +19,7 @@ from openevolve.evaluation_result import EvaluationResult
 async def evaluate(program_path: str) -> EvaluationResult:
     """
     Evaluate a Rust sorting algorithm implementation.
-    
+
     Tests the algorithm on various data patterns to measure:
     - Correctness
     - Performance (speed)
@@ -30,27 +30,27 @@ async def evaluate(program_path: str) -> EvaluationResult:
         # Create a temporary Rust project
         with tempfile.TemporaryDirectory() as temp_dir:
             project_dir = Path(temp_dir) / "sort_test"
-            
+
             # Initialize Cargo project
             result = subprocess.run(
                 ["cargo", "init", "--name", "sort_test", str(project_dir)],
                 capture_output=True,
-                text=True
+                text=True,
             )
-            
+
             if result.returncode != 0:
                 return EvaluationResult(
                     metrics={"score": 0.0, "compile_success": 0.0},
-                    artifacts={"error": "Failed to create Cargo project", "stderr": result.stderr}
+                    artifacts={"error": "Failed to create Cargo project", "stderr": result.stderr},
                 )
-            
+
             # Copy the program to src/lib.rs
             lib_path = project_dir / "src" / "lib.rs"
-            with open(program_path, 'r') as src:
+            with open(program_path, "r") as src:
                 lib_content = src.read()
-            with open(lib_path, 'w') as dst:
+            with open(lib_path, "w") as dst:
                 dst.write(lib_content)
-            
+
             # Create main.rs with benchmark code
             main_content = """
 use sort_test::{adaptive_sort, run_benchmark};
@@ -170,18 +170,18 @@ mod rand {
 }
 """
             main_path = project_dir / "src" / "main.rs"
-            with open(main_path, 'w') as f:
+            with open(main_path, "w") as f:
                 f.write(main_content)
-            
+
             # Build the project
             build_result = subprocess.run(
                 ["cargo", "build", "--release"],
                 cwd=project_dir,
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=60,
             )
-            
+
             if build_result.returncode != 0:
                 # Extract compilation errors
                 return EvaluationResult(
@@ -190,24 +190,24 @@ mod rand {
                         "compile_success": 0.0,
                         "correctness": 0.0,
                         "performance_score": 0.0,
-                        "adaptability_score": 0.0
+                        "adaptability_score": 0.0,
                     },
                     artifacts={
                         "error": "Compilation failed",
                         "stderr": build_result.stderr,
-                        "stdout": build_result.stdout
-                    }
+                        "stdout": build_result.stdout,
+                    },
                 )
-            
+
             # Run the benchmark
             run_result = subprocess.run(
                 ["cargo", "run", "--release"],
                 cwd=project_dir,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
-            
+
             if run_result.returncode != 0:
                 return EvaluationResult(
                     metrics={
@@ -215,41 +215,35 @@ mod rand {
                         "compile_success": 1.0,
                         "correctness": 0.0,
                         "performance_score": 0.0,
-                        "adaptability_score": 0.0
+                        "adaptability_score": 0.0,
                     },
-                    artifacts={
-                        "error": "Runtime error",
-                        "stderr": run_result.stderr
-                    }
+                    artifacts={"error": "Runtime error", "stderr": run_result.stderr},
                 )
-            
+
             # Parse JSON output
             try:
                 # Find JSON in output (between first { and last })
                 output = run_result.stdout
-                start = output.find('{')
-                end = output.rfind('}') + 1
+                start = output.find("{")
+                end = output.rfind("}") + 1
                 json_str = output[start:end]
-                
+
                 results = json.loads(json_str)
-                
+
                 # Calculate overall score
-                correctness = results['correctness']
-                performance = results['performance_score']
-                adaptability = results['adaptability_score']
-                
+                correctness = results["correctness"]
+                performance = results["performance_score"]
+                adaptability = results["adaptability_score"]
+
                 # Weighted score (correctness is mandatory)
                 if correctness < 1.0:
                     overall_score = 0.0
                 else:
-                    overall_score = (
-                        0.6 * performance +
-                        0.4 * adaptability
-                    )
-                
+                    overall_score = 0.6 * performance + 0.4 * adaptability
+
                 # Check for memory safety (basic check via valgrind if available)
                 memory_safe = 1.0  # Rust is memory safe by default
-                
+
                 return EvaluationResult(
                     metrics={
                         "score": overall_score,
@@ -257,16 +251,16 @@ mod rand {
                         "correctness": correctness,
                         "performance_score": performance,
                         "adaptability_score": adaptability,
-                        "avg_time": results['avg_time'],
-                        "memory_safe": memory_safe
+                        "avg_time": results["avg_time"],
+                        "memory_safe": memory_safe,
                     },
                     artifacts={
-                        "times": results['times'],
-                        "all_correct": results['all_correct'],
-                        "build_output": build_result.stdout
-                    }
+                        "times": results["times"],
+                        "all_correct": results["all_correct"],
+                        "build_output": build_result.stdout,
+                    },
                 )
-                
+
             except (json.JSONDecodeError, KeyError) as e:
                 return EvaluationResult(
                     metrics={
@@ -274,14 +268,14 @@ mod rand {
                         "compile_success": 1.0,
                         "correctness": 0.0,
                         "performance_score": 0.0,
-                        "adaptability_score": 0.0
+                        "adaptability_score": 0.0,
                     },
                     artifacts={
                         "error": f"Failed to parse results: {str(e)}",
-                        "stdout": run_result.stdout
-                    }
+                        "stdout": run_result.stdout,
+                    },
                 )
-                
+
     except subprocess.TimeoutExpired:
         return EvaluationResult(
             metrics={
@@ -289,9 +283,9 @@ mod rand {
                 "compile_success": 0.0,
                 "correctness": 0.0,
                 "performance_score": 0.0,
-                "adaptability_score": 0.0
+                "adaptability_score": 0.0,
             },
-            artifacts={"error": "Timeout during evaluation"}
+            artifacts={"error": "Timeout during evaluation"},
         )
     except Exception as e:
         return EvaluationResult(
@@ -300,15 +294,16 @@ mod rand {
                 "compile_success": 0.0,
                 "correctness": 0.0,
                 "performance_score": 0.0,
-                "adaptability_score": 0.0
+                "adaptability_score": 0.0,
             },
-            artifacts={"error": str(e), "type": "evaluation_error"}
+            artifacts={"error": str(e), "type": "evaluation_error"},
         )
 
 
 # For testing
 if __name__ == "__main__":
     import sys
+
     if len(sys.argv) > 1:
         result = asyncio.run(evaluate(sys.argv[1]))
         print(f"Score: {result.metrics['score']:.4f}")
