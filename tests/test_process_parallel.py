@@ -64,7 +64,7 @@ def evaluate(program_path):
 
     def test_controller_initialization(self):
         """Test that controller initializes correctly"""
-        controller = ProcessParallelController(self.config, self.eval_file, self.database)
+        controller = ProcessParallelController(self.config, self.eval_file, None, self.database)
 
         self.assertEqual(controller.num_workers, 2)
         self.assertIsNone(controller.executor)
@@ -72,7 +72,7 @@ def evaluate(program_path):
 
     def test_controller_start_stop(self):
         """Test starting and stopping the controller"""
-        controller = ProcessParallelController(self.config, self.eval_file, self.database)
+        controller = ProcessParallelController(self.config, self.eval_file, None, self.database)
 
         # Start controller
         controller.start()
@@ -85,7 +85,7 @@ def evaluate(program_path):
 
     def test_database_snapshot_creation(self):
         """Test creating database snapshot for workers"""
-        controller = ProcessParallelController(self.config, self.eval_file, self.database)
+        controller = ProcessParallelController(self.config, self.eval_file, None, self.database)
 
         snapshot = controller._create_database_snapshot()
 
@@ -106,7 +106,7 @@ def evaluate(program_path):
         """Test basic evolution run"""
 
         async def run_test():
-            controller = ProcessParallelController(self.config, self.eval_file, self.database)
+            controller = ProcessParallelController(self.config, self.eval_file, None, self.database)
 
             # Mock the executor to avoid actually spawning processes
             with patch.object(controller, "_submit_iteration") as mock_submit:
@@ -152,7 +152,7 @@ def evaluate(program_path):
 
     def test_request_shutdown(self):
         """Test graceful shutdown request"""
-        controller = ProcessParallelController(self.config, self.eval_file, self.database)
+        controller = ProcessParallelController(self.config, self.eval_file, None, self.database)
 
         # Request shutdown
         controller.request_shutdown()
