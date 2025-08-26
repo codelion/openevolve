@@ -21,6 +21,8 @@ from openevolve.database import Program, ProgramDatabase
 class MockEvaluator:
     """Mock evaluator for testing"""
 
+    evaluation_object = None
+    
     def __init__(self):
         self.call_count = 0
 
