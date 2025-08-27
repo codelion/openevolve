@@ -519,16 +519,11 @@ class ProcessParallelController:
 
                     # Check target score
                     if target_score is not None and child_program.metrics:
-                        numeric_metrics = [
-                            v for v in child_program.metrics.values() if isinstance(v, (int, float))
-                        ]
-                        if numeric_metrics:
-                            avg_score = sum(numeric_metrics) / len(numeric_metrics)
-                            if avg_score >= target_score:
-                                logger.info(
-                                    f"Target score {target_score} reached at iteration {completed_iteration}"
-                                )
-                                break
+                        if child_program.metrics["combined_score"] >= target_score:
+                            logger.info(
+                                f"Target score {target_score} reached at iteration {completed_iteration}"
+                            )
+                            break
 
             except Exception as e:
                 logger.error(f"Error processing result from iteration {completed_iteration}: {e}")
