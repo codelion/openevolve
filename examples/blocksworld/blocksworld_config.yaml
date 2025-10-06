@@ -1,0 +1,38 @@
+# Configuration for blocksworld planner evolution
+max_iterations: 100
+random_seed: 42
+
+llm:
+  models:
+    - name: "gemini-2.0-flash-lite"
+      weight: 1.0
+  temperature: 0.7
+
+database:
+  population_size: 100
+  num_islands: 3
+  feature_dimensions: ["complexity", "success_rate", "avg_efficiency"]
+
+evaluator:
+  enable_artifacts: true
+  cascade_evaluation: false
+
+prompt:
+  system_message: |
+    You are an expert AI planning researcher specializing in blocksworld planning algorithms.
+    Your task is to improve a blocksworld planner to solve problems more efficiently and reliably.
+    
+    The planner should:
+    - Find solutions to all test problems
+    - Minimize plan length (fewer actions is better)
+    - Work for problems with varying numbers of blocks (2-5 blocks)
+    
+    Consider techniques like:
+    - Heuristic search (A*, greedy best-first)
+    - Goal-oriented reasoning
+    - State space exploration strategies
+    - Avoiding redundant or cyclical states
+  
+  num_top_programs: 3
+  num_diverse_programs: 2
+  include_artifacts: true
