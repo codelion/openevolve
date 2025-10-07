@@ -5,13 +5,8 @@ Tests the planner on various problems and returns performance metrics.
 import importlib.util
 import time
 import random
-import concurrent.futures
 from typing import List, Dict, Optional
-
-
-class TimeoutError(Exception):
-    """Raised when execution times out."""
-    pass
+from openevolve.evaluation_result import EvaluationResult
 
 
 def load_program(program_path: str):
@@ -229,7 +224,8 @@ def evaluate_program(program_path: str, timeout_seconds: int = 60,
         # Generate random problems
         if random_sizes is None:
             random_sizes = [6, 8, 10, 12, 15]
-        test_problems = generate_problem_suite(random_sizes, problems_per_size=2, seed=random_seed)
+        # Use 1 problem per size to keep evaluations fast (avoid timeout)
+        test_problems = generate_problem_suite(random_sizes, problems_per_size=1, seed=random_seed)
     else:
         # Use hardcoded baseline problems
         test_problems = [
@@ -293,53 +289,71 @@ def evaluate_program(program_path: str, timeout_seconds: int = 60,
         print(f"Optimal length: {problem['optimal_length']}")
 
         solve_time = 0.0
+        timed_out = False
+
         try:
-            with timeout(timeout_seconds):
-                # Track time to solve
-                start_time = time.perf_counter()
+            # Track time to solve
+            start_time = time.perf_counter()
+
+            # Call solve_problem with timeout for this specific problem
+            result = None
+            def solve_wrapper():
+                nonlocal result
                 result = program.solve_problem(
                     problem['blocks'],
                     problem['initial'],
                     problem['goal']
                 )
-                solve_time = time.perf_counter() - start_time
 
-                if result['success']:
-                    successes += 1
-                    plan_length = result['plan_length']
-                    plan_lengths.append(plan_length)
-                    solve_times.append(solve_time)
+            import threading
+            thread = threading.Thread(target=solve_wrapper)
+            thread.daemon = True
+            thread.start()
+            thread.join(timeout=timeout_seconds)
 
-                    # Efficiency: how close to optimal
-                    optimal = problem['optimal_length']
-                    if plan_length > 0:
-                        efficiency = min(1.0, optimal / plan_length)
-                        efficiency_scores.append(efficiency)
-                    else:
-                        efficiency_scores.append(0.0)
+            solve_time = time.perf_counter() - start_time
 
-                    print(f"✓ SUCCESS - Plan length: {plan_length} (efficiency: {efficiency:.2%}) - Time: {solve_time:.3f}s")
-                    print(f"Plan: {result['plan']}")
+            if thread.is_alive():
+                # Timeout occurred
+                timed_out = True
+                timeouts_count += 1
+                plan_lengths.append(100)
+                efficiency_scores.append(0.0)
+                solve_times.append(timeout_seconds)
+                print(f"⏱ TIMEOUT - Exceeded {timeout_seconds}s limit")
+            elif result and result['success']:
+                successes += 1
+                plan_length = result['plan_length']
+                plan_lengths.append(plan_length)
+                solve_times.append(solve_time)
+
+                # Efficiency: how close to optimal
+                optimal = problem['optimal_length']
+                if plan_length > 0:
+                    efficiency = min(1.0, optimal / plan_length)
+                    efficiency_scores.append(efficiency)
                 else:
-                    plan_lengths.append(100)  # penalty for failure
                     efficiency_scores.append(0.0)
-                    solve_times.append(timeout_seconds)  # penalty time
-                    print(f"✗ FAILED - No solution found (Time: {solve_time:.3f}s)")
 
-        except TimeoutError:
-            # Problem timed out
-            print(f"⏱ TIMEOUT after {timeout_seconds} seconds")
-            timeouts_count += 1
-            plan_lengths.append(100)
-            efficiency_scores.append(0.0)
-            solve_times.append(timeout_seconds)
+                # Show only first 3 actions to avoid clutter
+                plan_preview = result['plan'][:3] if len(result['plan']) > 3 else result['plan']
+                plan_str = f"{plan_preview}..." if len(result['plan']) > 3 else str(plan_preview)
+
+                print(f"✓ SUCCESS - Plan length: {plan_length} (efficiency: {efficiency:.2%}) - Time: {solve_time:.3f}s")
+                print(f"Plan (first 3): {plan_str}")
+            else:
+                plan_lengths.append(100)  # penalty for failure
+                efficiency_scores.append(0.0)
+                solve_times.append(solve_time)
+                print(f"✗ FAILED - No solution found (Time: {solve_time:.3f}s)")
 
         except Exception as e:
             # Problem solving failed
+            solve_time = time.perf_counter() - start_time if 'start_time' in locals() else 0
             print(f"✗ ERROR: {e} (Time: {solve_time:.3f}s)")
             plan_lengths.append(100)
             efficiency_scores.append(0.0)
-            solve_times.append(timeout_seconds)
+            solve_times.append(0)
     
     print(f"\n{'='*60}")
 
@@ -363,24 +377,158 @@ def evaluate_program(program_path: str, timeout_seconds: int = 60,
     }
 
 
-def evaluate(program_path: str) -> dict:
+def evaluate(program_path: str) -> EvaluationResult:
     """
     Main evaluation function for OpenEvolve compatibility.
-    Uses random problems with a good difficulty gradient.
+    Tests problems sizes 6-100 with early termination on first failure.
 
     Args:
         program_path: Path to the program file
 
     Returns:
-        Dictionary with metrics
+        EvaluationResult with progress_score, efficiency_score, combined_score
     """
-    # Use random problems with increasing difficulty for evolution
-    return evaluate_program(
-        program_path,
-        timeout_seconds=30,
-        use_random=True,
-        random_sizes=[6, 7, 8, 9, 10],  # Good gradient: easy to hard
-        random_seed=42
+    # Test all problem sizes 6-100 (95 problems total)
+    # Early termination on first failure
+    problem_sizes = list(range(6, 101))
+
+    return evaluate_problem_set(
+        program_path=program_path,
+        problem_sizes=problem_sizes,
+        timeout_per_problem=5,
+        seed=42,
+        stage_name="Evaluation"
+    )
+
+
+def evaluate_problem_set(program_path: str, problem_sizes: List[int],
+                         timeout_per_problem: int, seed: int = 42,
+                         stage_name: str = "") -> EvaluationResult:
+    """
+    Evaluate a program on a set of problems with early termination.
+
+    Args:
+        program_path: Path to the program file
+        problem_sizes: List of block counts to test (e.g., [6, 7, 8])
+        timeout_per_problem: Timeout in seconds for each problem
+        seed: Random seed for problem generation
+        stage_name: Name of the stage for logging/artifacts
+
+    Returns:
+        EvaluationResult with progress_score, efficiency_score, combined_score
+    """
+    try:
+        program = load_program(program_path)
+    except Exception as e:
+        return EvaluationResult(
+            metrics={
+                'progress_score': 0.0,
+                'efficiency_score': 0.0,
+                'combined_score': 0.0,
+                'error': str(e)
+            },
+            artifacts={
+                'stage': stage_name,
+                'error_type': 'LoadError',
+                'error_message': str(e)
+            }
+        )
+
+    # Generate one problem per size (alternating stack/rearrange)
+    problems = []
+    for i, size in enumerate(problem_sizes):
+        problem_seed = seed + size * 100
+        if i % 2 == 0:
+            problem = generate_random_stack_problem(size, problem_seed)
+            problem['type'] = 'stack'
+        else:
+            problem = generate_random_rearrange_problem(size, problem_seed)
+            problem['type'] = 'rearrange'
+        problems.append(problem)
+
+    problems_solved = 0
+    efficiency_scores = []
+
+    for i, problem in enumerate(problems):
+        problem_type = problem.get('type', 'unknown')
+        size = len(problem['blocks'])
+
+        try:
+            # Track time to solve
+            start_time = time.perf_counter()
+
+            # Call solve_problem with timeout
+            result = None
+            def solve_wrapper():
+                nonlocal result
+                result = program.solve_problem(
+                    problem['blocks'],
+                    problem['initial'],
+                    problem['goal']
+                )
+
+            import threading
+            thread = threading.Thread(target=solve_wrapper)
+            thread.daemon = True
+            thread.start()
+            thread.join(timeout=timeout_per_problem)
+
+            solve_time = time.perf_counter() - start_time
+
+            if thread.is_alive():
+                # Timeout - stop cascade immediately
+                print(f"{stage_name} - Problem {i+1} (size {size}, {problem_type}): TIMEOUT after {timeout_per_problem}s")
+                break
+            elif result and result['success']:
+                # Success!
+                problems_solved += 1
+                plan_length = result['plan_length']
+                optimal = problem['optimal_length']
+
+                # Calculate efficiency for this problem
+                if plan_length > 0 and optimal > 0:
+                    efficiency = min(1.0, optimal / plan_length)
+                    efficiency_scores.append(efficiency)
+
+                print(f"{stage_name} - Problem {i+1} (size {size}, {problem_type}): SUCCESS - "
+                      f"Plan length: {plan_length} (optimal: {optimal}) - Time: {solve_time:.3f}s")
+            else:
+                # Failure - stop cascade immediately
+                print(f"{stage_name} - Problem {i+1} (size {size}, {problem_type}): FAILED - No solution found")
+                break
+
+        except Exception as e:
+            # Error - stop cascade immediately
+            print(f"{stage_name} - Problem {i+1} (size {size}, {problem_type}): ERROR - {e}")
+            break
+
+    # Calculate metrics (normalized 0-1)
+    # Progress is relative to ALL 95 problems (sizes 6-100)
+    TOTAL_PROBLEMS = 95
+    progress_score = problems_solved / TOTAL_PROBLEMS
+
+    # Efficiency is average of successful problems
+    efficiency_score = sum(efficiency_scores) / len(efficiency_scores) if efficiency_scores else 0.0
+
+    # Combined score: 66% progress, 34% efficiency
+    combined_score = 0.66 * progress_score + 0.34 * efficiency_score
+
+    print(f"{stage_name} Results: Solved {problems_solved}/{len(problems)} problems | "
+          f"Progress: {progress_score:.4f} | Efficiency: {efficiency_score:.4f} | Combined: {combined_score:.4f}")
+
+    return EvaluationResult(
+        metrics={
+            'progress_score': progress_score,
+            'efficiency_score': efficiency_score,
+            'combined_score': combined_score,
+            'problems_solved': problems_solved,
+        },
+        artifacts={
+            'stage': stage_name,
+            'problems_attempted': len(problems),
+            'problems_solved': problems_solved,
+            'max_size_tested': problem_sizes[min(problems_solved, len(problems) - 1)],
+        }
     )
 
 

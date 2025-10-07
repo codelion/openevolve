@@ -4,10 +4,10 @@ checkpoint_interval: 10
 
 # LLM configuration
 llm:
-  primary_model: "gemini-2.5-flash-lite"
-  primary_model_weight: 0.8
+  primary_model: "gemini-2.5-pro"
+  primary_model_weight: 0.7
   secondary_model: "gemini-2.5-flash"
-  secondary_model_weight: 0.2
+  secondary_model_weight: 0.3
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
   temperature: 0.7
   max_tokens: 16000
@@ -62,8 +62,8 @@ database:
 
 # Evaluator configuration
 evaluator:
-  timeout: 120  # 30s per problem * 4 problems = 120s total
-  cascade_thresholds: [0.3]  # Must solve at least 30% to proceed
+  timeout: 1000  # High safety net - per-problem timeouts do the real work (5s × 95 problems = 475s max)
+  cascade_evaluation: false  # Single-stage evaluation with early termination
   parallel_evaluations: 3
 
 # Evolution settings
