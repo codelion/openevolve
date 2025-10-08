@@ -67,7 +67,25 @@ def _worker_init(config_dict: dict, evaluation_file: str, parent_env: dict = Non
     llm_dict = config_dict["llm"].copy()
     llm_dict["models"] = models
     llm_dict["evaluator_models"] = evaluator_models
+
+    # Explicitly set primary_model to None to prevent __post_init__ from recreating models
+    llm_dict["primary_model"] = None
+    llm_dict["secondary_model"] = None
+
     llm_config = LLMConfig(**llm_dict)
+
+    # Ensure shared config values are propagated to all models (api_key, etc.)
+    shared_config = {
+        "api_base": llm_config.api_base,
+        "api_key": llm_config.api_key,
+        "temperature": llm_config.temperature,
+        "top_p": llm_config.top_p,
+        "max_tokens": llm_config.max_tokens,
+        "timeout": llm_config.timeout,
+        "retries": llm_config.retries,
+        "retry_delay": llm_config.retry_delay,
+    }
+    llm_config.update_model_params(shared_config, overwrite=True)
 
     # Create other configs
     prompt_config = PromptConfig(**config_dict["prompt"])
@@ -166,7 +184,8 @@ def _run_iteration_worker(
         # Best programs only (for previous attempts section, focused on top performers)
         best_programs_only = island_programs[: _worker_config.prompt.num_top_programs]
 
-        # Build prompt
+        # Build prompt (with optional global learnings)
+        global_learnings_section = db_snapshot.get("global_learnings")
         prompt = _worker_prompt_sampler.build_prompt(
             current_program=parent.code,
             parent_program=parent.code,
@@ -179,6 +198,7 @@ def _run_iteration_worker(
             diff_based_evolution=_worker_config.diff_based_evolution,
             program_artifacts=parent_artifacts,
             feature_dimensions=db_snapshot.get("feature_dimensions", []),
+            global_learnings=global_learnings_section,
         )
 
         iteration_start = time.time()
@@ -275,12 +295,13 @@ def _run_iteration_worker(
 class ProcessParallelController:
     """Controller for process-based parallel evolution"""
 
-    def __init__(self, config: Config, evaluation_file: str, database: ProgramDatabase, evolution_tracer=None, file_suffix: str = ".py"):
+    def __init__(self, config: Config, evaluation_file: str, database: ProgramDatabase, evolution_tracer=None, file_suffix: str = ".py", global_learnings=None):
         self.config = config
         self.evaluation_file = evaluation_file
         self.database = database
         self.evolution_tracer = evolution_tracer
         self.file_suffix = file_suffix
+        self.global_learnings = global_learnings
 
         self.executor: Optional[ProcessPoolExecutor] = None
         self.shutdown_event = mp.Event()
@@ -374,7 +395,12 @@ class ProcessParallelController:
             "current_island": self.database.current_island,
             "feature_dimensions": self.database.config.feature_dimensions,
             "artifacts": {},  # Will be populated selectively
+            "global_learnings": None,  # Will be set if enabled
         }
+
+        # Include global learnings section if enabled
+        if self.global_learnings and self.global_learnings.config.enabled:
+            snapshot["global_learnings"] = self.global_learnings.generate_prompt_section()
 
         # Include artifacts for programs that might be selected
         # IMPORTANT: This limits artifacts (execution outputs/errors) to first 100 programs only.
@@ -485,7 +511,23 @@ class ProcessParallelController:
                     # Store artifacts
                     if result.artifacts:
                         self.database.store_artifacts(child_program.id, result.artifacts)
-                    
+
+                    # Update global learnings
+                    if self.global_learnings and self.global_learnings.config.enabled:
+                        # Create a result-like object for compatibility
+                        from openevolve.iteration import Result
+                        learning_result = Result(
+                            child_program=child_program,
+                            parent=self.database.get(result.parent_id) if result.parent_id else None,
+                            child_metrics=child_program.metrics,
+                            artifacts=result.artifacts,
+                        )
+                        parent_program = self.database.get(result.parent_id) if result.parent_id else None
+                        parent_metrics = parent_program.metrics if parent_program else None
+                        self.global_learnings.update_from_iteration(
+                            completed_iteration, learning_result, parent_metrics
+                        )
+
                     # Log evolution trace
                     if self.evolution_tracer:
                         # Retrieve parent program for trace logging

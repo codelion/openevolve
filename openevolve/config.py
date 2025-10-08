@@ -316,7 +316,7 @@ class EvaluatorConfig:
 @dataclass
 class EvolutionTraceConfig:
     """Configuration for evolution trace logging"""
-    
+
     enabled: bool = False
     format: str = "jsonl"  # Options: "jsonl", "json", "hdf5"
     include_code: bool = False
@@ -324,6 +324,43 @@ class EvolutionTraceConfig:
     output_path: Optional[str] = None
     buffer_size: int = 10
     compress: bool = False
+
+
+@dataclass
+class GlobalLearningsConfig:
+    """Configuration for global learnings aggregation"""
+
+    # Enable/disable global learnings
+    enabled: bool = False
+
+    # What to track
+    track_failures: bool = True       # Track common failures/errors
+    track_successes: bool = False      # Track successful patterns
+    track_both: bool = False          # Track both (overrides individual flags)
+
+    # How many iterations to aggregate over
+    window_size: int = 50             # Last N iterations to consider
+    max_learnings: int = 5            # Max learnings to include in prompt
+
+    # Failure tracking thresholds
+    min_failure_count: int = 3        # Minimum occurrences to report
+    include_syntax_errors: bool = True
+    include_runtime_errors: bool = True
+    include_performance_regressions: bool = True
+
+    # Success tracking thresholds (if enabled)
+    min_success_count: int = 3        # Minimum occurrences to report
+    min_improvement_threshold: float = 0.05  # Minimum fitness improvement
+
+    # Update frequency
+    update_interval: int = 10         # Update learnings every N iterations
+
+    # Injection point
+    inject_in_system_prompt: bool = True   # Add to system prompt
+    inject_in_user_prompt: bool = False    # Add to user prompt
+
+    # Verbosity
+    verbosity: str = "concise"        # "concise", "detailed", "minimal"
 
 
 @dataclass
@@ -345,6 +382,7 @@ class Config:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     evaluator: EvaluatorConfig = field(default_factory=EvaluatorConfig)
     evolution_trace: EvolutionTraceConfig = field(default_factory=EvolutionTraceConfig)
+    global_learnings: GlobalLearningsConfig = field(default_factory=GlobalLearningsConfig)
 
     # Evolution settings
     diff_based_evolution: bool = True
@@ -370,7 +408,7 @@ class Config:
 
         # Update top-level fields
         for key, value in config_dict.items():
-            if key not in ["llm", "prompt", "database", "evaluator", "evolution_trace"] and hasattr(config, key):
+            if key not in ["llm", "prompt", "database", "evaluator", "evolution_trace", "global_learnings"] and hasattr(config, key):
                 setattr(config, key, value)
 
         # Update nested configs
@@ -395,6 +433,8 @@ class Config:
             config.evaluator = EvaluatorConfig(**config_dict["evaluator"])
         if "evolution_trace" in config_dict:
             config.evolution_trace = EvolutionTraceConfig(**config_dict["evolution_trace"])
+        if "global_learnings" in config_dict:
+            config.global_learnings = GlobalLearningsConfig(**config_dict["global_learnings"])
 
         return config
 
@@ -471,6 +511,24 @@ class Config:
                 "output_path": self.evolution_trace.output_path,
                 "buffer_size": self.evolution_trace.buffer_size,
                 "compress": self.evolution_trace.compress,
+            },
+            "global_learnings": {
+                "enabled": self.global_learnings.enabled,
+                "track_failures": self.global_learnings.track_failures,
+                "track_successes": self.global_learnings.track_successes,
+                "track_both": self.global_learnings.track_both,
+                "window_size": self.global_learnings.window_size,
+                "max_learnings": self.global_learnings.max_learnings,
+                "min_failure_count": self.global_learnings.min_failure_count,
+                "include_syntax_errors": self.global_learnings.include_syntax_errors,
+                "include_runtime_errors": self.global_learnings.include_runtime_errors,
+                "include_performance_regressions": self.global_learnings.include_performance_regressions,
+                "min_success_count": self.global_learnings.min_success_count,
+                "min_improvement_threshold": self.global_learnings.min_improvement_threshold,
+                "update_interval": self.global_learnings.update_interval,
+                "inject_in_system_prompt": self.global_learnings.inject_in_system_prompt,
+                "inject_in_user_prompt": self.global_learnings.inject_in_user_prompt,
+                "verbosity": self.global_learnings.verbosity,
             },
             # Evolution settings
             "diff_based_evolution": self.diff_based_evolution,

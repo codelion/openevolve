@@ -62,6 +62,7 @@ class PromptSampler:
         template_key: Optional[str] = None,
         program_artifacts: Optional[Dict[str, Union[str, bytes]]] = None,
         feature_dimensions: Optional[List[str]] = None,
+        global_learnings: Optional[str] = None,
         **kwargs: Any,
     ) -> Dict[str, str]:
         """
@@ -79,6 +80,8 @@ class PromptSampler:
             diff_based_evolution: Whether to use diff-based evolution (True) or full rewrites (False)
             template_key: Optional override for template key
             program_artifacts: Optional artifacts from program evaluation
+            feature_dimensions: List of feature dimension names
+            global_learnings: Optional formatted global learnings section
             **kwargs: Additional keys to replace in the user prompt
 
         Returns:
@@ -106,6 +109,10 @@ class PromptSampler:
             # If system_message is a template name rather than content, get the template
             if system_message in self.template_manager.templates:
                 system_message = self.template_manager.get_template(system_message)
+
+        # Inject global learnings into system message if provided
+        if global_learnings:
+            system_message = f"{system_message}\n\n{global_learnings}"
 
         # Format metrics
         metrics_str = self._format_metrics(program_metrics)

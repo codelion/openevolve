@@ -1,0 +1,70 @@
+# Example OpenEvolve configuration with Global Learnings enabled
+# This demonstrates how to enable and configure the global learnings system
+
+# General settings
+max_iterations: 1000
+checkpoint_interval: 50
+random_seed: 42
+
+# LLM Configuration
+llm:
+  models:
+    - name: "gpt-4"
+      weight: 1.0
+  temperature: 0.7
+  max_tokens: 4096
+
+# Prompt Configuration
+prompt:
+  num_top_programs: 3
+  num_diverse_programs: 2
+  use_template_stochasticity: true
+
+# Database Configuration
+database:
+  num_islands: 5
+  migration_interval: 50
+  feature_dimensions:
+    - "complexity"
+    - "diversity"
+
+# Evaluator Configuration
+evaluator:
+  timeout: 300
+  cascade_evaluation: true
+  parallel_evaluations: 4
+
+# Global Learnings Configuration
+# This aggregates common failures and successes across all islands and iterations
+global_learnings:
+  # Enable/disable the system
+  enabled: true
+
+  # Track failures only (recommended starting point)
+  track_failures: true
+  track_successes: false
+  # track_both: false  # Set to true to override individual flags
+
+  # Aggregation window
+  window_size: 50              # Consider last 50 iterations
+  max_learnings: 5             # Show top 5 patterns in prompts
+
+  # Failure tracking
+  min_failure_count: 3         # Need 3+ occurrences to report
+  include_syntax_errors: true
+  include_runtime_errors: true
+  include_performance_regressions: true
+
+  # Success tracking (if enabled)
+  min_success_count: 3
+  min_improvement_threshold: 0.05
+
+  # Update frequency
+  update_interval: 10          # Update every 10 iterations
+
+  # Prompt injection
+  inject_in_system_prompt: true   # Add to system message
+  inject_in_user_prompt: false    # Don't add to user message
+
+  # Verbosity: "minimal", "concise", or "detailed"
+  verbosity: "concise"

@@ -15,6 +15,7 @@ from openevolve.config import Config, load_config
 from openevolve.database import Program, ProgramDatabase
 from openevolve.evaluator import Evaluator
 from openevolve.evolution_trace import EvolutionTracer
+from openevolve.global_learnings import GlobalLearnings
 from openevolve.llm.ensemble import LLMEnsemble
 from openevolve.prompt.sampler import PromptSampler
 from openevolve.process_parallel import ProcessParallelController
@@ -174,10 +175,10 @@ class OpenEvolve:
             if not trace_output_path:
                 # Default to output_dir/evolution_trace.{format}
                 trace_output_path = os.path.join(
-                    self.output_dir, 
+                    self.output_dir,
                     f"evolution_trace.{self.config.evolution_trace.format}"
                 )
-            
+
             self.evolution_tracer = EvolutionTracer(
                 output_path=trace_output_path,
                 format=self.config.evolution_trace.format,
@@ -190,6 +191,11 @@ class OpenEvolve:
             logger.info(f"Evolution tracing enabled: {trace_output_path}")
         else:
             self.evolution_tracer = None
+
+        # Initialize global learnings
+        self.global_learnings = GlobalLearnings(self.config.global_learnings)
+        if self.config.global_learnings.enabled:
+            logger.info("Global learnings system enabled")
 
         # Initialize improved parallel processing components
         self.parallel_controller = None
@@ -305,7 +311,7 @@ class OpenEvolve:
         try:
             self.parallel_controller = ProcessParallelController(
                 self.config, self.evaluation_file, self.database, self.evolution_tracer,
-                file_suffix=self.config.file_suffix
+                file_suffix=self.config.file_suffix, global_learnings=self.global_learnings
             )
 
             # Set up signal handlers for graceful shutdown
@@ -450,6 +456,10 @@ class OpenEvolve:
         # Save the database
         self.database.save(checkpoint_path, iteration)
 
+        # Save global learnings if enabled
+        if self.config.global_learnings.enabled:
+            self.global_learnings.save(Path(checkpoint_path))
+
         # Save the best program found so far
         best_program = None
         if self.database.best_program_id:
@@ -497,6 +507,11 @@ class OpenEvolve:
 
         logger.info(f"Loading checkpoint from {checkpoint_path}")
         self.database.load(checkpoint_path)
+
+        # Load global learnings if enabled
+        if self.config.global_learnings.enabled:
+            self.global_learnings.load(Path(checkpoint_path))
+
         logger.info(f"Checkpoint loaded successfully (iteration {self.database.last_iteration})")
 
     async def _run_evolution_with_checkpoints(
