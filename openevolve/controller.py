@@ -221,7 +221,7 @@ class OpenEvolve:
 
     def _load_initial_program(self) -> str:
         """Load the initial program from file"""
-        with open(self.initial_program_path, "r") as f:
+        with open(self.initial_program_path, "r",encoding='utf-8') as f:
             return f.read()
 
     async def run(
@@ -291,7 +291,7 @@ class OpenEvolve:
                 if numeric_metrics:
                     avg_score = sum(numeric_metrics) / len(numeric_metrics)
                     logger.warning(
-                        f"⚠️  No 'combined_score' metric found in evaluation results. "
+                        f"No 'combined_score' metric found in evaluation results. "
                         f"Using average of all numeric metrics ({avg_score:.4f}) for evolution guidance. "
                         f"For better evolution results, please modify your evaluator to return a 'combined_score' "
                         f"metric that properly weights different aspects of program performance."
