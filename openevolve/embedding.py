@@ -4,9 +4,10 @@ Original source: https://github.com/SakanaAI/ShinkaEvolve/blob/main/shinka/llm/e
 """
 
 import os
-import openai
-from typing import Union, List
 import logging
+from typing import List, Optional, Union
+
+import openai
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +29,7 @@ OPENAI_EMBEDDING_COSTS = {
 }
 
 class EmbeddingClient:
-    def __init__(
-        self, model_name: str = "text-embedding-3-small"):
+    def __init__(self, model_name: str = "text-embedding-3-small"):
         """
         Initialize the EmbeddingClient.
 
@@ -37,6 +37,7 @@ class EmbeddingClient:
             model (str): The OpenAI embedding model name to use.
         """
         self.client, self.model = self._get_client_model(model_name)
+        self._disabled_reason: Optional[str] = None
     
     def _get_client_model(self, model_name: str) -> tuple[openai.OpenAI, str]:
         if model_name in OPENAI_EMBEDDING_MODELS:
@@ -57,7 +58,7 @@ class EmbeddingClient:
 
     def get_embedding(
         self, code: Union[str, List[str]]
-    ) -> Union[List[float], List[List[float]]]:
+    ) -> Optional[Union[List[float], List[List[float]]]]:
         """
         Computes the text embedding for a code string.
 
@@ -69,6 +70,13 @@ class EmbeddingClient:
             list: Embedding vector for the code or None if an error
                 occurs.
         """
+        if self._disabled_reason:
+            logger.debug(
+                "Embedding client disabled; reusing cached reason: %s",
+                self._disabled_reason,
+            )
+            return None
+
         if isinstance(code, str):
             code = [code]
             single_code = True
@@ -83,9 +91,17 @@ class EmbeddingClient:
                 return response.data[0].embedding
             else:
                 return [d.embedding for d in response.data]
-        except Exception as e:
-            logger.info(f"Error getting embedding: {e}")
-            if single_code:
-                return [], 0.0
-            else:
-                return [[]], 0.0
+        except Exception as e:  # pragma: no cover - depends on external API
+            error_message = str(e)
+            logger.error("Embedding request failed: %s", error_message)
+
+            if "unsupported_country_region_territory" in error_message:
+                self._disabled_reason = (
+                    "OpenAI embeddings endpoint is unavailable from this region."
+                )
+                logger.error(
+                    "Disabling embedding client after unsupported region response; "
+                    "set a supported embedding provider or disable novelty checks."
+                )
+
+            return None
