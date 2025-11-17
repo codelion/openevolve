@@ -43,6 +43,7 @@ llm:
 
 # Prompt Configuration
 prompt:
+  system_message: "You are an expert in computational geometry and constraint optimization. Your task is to improve algorithms for decomposing rectilinear polygons into rectangles. The primary goal is to minimize rectangles with sides smaller than a threshold length l_min, and secondarily minimize the total number of rectangles. Focus on improving the decomposition strategy - this could involve better sweep line algorithms, smarter rectangle merging heuristics, improved CP-SAT formulations, or entirely new decomposition paradigms like hierarchical partitioning or graph-based methods. The current approach uses sweep line decomposition followed by CP-SAT optimization with lexicographic objectives."
   num_top_programs: 3
   num_diverse_programs: 2
   use_template_stochasticity: true

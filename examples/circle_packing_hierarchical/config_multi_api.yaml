@@ -43,6 +43,7 @@ llm:
 
 # Prompt Configuration
 prompt:
+  system_message: "You are an expert in optimization algorithms and computational geometry. Your task is to improve a circle packing algorithm that places 26 circles in a unit square to maximize the sum of their radii. The AlphaEvolve paper achieved 2.635 for n=26. Focus on improving the packing strategy - this could involve better initialization heuristics, improved local search methods, novel global optimization approaches, or hybrid strategies combining multiple techniques. Consider geometric patterns, symmetry, and efficient space utilization."
   num_top_programs: 3
   num_diverse_programs: 2
   use_template_stochasticity: true
