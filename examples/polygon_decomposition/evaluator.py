@@ -14,6 +14,11 @@ from typing import Dict, Tuple
 import multiprocessing as mp
 from functools import partial
 
+# Add parent directory to path for openevolve imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
+from openevolve.evaluation_result import EvaluationResult
+
 # Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -236,7 +241,7 @@ def evaluate_program(
     return metrics, artifacts_string
 
 
-def evaluate(program_globals: dict) -> Tuple[Dict[str, float], str]:
+def evaluate(program_globals: dict) -> EvaluationResult:
     """
     Main evaluation entry point called by OpenEvolve.
 
@@ -244,18 +249,21 @@ def evaluate(program_globals: dict) -> Tuple[Dict[str, float], str]:
         program_globals: Dictionary containing the evolved program's global namespace
 
     Returns:
-        Tuple of (metrics_dict, artifacts_string)
+        EvaluationResult with metrics and artifacts
     """
     # Extract the decompose_polygon function from the evolved program
     if "decompose_polygon" not in program_globals:
         error_msg = "Error: decompose_polygon function not found in program"
-        return {
-            "feasibility_count": 0.0,
-            "feasibility_rate": 0.0,
-            "avg_violations": 0.0,
-            "avg_rectangles": 0.0,
-            "combined_score": 0.0,
-        }, error_msg
+        return EvaluationResult(
+            metrics={
+                "feasibility_count": 0.0,
+                "feasibility_rate": 0.0,
+                "avg_violations": 0.0,
+                "avg_rectangles": 0.0,
+                "combined_score": 0.0,
+            },
+            artifacts={"error": error_msg}
+        )
 
     decompose_polygon_fn = program_globals["decompose_polygon"]
 
@@ -276,18 +284,24 @@ def evaluate(program_globals: dict) -> Tuple[Dict[str, float], str]:
             difficulty=difficulty,
             seed=seed,
         )
-        return metrics, artifacts
+        return EvaluationResult(
+            metrics=metrics,
+            artifacts={"evaluation_log": artifacts}
+        )
 
     except Exception as e:
         import traceback
         error_msg = f"Evaluation failed: {str(e)}\n{traceback.format_exc()}"
-        return {
-            "feasibility_count": 0.0,
-            "feasibility_rate": 0.0,
-            "avg_violations": 0.0,
-            "avg_rectangles": 0.0,
-            "combined_score": 0.0,
-        }, error_msg
+        return EvaluationResult(
+            metrics={
+                "feasibility_count": 0.0,
+                "feasibility_rate": 0.0,
+                "avg_violations": 0.0,
+                "avg_rectangles": 0.0,
+                "combined_score": 0.0,
+            },
+            artifacts={"error": error_msg}
+        )
 
 
 if __name__ == "__main__":

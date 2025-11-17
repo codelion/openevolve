@@ -26,6 +26,7 @@ from openevolve.hierarchy.emg import (
     EMGNode,
     EMGEdge,
     EdgeType,
+    NodeType,
     EvolutionaryMemoryGraph,
 )
 
@@ -43,6 +44,7 @@ from openevolve.hierarchy.model_tiers import (
 from openevolve.hierarchy.transitions import (
     LayerTransitionManager,
     EvolutionPhase,
+    TransitionTriggers,
 )
 
 from openevolve.hierarchy.insights import (

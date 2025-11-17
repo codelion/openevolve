@@ -579,6 +579,51 @@ class Config:
             yaml.dump(self.to_dict(), f, default_flow_style=False)
 
 
+def _get_api_key_for_base(api_base: str) -> Optional[str]:
+    """
+    Automatically detect and return the appropriate API key based on the api_base URL.
+
+    Args:
+        api_base: The API base URL
+
+    Returns:
+        API key from environment variable, or None if not found
+    """
+    if not api_base:
+        return os.environ.get("OPENAI_API_KEY")
+
+    api_base_lower = api_base.lower()
+
+    # KIMI / Moonshot AI
+    if "moonshot.cn" in api_base_lower:
+        return os.environ.get("KIMI_API_KEY")
+
+    # GLM / Zhipu AI
+    if "bigmodel.cn" in api_base_lower or "z.ai" in api_base_lower:
+        return os.environ.get("GLM_API_KEY")
+
+    # OpenAI
+    if "openai.com" in api_base_lower:
+        return os.environ.get("OPENAI_API_KEY")
+
+    # Default: try OPENAI_API_KEY as fallback
+    return os.environ.get("OPENAI_API_KEY")
+
+
+def _set_api_keys_for_models(models: List[LLMModelConfig]) -> None:
+    """
+    Automatically set API keys for models based on their api_base if not already set.
+
+    Args:
+        models: List of LLMModelConfig objects to update
+    """
+    for model in models:
+        if model.api_key is None and model.api_base:
+            detected_key = _get_api_key_for_base(model.api_base)
+            if detected_key:
+                model.api_key = detected_key
+
+
 def load_config(config_path: Optional[Union[str, Path]] = None) -> Config:
     """Load configuration from a YAML file or use defaults"""
     if config_path and os.path.exists(config_path):
@@ -591,6 +636,17 @@ def load_config(config_path: Optional[Union[str, Path]] = None) -> Config:
         api_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
 
         config.llm.update_model_params({"api_key": api_key, "api_base": api_base})
+
+    # Automatically set API keys for all models based on their api_base
+    _set_api_keys_for_models(config.llm.models)
+    _set_api_keys_for_models(config.llm.evaluator_models)
+
+    # Also set API keys for hierarchical tier models
+    if config.hierarchical.enabled:
+        _set_api_keys_for_models(config.hierarchical.tier0_models)
+        _set_api_keys_for_models(config.hierarchical.tier1_models)
+        _set_api_keys_for_models(config.hierarchical.tier2_models)
+        _set_api_keys_for_models(config.hierarchical.tier3_models)
 
     # Make the system message available to the individual models, in case it is not provided from the prompt sampler
     config.llm.update_model_params({"system_message": config.prompt.system_message})
