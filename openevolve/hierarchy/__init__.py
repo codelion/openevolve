@@ -50,6 +50,10 @@ from openevolve.hierarchy.insights import (
     InsightExtractor,
 )
 
+from openevolve.hierarchy.orchestrator import (
+    HierarchicalOrchestrator,
+)
+
 __all__ = [
     # Layers
     "Layer",
@@ -64,6 +68,7 @@ __all__ = [
     "EMGNode",
     "EMGEdge",
     "EdgeType",
+    "NodeType",
     "EvolutionaryMemoryGraph",
     # Context
     "ContextQuery",
@@ -75,7 +80,10 @@ __all__ = [
     # Transitions
     "LayerTransitionManager",
     "EvolutionPhase",
+    "TransitionTriggers",
     # Insights
     "Insight",
     "InsightExtractor",
+    # Orchestrator
+    "HierarchicalOrchestrator",
 ]

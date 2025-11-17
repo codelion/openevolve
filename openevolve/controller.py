@@ -175,10 +175,10 @@ class OpenEvolve:
             if not trace_output_path:
                 # Default to output_dir/evolution_trace.{format}
                 trace_output_path = os.path.join(
-                    self.output_dir, 
+                    self.output_dir,
                     f"evolution_trace.{self.config.evolution_trace.format}"
                 )
-            
+
             self.evolution_tracer = EvolutionTracer(
                 output_path=trace_output_path,
                 format=self.config.evolution_trace.format,
@@ -191,6 +191,24 @@ class OpenEvolve:
             logger.info(f"Evolution tracing enabled: {trace_output_path}")
         else:
             self.evolution_tracer = None
+
+        # Initialize hierarchical orchestrator if enabled
+        self.hierarchical_orchestrator = None
+        if hasattr(self.config, 'hierarchical') and self.config.hierarchical.enabled:
+            try:
+                from openevolve.hierarchy import HierarchicalOrchestrator
+
+                self.hierarchical_orchestrator = HierarchicalOrchestrator(
+                    config=self.config,
+                    database=self.database,
+                    llm_ensemble=self.llm_ensemble,
+                    output_dir=self.output_dir,
+                )
+                logger.info("✅ Hierarchical evolution orchestrator initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize hierarchical orchestrator: {e}")
+                logger.warning("Continuing with standard evolution")
+                self.hierarchical_orchestrator = None
 
         # Initialize improved parallel processing components
         self.parallel_controller = None
@@ -488,6 +506,14 @@ class OpenEvolve:
                 f"Saved best program at checkpoint {iteration} with metrics: "
                 f"{format_metrics_safe(best_program.metrics)}"
             )
+
+        # Save hierarchical orchestrator state if enabled
+        if self.hierarchical_orchestrator:
+            try:
+                self.hierarchical_orchestrator.save_state(checkpoint_path)
+                logger.info("Saved hierarchical evolution state")
+            except Exception as e:
+                logger.warning(f"Failed to save hierarchical state: {e}")
 
         logger.info(f"Saved checkpoint at iteration {iteration} to {checkpoint_path}")
 

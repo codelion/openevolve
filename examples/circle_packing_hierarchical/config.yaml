@@ -1,0 +1,149 @@
+# Circle Packing with Hierarchical Evolution Configuration
+# Goal: Replicate or improve over AlphaEvolve's n=26 result of 2.635
+
+# General settings
+max_iterations: 300
+checkpoint_interval: 50
+log_level: INFO
+random_seed: 42
+language: python
+
+# LLM Configuration - Using GPT-4 models
+llm:
+  api_base: "https://api.openai.com/v1"
+  temperature: 0.7
+  max_tokens: 4096
+  timeout: 120
+  retries: 3
+
+  # Base models for standard evolution
+  models:
+    - name: "gpt-4o"
+      weight: 1.0
+      temperature: 0.7
+
+  # Evaluator models (can be same or different)
+  evaluator_models:
+    - name: "gpt-4o"
+      weight: 1.0
+
+# Prompt Configuration
+prompt:
+  num_top_programs: 3
+  num_diverse_programs: 2
+  use_template_stochasticity: true
+  include_artifacts: true
+
+# Database Configuration - Island-based MAP-Elites
+database:
+  population_size: 500
+  archive_size: 50
+  num_islands: 3
+
+  # Selection ratios
+  exploration_ratio: 0.3
+  exploitation_ratio: 0.6
+
+  # MAP-Elites feature dimensions for circle packing
+  feature_dimensions:
+    - "complexity"
+    - "diversity"
+  feature_bins: 10
+
+  # Migration between islands
+  migration_interval: 30
+  migration_rate: 0.15
+
+  # Logging
+  log_prompts: true
+
+# Evaluator Configuration
+evaluator:
+  timeout: 600
+  cascade_evaluation: true
+  cascade_thresholds: [0.5, 0.75]
+  enable_artifacts: true
+
+# Evolution Trace (optional - for analysis)
+evolution_trace:
+  enabled: false
+
+# Hierarchical Evolution Configuration
+hierarchical:
+  # Enable hierarchical abstraction layers
+  enabled: true
+
+  # Model Tiers - Different models for different abstraction layers
+  # For this example, we'll use the same model but with different temperatures
+  # In production, you'd use:
+  #   - Tier 0: gpt-4o-mini (fast, cheap for L1 local search)
+  #   - Tier 1: gpt-4o (standard for L2 patterns)
+  #   - Tier 2: gpt-4 (strong for L3/L4)
+  #   - Tier 3: o3-mini or o1 (reasoning for L4/L5 strategic pivots)
+
+  # Tier 0: Fast models for L1 local search (high frequency)
+  tier0_models:
+    - name: "gpt-4o"
+      weight: 1.0
+      temperature: 0.8  # Higher temperature for exploration
+      max_tokens: 2048
+
+  # Tier 1: Standard models for L2 implementation patterns
+  tier1_models:
+    - name: "gpt-4o"
+      weight: 1.0
+      temperature: 0.7
+      max_tokens: 4096
+
+  # Tier 2: Strong models for L3 architecture and L4 paradigms
+  tier2_models:
+    - name: "gpt-4o"
+      weight: 1.0
+      temperature: 0.6  # Lower temperature for focused reasoning
+      max_tokens: 8192
+
+  # Tier 3: Reasoning models for L4/L5 strategic pivots
+  # Use o3-mini or o1 if available, fallback to gpt-4
+  tier3_models:
+    - name: "gpt-4o"
+      weight: 1.0
+      temperature: 0.5  # Low temperature for careful reasoning
+      max_tokens: 16384
+
+  # Layer Transition Triggers
+  # These control when each layer is activated based on plateau detection
+  l2_plateau_iterations: 5   # Evolve L2 (patterns) when L1 (code) plateaus for 5 iterations
+  l3_plateau_iterations: 15  # Evolve L3 (architecture) when L2 plateaus for 15 iterations
+  l4_plateau_iterations: 50  # Evolve L4 (paradigms) when L3 plateaus for 50 iterations
+  l5_plateau_iterations: 200 # Evolve L5 (meta-principles) when L4 plateaus for 200 iterations
+
+  # Minimum score improvement to count as progress
+  min_improvement_threshold: 0.001
+
+  # Insight Extraction
+  enable_insight_extraction: true
+  insight_extraction_interval: 50  # Extract insights every 50 generations
+  use_llm_for_insights: false  # Set to true for deeper LLM-based insights (more expensive)
+
+  # Context Compilation Settings
+  context_max_tokens: 30000  # Maximum tokens for hierarchical context
+  recent_weight: 0.7  # Weight for recent solutions vs historical
+  local_weight: 0.6   # Weight for same branch vs cross-branch
+  success_weight: 0.8 # Weight for successes vs failures
+
+  # Evolutionary Memory Graph (EMG)
+  emg_enabled: true
+  # emg_save_path will default to output_dir/emg
+
+  # Phase Detection
+  exploration_phase_threshold: 0.3  # Success rate below 30% triggers exploration phase
+  crisis_exhausted_layers: 2  # 2+ exhausted layers triggers crisis mode
+
+# Evolution Settings
+diff_based_evolution: true
+max_code_length: 15000
+
+# Early Stopping
+early_stopping_patience: 50
+convergence_threshold: 0.001
+early_stopping_metric: "combined_score"
