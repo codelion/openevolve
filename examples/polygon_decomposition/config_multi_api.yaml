@@ -1,0 +1,167 @@
+# Polygon Decomposition with Hierarchical Evolution - Multi-API Configuration
+# Uses KIMI K2 for high reasoning tasks and GLM-4.6 for low reasoning tasks
+#
+# Setup:
+# 1. Get KIMI K2 API key from https://platform.moonshot.cn/
+# 2. Get GLM-4.6 API key from https://open.bigmodel.cn/
+# 3. Set environment variables:
+#    export KIMI_API_KEY="your-kimi-api-key"
+#    export GLM_API_KEY="your-glm-api-key"
+#
+# Run:
+#    python run_hierarchical.py --config config_multi_api.yaml --iterations 300
+
+# General settings
+max_iterations: 300
+checkpoint_interval: 50
+log_level: INFO
+random_seed: 42
+language: python
+
+# LLM Configuration - Multi-API setup
+llm:
+  # Default API configuration (will be overridden per model)
+  api_base: "https://open.bigmodel.cn/api/paas/v4"  # GLM default
+  temperature: 0.7
+  max_tokens: 4096
+  timeout: 120
+  retries: 3
+
+  # Base models for standard evolution
+  # Using GLM-4.6 as the default for general evolution
+  models:
+    - name: "glm-4-flash"  # Fast GLM model for general use
+      api_base: "https://open.bigmodel.cn/api/paas/v4"
+      weight: 1.0
+      temperature: 0.7
+
+  # Evaluator models (using GLM-4.6)
+  evaluator_models:
+    - name: "glm-4-flash"
+      api_base: "https://open.bigmodel.cn/api/paas/v4"
+      weight: 1.0
+
+# Prompt Configuration
+prompt:
+  num_top_programs: 3
+  num_diverse_programs: 2
+  use_template_stochasticity: true
+  include_artifacts: true
+
+# Database Configuration - Island-based MAP-Elites
+database:
+  population_size: 500
+  archive_size: 50
+  num_islands: 3
+
+  # Selection ratios
+  exploration_ratio: 0.3
+  exploitation_ratio: 0.6
+
+  # MAP-Elites feature dimensions for polygon decomposition
+  feature_dimensions:
+    - "complexity"
+    - "diversity"
+  feature_bins: 10
+
+  # Migration between islands
+  migration_interval: 30
+  migration_rate: 0.15
+
+  # Logging
+  log_prompts: true
+
+# Evaluator Configuration
+evaluator:
+  timeout: 900  # 15 minutes total timeout for evaluation
+  cascade_evaluation: true
+  cascade_thresholds: [0.3, 0.6]  # Lower thresholds since this is harder
+  enable_artifacts: true
+
+# Evolution Trace (optional - for analysis)
+evolution_trace:
+  enabled: false
+
+# Hierarchical Evolution Configuration with Multi-API Support
+hierarchical:
+  # Enable hierarchical abstraction layers
+  enabled: true
+
+  # Tier 0: GLM-4-Flash for L1 local search (high frequency, low reasoning)
+  # Fast and cheap for code-level tweaks and parameter tuning
+  tier0_models:
+    - name: "glm-4-flash"
+      api_base: "https://open.bigmodel.cn/api/paas/v4"
+      weight: 1.0
+      temperature: 0.8  # Higher temperature for exploration
+      max_tokens: 2048
+      timeout: 60
+
+  # Tier 1: GLM-4-Air for L2 implementation patterns (standard reasoning)
+  # Good balance of speed and capability for algorithmic patterns
+  tier1_models:
+    - name: "glm-4-air"
+      api_base: "https://open.bigmodel.cn/api/paas/v4"
+      weight: 1.0
+      temperature: 0.7
+      max_tokens: 4096
+      timeout: 90
+
+  # Tier 2: GLM-4-Plus for L3 architecture (stronger reasoning)
+  # More capable model for architectural innovations
+  tier2_models:
+    - name: "glm-4-plus"
+      api_base: "https://open.bigmodel.cn/api/paas/v4"
+      weight: 1.0
+      temperature: 0.6
+      max_tokens: 8192
+      timeout: 120
+
+  # Tier 3: KIMI K2 for L4/L5 strategic pivots (deep reasoning)
+  # Advanced reasoning model for paradigm shifts and strategic decisions
+  tier3_models:
+    - name: "moonshot-v1-auto"  # KIMI K2 with automatic reasoning
+      api_base: "https://api.moonshot.cn/v1"
+      weight: 1.0
+      temperature: 0.5  # Lower temperature for focused reasoning
+      max_tokens: 16384
+      timeout: 300  # Longer timeout for reasoning models
+      reasoning_effort: "high"  # Request deep reasoning
+
+  # Layer Transition Triggers
+  # These control when each layer is activated based on plateau detection
+  l2_plateau_iterations: 5   # Evolve L2 (patterns) when L1 (code) plateaus for 5 iterations
+  l3_plateau_iterations: 15  # Evolve L3 (architecture) when L2 plateaus for 15 iterations
+  l4_plateau_iterations: 50  # Evolve L4 (paradigms) when L3 plateaus for 50 iterations
+  l5_plateau_iterations: 200 # Evolve L5 (meta-principles) when L4 plateaus for 200 iterations
+
+  # Minimum score improvement to count as progress
+  min_improvement_threshold: 0.01  # 1% improvement
+
+  # Insight Extraction
+  enable_insight_extraction: true
+  insight_extraction_interval: 50  # Extract insights every 50 generations
+  use_llm_for_insights: false  # Set to true for deeper LLM-based insights (more expensive)
+
+  # Context Compilation Settings
+  context_max_tokens: 30000  # Maximum tokens for hierarchical context
+  recent_weight: 0.7  # Weight for recent solutions vs historical
+  local_weight: 0.6   # Weight for same branch vs cross-branch
+  success_weight: 0.8 # Weight for successes vs failures
+
+  # Evolutionary Memory Graph (EMG)
+  emg_enabled: true
+  # emg_save_path will default to output_dir/emg
+
+  # Phase Detection
+  exploration_phase_threshold: 0.3  # Success rate below 30% triggers exploration phase
+  crisis_exhausted_layers: 2  # 2+ exhausted layers triggers crisis mode
+
+# Evolution Settings
+diff_based_evolution: true
+max_code_length: 15000
+
+# Early Stopping
+early_stopping_patience: 50
+convergence_threshold: 0.01
+early_stopping_metric: "combined_score"

@@ -18,6 +18,8 @@ This example uses the **hierarchical abstraction layer system** which adds:
 
 ## Quick Start
 
+### Option 1: Using OpenAI GPT-4 (Default)
+
 ```bash
 # Navigate to this directory
 cd examples/circle_packing_hierarchical
@@ -28,6 +30,23 @@ export OPENAI_API_KEY="your-api-key-here"
 # Run hierarchical evolution
 python run_hierarchical.py --iterations 300
 ```
+
+### Option 2: Using KIMI K2 + GLM-4.6 (Cost-Optimized)
+
+For cost-effective multi-API configuration using KIMI K2 for high reasoning and GLM-4.6 for low reasoning:
+
+```bash
+# Set up API keys
+export KIMI_API_KEY="your-kimi-api-key"
+export GLM_API_KEY="your-glm-api-key"
+
+# Run with multi-API configuration
+python run_hierarchical.py --config config_multi_api.yaml --iterations 300
+```
+
+**Cost savings**: ~3-5x cheaper than using premium models for all tiers!
+
+See [Multi-API Setup Guide](/docs/MULTI_API_SETUP.md) for detailed configuration.
 
 ## Configuration
 
