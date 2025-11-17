@@ -93,16 +93,31 @@ def _worker_init(config_dict: dict, evaluation_file: str, parent_env: dict = Non
     _worker_prompt_sampler = None
 
 
-def _lazy_init_worker_components():
-    """Lazily initialize expensive components on first use"""
+def _lazy_init_worker_components(tier_models=None):
+    """Lazily initialize expensive components on first use
+
+    Args:
+        tier_models: Optional list of model dicts for hierarchical tier-specific models
+    """
     global _worker_evaluator
     global _worker_llm_ensemble
     global _worker_prompt_sampler
 
-    if _worker_llm_ensemble is None:
+    # Always recreate ensemble if tier_models is provided (per-iteration tiers)
+    if tier_models is not None:
+        from openevolve.llm.ensemble import LLMEnsemble
+        from openevolve.config import LLMModelConfig
+
+        # Convert tier model dicts to LLMModelConfig objects
+        models = [LLMModelConfig(**m) for m in tier_models]
+        _worker_llm_ensemble = LLMEnsemble(models)
+        logger.debug(f"Worker using tier-specific models: {[m.name for m in models]}")
+    elif _worker_llm_ensemble is None:
+        # Fallback to base models from config if no tier models
         from openevolve.llm.ensemble import LLMEnsemble
 
         _worker_llm_ensemble = LLMEnsemble(_worker_config.llm.models)
+        logger.debug(f"Worker using base models: {[m.name for m in _worker_config.llm.models]}")
 
     if _worker_prompt_sampler is None:
         from openevolve.prompt.sampler import PromptSampler
@@ -134,8 +149,11 @@ def _run_iteration_worker(
 ) -> SerializableResult:
     """Run a single iteration in a worker process"""
     try:
-        # Lazy initialization
-        _lazy_init_worker_components()
+        # Get tier models from snapshot if provided
+        tier_models = db_snapshot.get("tier_models")
+
+        # Lazy initialization with tier models
+        _lazy_init_worker_components(tier_models=tier_models)
 
         # Reconstruct programs from snapshot
         programs = {pid: Program(**prog_dict) for pid, prog_dict in db_snapshot["programs"].items()}
@@ -275,12 +293,13 @@ def _run_iteration_worker(
 class ProcessParallelController:
     """Controller for process-based parallel evolution"""
 
-    def __init__(self, config: Config, evaluation_file: str, database: ProgramDatabase, evolution_tracer=None, file_suffix: str = ".py"):
+    def __init__(self, config: Config, evaluation_file: str, database: ProgramDatabase, evolution_tracer=None, file_suffix: str = ".py", hierarchical_orchestrator=None):
         self.config = config
         self.evaluation_file = evaluation_file
         self.database = database
         self.evolution_tracer = evolution_tracer
         self.file_suffix = file_suffix
+        self.hierarchical_orchestrator = hierarchical_orchestrator
 
         self.executor: Optional[ProcessPoolExecutor] = None
         self.shutdown_event = mp.Event()
@@ -291,6 +310,8 @@ class ProcessParallelController:
         self.num_islands = config.database.num_islands
 
         logger.info(f"Initialized process parallel controller with {self.num_workers} workers")
+        if hierarchical_orchestrator:
+            logger.info("Hierarchical orchestrator enabled for tiered model selection")
 
     def _serialize_config(self, config: Config) -> dict:
         """Serialize config object to a dictionary that can be pickled"""
@@ -708,6 +729,36 @@ class ProcessParallelController:
             # Create database snapshot
             db_snapshot = self._create_database_snapshot()
             db_snapshot["sampling_island"] = target_island  # Mark which island this is for
+
+            # Get tier-specific models from hierarchical orchestrator if enabled
+            if self.hierarchical_orchestrator and self.hierarchical_orchestrator.enabled:
+                try:
+                    tier_ensemble = self.hierarchical_orchestrator.get_ensemble_for_iteration(iteration)
+                    # Serialize the models from the ensemble
+                    tier_models = []
+                    for model in tier_ensemble.models:
+                        # Get the underlying OpenAI LLM's model config
+                        tier_models.append({
+                            "name": model.model,
+                            "api_base": model.api_base,
+                            "api_key": model.api_key,
+                            "temperature": model.temperature,
+                            "top_p": model.top_p,
+                            "max_tokens": model.max_tokens,
+                            "timeout": model.timeout,
+                            "retries": model.retries,
+                            "retry_delay": model.retry_delay,
+                            "weight": 1.0,  # Ensemble already selected this model
+                            "reasoning_effort": getattr(model, 'reasoning_effort', None),
+                        })
+                    db_snapshot["tier_models"] = tier_models
+                    active_layer = self.hierarchical_orchestrator.transition_manager.get_active_layer(iteration)
+                    logger.debug(f"Iteration {iteration}: Using {active_layer.value} tier models")
+                except Exception as e:
+                    logger.warning(f"Failed to get tier models for iteration {iteration}: {e}")
+                    db_snapshot["tier_models"] = None
+            else:
+                db_snapshot["tier_models"] = None
 
             # Submit to process pool
             future = self.executor.submit(
