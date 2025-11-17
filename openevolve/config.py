@@ -323,7 +323,7 @@ class EvaluatorConfig:
 @dataclass
 class EvolutionTraceConfig:
     """Configuration for evolution trace logging"""
-    
+
     enabled: bool = False
     format: str = "jsonl"  # Options: "jsonl", "json", "hdf5"
     include_code: bool = False
@@ -331,6 +331,52 @@ class EvolutionTraceConfig:
     output_path: Optional[str] = None
     buffer_size: int = 10
     compress: bool = False
+
+
+@dataclass
+class HierarchicalConfig:
+    """Configuration for hierarchical abstraction layer system"""
+
+    # Enable hierarchical evolution
+    enabled: bool = False
+
+    # Model tier configurations
+    # Tier 0: Fast models (L1 local search)
+    tier0_models: List[LLMModelConfig] = field(default_factory=list)
+    # Tier 1: Standard models (L2 patterns, L1 refinement)
+    tier1_models: List[LLMModelConfig] = field(default_factory=list)
+    # Tier 2: Strong models (L3 architecture, L4 paradigms)
+    tier2_models: List[LLMModelConfig] = field(default_factory=list)
+    # Tier 3: Reasoning models (L4, L5 strategic pivots)
+    tier3_models: List[LLMModelConfig] = field(default_factory=list)
+
+    # Layer transition triggers
+    l2_plateau_iterations: int = 5  # L1 plateau → evolve L2
+    l3_plateau_iterations: int = 20  # L2 plateau → evolve L3
+    l4_plateau_iterations: int = 100  # L3 plateau → evolve L4
+    l5_plateau_iterations: int = 500  # L4 plateau → evolve L5
+
+    # Minimum improvement threshold
+    min_improvement_threshold: float = 0.001
+
+    # Insight extraction
+    enable_insight_extraction: bool = True
+    insight_extraction_interval: int = 100  # Extract insights every N generations
+    use_llm_for_insights: bool = False  # Use LLM for deeper insight extraction
+
+    # Context compilation
+    context_max_tokens: int = 50000
+    recent_weight: float = 0.7
+    local_weight: float = 0.6
+    success_weight: float = 0.8
+
+    # EMG (Evolutionary Memory Graph) settings
+    emg_enabled: bool = True
+    emg_save_path: Optional[str] = None  # Path to save EMG (defaults to output_dir/emg)
+
+    # Phase adjustments
+    exploration_phase_threshold: float = 0.3  # Success rate below this triggers exploration
+    crisis_exhausted_layers: int = 2  # Number of exhausted layers to trigger crisis
 
 
 @dataclass
@@ -352,6 +398,7 @@ class Config:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     evaluator: EvaluatorConfig = field(default_factory=EvaluatorConfig)
     evolution_trace: EvolutionTraceConfig = field(default_factory=EvolutionTraceConfig)
+    hierarchical: HierarchicalConfig = field(default_factory=HierarchicalConfig)
 
     # Evolution settings
     diff_based_evolution: bool = True
@@ -377,7 +424,7 @@ class Config:
 
         # Update top-level fields
         for key, value in config_dict.items():
-            if key not in ["llm", "prompt", "database", "evaluator", "evolution_trace"] and hasattr(config, key):
+            if key not in ["llm", "prompt", "database", "evaluator", "evolution_trace", "hierarchical"] and hasattr(config, key):
                 setattr(config, key, value)
 
         # Update nested configs
@@ -402,6 +449,26 @@ class Config:
             config.evaluator = EvaluatorConfig(**config_dict["evaluator"])
         if "evolution_trace" in config_dict:
             config.evolution_trace = EvolutionTraceConfig(**config_dict["evolution_trace"])
+        if "hierarchical" in config_dict:
+            hierarchical_dict = config_dict["hierarchical"]
+            # Parse tier model configs
+            if "tier0_models" in hierarchical_dict:
+                hierarchical_dict["tier0_models"] = [
+                    LLMModelConfig(**m) for m in hierarchical_dict["tier0_models"]
+                ]
+            if "tier1_models" in hierarchical_dict:
+                hierarchical_dict["tier1_models"] = [
+                    LLMModelConfig(**m) for m in hierarchical_dict["tier1_models"]
+                ]
+            if "tier2_models" in hierarchical_dict:
+                hierarchical_dict["tier2_models"] = [
+                    LLMModelConfig(**m) for m in hierarchical_dict["tier2_models"]
+                ]
+            if "tier3_models" in hierarchical_dict:
+                hierarchical_dict["tier3_models"] = [
+                    LLMModelConfig(**m) for m in hierarchical_dict["tier3_models"]
+                ]
+            config.hierarchical = HierarchicalConfig(**hierarchical_dict)
 
         return config
 
@@ -478,6 +545,24 @@ class Config:
                 "output_path": self.evolution_trace.output_path,
                 "buffer_size": self.evolution_trace.buffer_size,
                 "compress": self.evolution_trace.compress,
+            },
+            "hierarchical": {
+                "enabled": self.hierarchical.enabled,
+                "tier0_models": [{"name": m.name, "weight": m.weight} for m in self.hierarchical.tier0_models],
+                "tier1_models": [{"name": m.name, "weight": m.weight} for m in self.hierarchical.tier1_models],
+                "tier2_models": [{"name": m.name, "weight": m.weight} for m in self.hierarchical.tier2_models],
+                "tier3_models": [{"name": m.name, "weight": m.weight} for m in self.hierarchical.tier3_models],
+                "l2_plateau_iterations": self.hierarchical.l2_plateau_iterations,
+                "l3_plateau_iterations": self.hierarchical.l3_plateau_iterations,
+                "l4_plateau_iterations": self.hierarchical.l4_plateau_iterations,
+                "l5_plateau_iterations": self.hierarchical.l5_plateau_iterations,
+                "min_improvement_threshold": self.hierarchical.min_improvement_threshold,
+                "enable_insight_extraction": self.hierarchical.enable_insight_extraction,
+                "insight_extraction_interval": self.hierarchical.insight_extraction_interval,
+                "use_llm_for_insights": self.hierarchical.use_llm_for_insights,
+                "context_max_tokens": self.hierarchical.context_max_tokens,
+                "emg_enabled": self.hierarchical.emg_enabled,
+                "emg_save_path": self.hierarchical.emg_save_path,
             },
             # Evolution settings
             "diff_based_evolution": self.diff_based_evolution,
