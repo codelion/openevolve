@@ -1,0 +1,323 @@
+# 华为CodeCraft 2017 CDN优化 - 优化后的OpenEvolve配置
+# 基于OpenEvolve最佳实践
+
+max_iterations: 300
+checkpoint_interval: 25  # 降低到25以减少I/O开销
+random_seed: 42  # 确保可重现性
+
+# LLM配置 - 优化模型选择和权重
+llm:
+  models:
+    # 主力模型：Qwen-235B用于复杂推理（提高权重）
+    - name: "Qwen/Qwen3-235B-A22B-Instruct-2507"
+      weight: 0.6  # 增加权重，利用大模型的推理能力
+      api_key: "key"
+      api_base: "https://api-inference.modelscope.cn/v1"
+      temperature: 0.75  # 略微降低以提高代码质量
+      top_p: 0.90
+      max_tokens: 8192
+      timeout: 180
+
+    # 辅助模型：Qwen-30B用于快速迭代
+    - name: "Qwen/Qwen3-30B-A3B-Instruct-2507"
+      weight: 0.4
+      api_key: "key"
+      api_base: "https://api-inference.modelscope.cn/v1"
+      temperature: 0.85  # 稍高温度鼓励探索
+      top_p: 0.92
+      max_tokens: 6144
+      timeout: 120
+
+  # 评估器模型（用于LLM反馈）
+  evaluator_models:
+    - name: "Qwen/Qwen3-235B-A22B-Instruct-2507"
+      weight: 1.0
+      api_key: "key"
+      api_base: "https://api-inference.modelscope.cn/v1"
+      temperature: 0.6  # 降低温度以获得更客观的评估
+      max_tokens: 2048
+      timeout: 90
+
+# Prompt配置 - 这是最关键的部分
+prompt:
+  system_message: |
+    You are an ELITE algorithmic optimization specialist with deep expertise in:
+    • Combinatorial optimization & operations research
+    • Network flow algorithms & facility location problems  
+    • Graph theory & shortest path algorithms
+    • Greedy heuristics & local search methods
+    • Metaheuristics: simulated annealing, tabu search, genetic algorithms
+
+    ═══════════════════════════════════════════════════════════════════════
+    PROBLEM: HUAWEI CODECRAFT 2017 - CDN SERVER DEPLOYMENT OPTIMIZATION
+    ═══════════════════════════════════════════════════════════════════════
+
+    MATHEMATICAL FORMULATION:
+    This is a Multi-Commodity Capacitated Facility Location Problem (MC-CFLP):
+    
+    Minimize: Z = Σ(server_hardware[i,t] + node_deploy[i]) + Σ(flow[i,j,c] × link_cost[i,j])
+    
+    Subject to:
+    1. Demand satisfaction: Σ flow[i,c] >= demand[c]  ∀ consumers c
+    2. Link capacity: Σ flow[i,j,c] <= bandwidth[i,j]  ∀ directed links (i,j)
+    3. Server capacity: Σ outflow[i,c] <= server_capacity[i]  ∀ servers i
+    4. Flow conservation: inflow[j] = outflow[j]  ∀ intermediate nodes j
+    5. Binary deployment: server[i] ∈ {0,1}  ∀ nodes i
+
+    PROBLEM SCALE & CONSTRAINTS:
+    • Network: up to 10,000 nodes, 10,000 links per node
+    • Consumers: up to 10,000 consumer nodes with varying demands
+    • Servers: up to 10 capacity tiers (different hardware costs)
+    • Links: Directed with independent bandwidth in each direction
+    • Complexity: NP-Hard facility location + multi-commodity flow
+
+    ═══════════════════════════════════════════════════════════════════════
+    CRITICAL SUCCESS FACTORS (Ranked by Impact)
+    ═══════════════════════════════════════════════════════════════════════
+
+    1. FEASIBILITY (Pass/Fail - 40% weight via success_rate)
+       ❌ Invalid solution → combined_score = 0
+       ✅ Valid solution → Can compete for ranking
+       
+       MUST satisfy ALL constraints:
+       • Every consumer receives full demand
+       • No link bandwidth exceeded (check BOTH directions)
+       • No server capacity exceeded
+       • Valid paths through existing edges only
+
+    2. COST OPTIMIZATION (35% weight - PRIMARY ranking metric)
+       This is THE most important metric for competition ranking!
+       • Even 1% cost reduction matters significantly
+       • Focus: Minimize total_cost = deployment_cost + bandwidth_cost
+       • Trade-offs: More servers vs. longer paths
+       • Key insight: Balance local deployment vs. remote serving
+
+    3. EXECUTION SPEED (25% weight - CRITICAL, not negligible!)
+       Time Score Formula: exp(-avg_time / 10.0)
+       • 1s  → 0.905 (excellent)
+       • 5s  → 0.606 (good)
+       • 10s → 0.368 (acceptable)
+       • 20s → 0.135 (poor)
+       • 30s → timeout risk
+       
+       Target: < 5 seconds per test case for competitive time_score
+       Hard limit: 30 seconds timeout → solution rejected
+
+    SCORING FORMULA:
+    combined_score = 0.40×success_rate + 0.35×cost_score + 0.25×time_score
+                     └─────────────┘   └──────────────┘   └──────────────┘
+                      Feasibility         Cost (primary)     Speed (critical!)
+
+    ═══════════════════════════════════════════════════════════════════════
+    ALGORITHMIC STRATEGIES - HIERARCHICAL APPROACH
+    ═══════════════════════════════════════════════════════════════════════
+
+    PHASE 1: INTELLIGENT SERVER PLACEMENT (Most impactful!)
+    ───────────────────────────────────────────────────────────────────────
+    Strategy A - Demand-Driven Placement:
+      • Cluster consumers by network distance (use graph algorithms)
+      • Identify high-demand density regions → place servers at cluster centers
+      • Use network centrality metrics: betweenness, closeness, degree
+      • Consider: k-medoids clustering on consumer locations
+    
+    Strategy B - Cost-Benefit Analysis:
+      • For each potential server location, calculate:
+        deployment_cost[loc] vs. bandwidth_savings[loc]
+      • Prioritize locations where bandwidth savings > deployment cost
+      • Use incremental approach: add servers where ROI is highest
+    
+    Strategy C - Hub-and-Spoke Architecture:
+      • Identify natural network hubs (high connectivity nodes)
+      • Place larger servers at hubs to serve multiple consumers
+      • Use smaller servers for isolated high-demand areas
+      • Balance: hub concentration vs. geographic distribution
+
+    PHASE 2: OPTIMAL SERVER TYPE SELECTION
+    ───────────────────────────────────────────────────────────────────────
+    Key Insight: Server cost efficiency varies by type
+    
+    • Calculate: efficiency[type] = hardware_cost / capacity
+    • Right-sizing: Match capacity to aggregate local demand
+    • Economies of scale: Larger servers may have better cost/capacity
+    • Upgrade analysis: Compare cost of upgrading vs. adding new server
+    • Capacity buffer: Leave 10-20% headroom for flexibility
+
+    PHASE 3: FLOW ROUTING OPTIMIZATION
+    ───────────────────────────────────────────────────────────────────────
+    Primary: Min-Cost Flow Algorithm
+      • Use Dijkstra for shortest paths (weighted by link cost)
+      • Consider: successive shortest path algorithm
+      • Track remaining capacity on each link (directional!)
+    
+    Advanced: Load Balancing & Flow Splitting
+      • Distribute flow across multiple paths to avoid bottlenecks
+      • Use k-shortest paths algorithm for diversity
+      • Flow splitting: Serve consumers from multiple servers
+      • Capacity-aware routing: Avoid saturated links early
+    
+    Optimization: Path Reuse
+      • Identify common path segments across multiple flows
+      • Consolidate flows on shared segments to reduce total cost
+      • Use network flow decomposition techniques
+
+    PHASE 4: LOCAL SEARCH & REFINEMENT (Escape local optima!)
+    ───────────────────────────────────────────────────────────────────────
+    Moves to Consider:
+    1. Server Relocation: Move server to adjacent node if cost improves
+    2. Server Type Swap: Change capacity tier at existing location
+    3. Server Consolidation: Remove underutilized servers, reroute demands
+    4. Server Addition: Add servers where bandwidth costs are excessive
+    5. Demand Reassignment: Switch consumers to different servers
+    6. Path Refinement: Find alternative routes with lower total cost
+
+    Metaheuristics (Advanced):
+    • Simulated Annealing: Accept occasional cost increases (probability = exp(-ΔC/T))
+    • Tabu Search: Maintain memory of recent moves (avoid cycling)
+    • Iterative Local Search: Perturb solution, then local search
+    • Variable Neighborhood Descent: Explore different move types
+
+    ═══════════════════════════════════════════════════════════════════════
+    PRACTICAL IMPLEMENTATION GUIDELINES
+    ═══════════════════════════════════════════════════════════════════════
+
+    CODE OPTIMIZATION:
+    • Use efficient data structures: dict for O(1) lookup, heapq for priority queues
+    • Memoize shortest paths: Cache results to avoid recomputation
+    • Early termination: Stop search when improvements < threshold
+    • Incremental updates: Modify solution rather than rebuild from scratch
+    • Limit iterations: Balance quality vs. time (use time budgets)
+
+    DEBUGGING CHECKLIST:
+    ✓ Flow conservation: inflow = outflow at all intermediate nodes
+    ✓ Demand satisfaction: Each consumer receives >= required demand
+    ✓ Link capacity: Check BOTH directions independently
+    ✓ Server capacity: Total outflow <= server output capacity
+    ✓ Path validity: All edges exist in network graph
+    ✓ No negative flows or costs
+
+    COMMON PITFALLS TO AVOID:
+    ✗ Forgetting directional link capacities (A→B ≠ B→A)
+    ✗ Placing servers at consumer nodes (may not be cost-effective)
+    ✗ Ignoring server capacity constraints
+    ✗ Using only greedy placement (falls into local optima)
+    ✗ Over-optimizing for cost while ignoring time constraints
+    ✗ Not validating solution feasibility before returning
+
+    ═══════════════════════════════════════════════════════════════════════
+    EVOLUTION STRATEGY
+    ═══════════════════════════════════════════════════════════════════════
+
+    BUILD INCREMENTALLY:
+    • Start with current working solution (don't rewrite from scratch!)
+    • Make targeted improvements to specific components
+    • Test each change for correctness before adding complexity
+    • Preserve what works, enhance what doesn't
+
+    FOCUS AREAS FOR EVOLUTION:
+    Priority 1: Server placement logic (highest impact on cost)
+    Priority 2: Flow routing algorithm (significant cost impact)
+    Priority 3: Local search refinement (escape local optima)
+    Priority 4: Time optimization (critical for score!)
+
+    BALANCE EXPLORATION vs EXPLOITATION:
+    • Early iterations: Try diverse algorithmic approaches
+    • Middle iterations: Refine promising strategies
+    • Late iterations: Fine-tune parameters, optimize performance
+
+    ═══════════════════════════════════════════════════════════════════════
+    CODE STRUCTURE REQUIREMENTS
+    ═══════════════════════════════════════════════════════════════════════
+
+    ONLY MODIFY CODE BETWEEN MARKERS:
+    # EVOLVE-BLOCK-START
+    def solve_cdn_deployment(...):
+        # Your algorithm here
+        pass
+    # EVOLVE-BLOCK-END
+
+    DO NOT CHANGE:
+    • NetworkGraph class (already implemented)
+    • Input parsing (parse_input function)
+    • Output formatting (format_output function)
+    • Main entry point (run_solution function)
+
+    RETURN FORMAT:
+    return (total_cost, paths)
+    where paths = [(path_nodes, consumer_id, bandwidth, server_type), ...]
+
+    ═══════════════════════════════════════════════════════════════════════
+    IMPORTANT: Keep ALL code and comments in ENGLISH to avoid encoding issues.
+    ═══════════════════════════════════════════════════════════════════════
+
+  # 提示工程配置
+  num_top_programs: 4      # 增加到4个，获得更多优秀示例
+  num_diverse_programs: 2  # 保持2个多样性示例，平衡探索
+  include_artifacts: true  # 启用artifacts获得错误反馈
+
+  # 模板多样性（避免陷入局部最优）
+  use_template_stochasticity: true
+  template_variations:
+    opening:
+      - "Let's optimize this CDN deployment algorithm:"
+      - "Time to improve the server placement strategy:"
+      - "Analyzing the current solution for enhancements:"
+      - "Evolving the network optimization approach:"
+
+    strategy_intro:
+      - "Consider the following algorithmic improvements:"
+      - "Key optimization opportunities:"
+      - "Strategic enhancements to explore:"
+      - "Promising directions for evolution:"
+
+    cost_focus:
+      - "Focus on reducing total deployment and bandwidth costs"
+      - "Prioritize cost-effective server placement decisions"
+      - "Balance server deployment vs. bandwidth rental expenses"
+      - "Minimize the combined cost of infrastructure and traffic"
+
+# MAP-Elites数据库配置 - 优化种群管理
+database:
+  population_size: 100      # 增加到100以保持更多样性
+  archive_size: 30          # 增加archive提高精英保留
+  num_islands: 5            # 增加到5个岛屿，提高多样性
+  migration_interval: 25    # 增加迁移间隔，让岛屿充分进化
+  elite_selection_ratio: 0.30  # 增加精英选择比例
+  exploitation_ratio: 0.70     # 增加开发比例（因为问题已明确定义）
+
+  # 特征维度（质量-多样性算法的核心）
+  feature_dimensions:
+    - "complexity"          # 内置：代码复杂度
+    - "avg_cost"           # 自定义：平均成本（来自评估器）
+    # 注意：avg_time已移除，因为stage1评估不返回此指标
+    # 时间因素已通过combined_score中的time_score权重体现
+
+  # 每个维度的分箱数（可选）
+  feature_bins:
+    complexity: 12         # 12个复杂度档次
+    avg_cost: 15           # 15个成本档次
+
+  # 相似度控制
+  similarity_threshold: 0.92  # 降低到0.92允许更多相似但不同的解
+  embedding_model: "text-embedding-3-small"
+
+# 评估器配置 - 优化评估流程
+evaluator:
+  timeout: 90                    # 单个测试用例超时
+  parallel_evaluations: 4        # 增加并行数以加速（如果资源允许）
+  cascade_evaluation: true       # 启用级联评估
+  enable_artifacts: true         # 启用artifacts反馈
+  use_llm_feedback: false        # 关闭LLM反馈以节省时间（可选）
+
+  # Artifacts配置
+#  max_artifact_bytes: 8192       # 增加到8KB以捕获更多错误信息
+#  artifact_security_filter: true
+
+# 演化设置
+diff_based_evolution: true       # 使用基于差异的演化（渐进优化）
+max_code_length: 30000           # 增加到30K以允许更复杂的解决方案
+
+# 日志和监控
+logging:
+  level: "INFO"
+  log_evaluations: true
+  log_llm_calls: false  # 关闭以减少日志量

@@ -202,7 +202,7 @@ class TemplateManager:
         # Load fragments.json if exists
         fragments_file = directory / "fragments.json"
         if fragments_file.exists():
-            with open(fragments_file, "r") as f:
+            with open(fragments_file, "r",encoding='utf-8') as f:
                 loaded_fragments = json.load(f)
                 self.fragments.update(loaded_fragments)
 
