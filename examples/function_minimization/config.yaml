@@ -4,17 +4,17 @@ checkpoint_interval: 5
 
 # LLM configuration
 llm:
-  # primary_model: "gemini-2.5-flash-lite"
-  primary_model: "gpt-5-mini"
+  primary_model: "gemini-2.5-flash-lite"
+  # primary_model: "gpt-5-mini"
   # primary_model: "llama3.1-8b"
   primary_model_weight: 0.8
-  # secondary_model: "gemini-2.5-flash"
+  secondary_model: "gemini-2.5-flash"
   # secondary_model: "llama-4-scout-17b-16e-instruct"
-  secondary_model: "gpt-5-nano"
+  # secondary_model: "gpt-5-nano"
   secondary_model_weight: 0.2
-  # api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
+  api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
   # api_base: "https://api.cerebras.ai/v1"
-  api_base: "https://api.openai.com/v1"
+  # api_base: "https://api.openai.com/v1"
   temperature: 0.7
   max_tokens: 16000
   timeout: 120
@@ -31,7 +31,7 @@ database:
   elite_selection_ratio: 0.2
   exploitation_ratio: 0.7
 
-  embedding_model: "text-embedding-3-small"
+  # embedding_model: "text-embedding-3-small"
   similarity_threshold: 0.99
 
 # Evaluator configuration
