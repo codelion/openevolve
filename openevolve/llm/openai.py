@@ -120,6 +120,15 @@ class OpenAILLM(LLMInterface):
             if reasoning_effort is not None:
                 params["reasoning_effort"] = reasoning_effort
 
+        # ModelScope Qwen models require enable_thinking=false for non-streaming requests
+        if (
+            isinstance(self.api_base, str)
+            and "api-inference.modelscope.cn" in self.api_base
+        ):
+            extra_body = kwargs.get("extra_body") or {}
+            extra_body.setdefault("enable_thinking", False)
+            params["extra_body"] = extra_body
+
         # Add seed parameter for reproducibility if configured
         # Skip seed parameter for Google AI Studio endpoint as it doesn't support it
         seed = kwargs.get("seed", self.random_seed)
