@@ -405,6 +405,19 @@ export function showSidebarContent(d, fromHover = false) {
                  }
                  // Show only the selected prompt
                  let promptVal = promptMap[lastPromptKey];
+                 
+                  // Handle unicode escape for artifacts JSON display
+                 if (lastPromptKey === 'artifacts' && typeof promptVal === 'string') {
+                     try {
+                         // Parse and stringify to properly escape unicode
+                         const parsed = JSON.parse(promptVal);
+                         promptVal = JSON.stringify(parsed, null, 2);
+                     } catch (e) {
+                         // If parsing fails, use original value
+                         console.warn('Failed to parse artifacts JSON for unicode escape:', e);
+                     }
+                 }
+
                  let promptHtml = `<pre class="sidebar-pre">${promptVal ?? ''}</pre>`;
                  return selectHtml + promptHtml;
              }
