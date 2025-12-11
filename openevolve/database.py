@@ -1052,6 +1052,16 @@ class ProgramDatabase:
 
         program = self.programs[program_id]
         embd = self.embedding_client.get_embedding(program.code)
+
+        if embd is None:
+            logger.warning(
+                "Embedding unavailable for program %s; skipping similarity check "
+                "and treating program as novel.",
+                program.id,
+            )
+            self.programs[program_id].embedding = None
+            return True
+
         self.programs[program_id].embedding = embd
         
         max_smlty = float('-inf')
