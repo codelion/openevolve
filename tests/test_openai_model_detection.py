@@ -94,5 +94,92 @@ class TestOpenAIReasoningModelDetection(unittest.TestCase):
                 )
 
 
+class TestResponsesAPIDetection(unittest.TestCase):
+    """Test Responses API vs Chat Completions API selection logic"""
+
+    def _should_use_responses_api(self, api_base, api_type="auto"):
+        """Test function that mimics the logic in openai.py"""
+        # Check for explicit override
+        if api_type == "responses":
+            return True
+        if api_type == "chat_completions":
+            return False
+        
+        # Auto-detect based on API base URL
+        if not api_base:
+            return False
+        
+        api_lower = api_base.lower()
+        
+        # Only use Responses API for official OpenAI endpoints
+        return (
+            api_lower.startswith("https://api.openai.com") or
+            api_lower.startswith("https://eu.api.openai.com") or
+            api_lower.startswith("https://apac.api.openai.com")
+        )
+
+    def test_openai_endpoints_use_responses_api(self):
+        """Test that official OpenAI endpoints use Responses API by default"""
+        test_cases = [
+            ("https://api.openai.com/v1", True, "Main OpenAI endpoint"),
+            ("https://api.openai.com", True, "OpenAI without path"),
+            ("https://eu.api.openai.com/v1", True, "EU endpoint"),
+            ("https://apac.api.openai.com/v1", True, "APAC endpoint"),
+            ("https://API.OPENAI.COM/v1", True, "Uppercase URL"),
+        ]
+
+        for api_base, expected, description in test_cases:
+            with self.subTest(api_base=api_base, desc=description):
+                result = self._should_use_responses_api(api_base)
+                self.assertEqual(
+                    result,
+                    expected,
+                    f"API base '{api_base}' ({description}): expected {expected}, got {result}",
+                )
+
+    def test_non_openai_endpoints_use_chat_completions(self):
+        """Test that non-OpenAI endpoints use Chat Completions API"""
+        test_cases = [
+            ("https://generativelanguage.googleapis.com/v1beta/openai/", False, "Google AI Studio"),
+            ("https://openrouter.ai/api/v1", False, "OpenRouter"),
+            ("http://localhost:8000/v1", False, "Local server"),
+            ("https://api.anthropic.com/v1", False, "Anthropic"),
+            ("https://api.deepseek.com/v1", False, "DeepSeek"),
+            (None, False, "None API base"),
+            ("", False, "Empty API base"),
+        ]
+
+        for api_base, expected, description in test_cases:
+            with self.subTest(api_base=api_base, desc=description):
+                result = self._should_use_responses_api(api_base)
+                self.assertEqual(
+                    result,
+                    expected,
+                    f"API base '{api_base}' ({description}): expected {expected}, got {result}",
+                )
+
+    def test_explicit_api_type_override(self):
+        """Test that api_type override works correctly"""
+        # Force responses API even for non-OpenAI endpoint
+        self.assertTrue(
+            self._should_use_responses_api("http://localhost:8000/v1", api_type="responses")
+        )
+        
+        # Force chat completions even for OpenAI endpoint
+        self.assertFalse(
+            self._should_use_responses_api("https://api.openai.com/v1", api_type="chat_completions")
+        )
+        
+        # Auto detection with OpenAI endpoint
+        self.assertTrue(
+            self._should_use_responses_api("https://api.openai.com/v1", api_type="auto")
+        )
+        
+        # Auto detection with non-OpenAI endpoint
+        self.assertFalse(
+            self._should_use_responses_api("http://localhost:8000/v1", api_type="auto")
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

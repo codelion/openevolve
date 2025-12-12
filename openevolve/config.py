@@ -78,6 +78,13 @@ class LLMModelConfig:
     # Reasoning parameters
     reasoning_effort: Optional[str] = None
 
+    # API type selection: "auto" (default), "responses", or "chat_completions"
+    # - "auto": Use Responses API for OpenAI endpoints, Chat Completions for others
+    # - "responses": Force use of OpenAI Responses API
+    # - "chat_completions": Force use of Chat Completions API
+    # None means inherit from parent config (defaults to "auto")
+    api_type: Optional[str] = None
+
     def __post_init__(self):
         """Post-initialization to resolve ${VAR} env var references in api_key"""
         self.api_key = _resolve_env_var(self.api_key)
@@ -115,6 +122,9 @@ class LLMConfig(LLMModelConfig):
 
     # Reasoning parameters (inherited from LLMModelConfig but can be overridden)
     reasoning_effort: Optional[str] = None
+
+    # API type for LLM level (defaults to "auto" for auto-detection)
+    api_type: str = "auto"
 
     def __post_init__(self):
         """Post-initialization to set up model configurations"""
@@ -170,6 +180,7 @@ class LLMConfig(LLMModelConfig):
             "retry_delay": self.retry_delay,
             "random_seed": self.random_seed,
             "reasoning_effort": self.reasoning_effort,
+            "api_type": self.api_type,
         }
         self.update_model_params(shared_config)
 
@@ -223,6 +234,7 @@ class LLMConfig(LLMModelConfig):
             "retry_delay": self.retry_delay,
             "random_seed": self.random_seed,
             "reasoning_effort": self.reasoning_effort,
+            "api_type": self.api_type,
         }
         self.update_model_params(shared_config)
 

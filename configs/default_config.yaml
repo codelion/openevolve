@@ -41,11 +41,13 @@ llm:
   api_key: null                       # API key (defaults to OPENAI_API_KEY env variable)
   # or use ${VAR} syntax to specify which environment variable to read from:
   # api_key: ${GEMINI_API_KEY}        # Reads API key from $GEMINI_API_KEY
+  api_type: "auto"                    # API type: "auto, "responses" or "chat_completions"
 
   # Generation parameters
   temperature: 0.7                    # Temperature for generation (higher = more creative)
   top_p: 0.95                         # Top-p sampling parameter
   max_tokens: 4096                    # Maximum tokens to generate
+  reasoning_effort: "medium"          # Reasoning effort: "low", "medium", "high", "xhigh"
 
   # Request parameters
   timeout: 60                         # Timeout for API requests in seconds
