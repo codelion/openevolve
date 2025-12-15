@@ -34,6 +34,7 @@ class OpenAILLM(LLMInterface):
         self.api_key = model_cfg.api_key
         self.random_seed = getattr(model_cfg, "random_seed", None)
         self.reasoning_effort = getattr(model_cfg, "reasoning_effort", None)
+        self.api_type = getattr(model_cfg, "api_type", "auto")
 
         # Set up API client
         # OpenAI client requires max_retries to be int, not None
@@ -45,6 +46,9 @@ class OpenAILLM(LLMInterface):
             max_retries=max_retries,
         )
 
+        # Determine which API to use (Responses API vs Chat Completions)
+        self.use_responses_api = self._should_use_responses_api()
+
         # Only log unique models to reduce duplication
         if not hasattr(logger, "_initialized_models"):
             logger._initialized_models = set()
@@ -52,6 +56,39 @@ class OpenAILLM(LLMInterface):
         if self.model not in logger._initialized_models:
             logger.info(f"Initialized OpenAI LLM with model: {self.model}")
             logger._initialized_models.add(self.model)
+
+    def _should_use_responses_api(self) -> bool:
+        """
+        Determine if the Responses API should be used instead of Chat Completions.
+        
+        The Responses API is only available on OpenAI's official endpoints.
+        For other providers (OpenRouter, Google AI Studio, local servers, etc.),
+        we must use the Chat Completions API for compatibility.
+        
+        Returns:
+            True if Responses API should be used, False for Chat Completions
+        """
+        # Normalize api_type (None defaults to "auto")
+        api_type = self.api_type if self.api_type is not None else "auto"
+        
+        # Check for explicit override
+        if api_type == "responses":
+            return True
+        if api_type == "chat_completions":
+            return False
+        
+        # Auto-detect based on API base URL
+        if not self.api_base:
+            return False
+        
+        api_lower = self.api_base.lower()
+        
+        # Only use Responses API for official OpenAI endpoints
+        return (
+            api_lower.startswith("https://api.openai.com") or
+            api_lower.startswith("https://eu.api.openai.com") or
+            api_lower.startswith("https://apac.api.openai.com")
+        )
 
     async def generate(self, prompt: str, **kwargs) -> str:
         """Generate text from a prompt"""
@@ -159,14 +196,82 @@ class OpenAILLM(LLMInterface):
                     raise
 
     async def _call_api(self, params: Dict[str, Any]) -> str:
-        """Make the actual API call"""
+        """Make the actual API call, dispatching to appropriate API"""
         # Use asyncio to run the blocking API call in a thread pool
         loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None, lambda: self.client.chat.completions.create(**params)
-        )
+
+        if self.use_responses_api:
+            response = await loop.run_in_executor(
+                None, lambda: self._call_responses_api(params)
+            )
+            response_text = response.output_text
+        else:
+            response = await loop.run_in_executor(
+                None, lambda: self.client.chat.completions.create(**params)
+            )
+            response_text = response.choices[0].message.content
+
         # Logging of system prompt, user message and response content
         logger = logging.getLogger(__name__)
         logger.debug(f"API parameters: {params}")
-        logger.debug(f"API response: {response.choices[0].message.content}")
-        return response.choices[0].message.content
+        logger.debug(f"API response: {response_text}")
+        return response_text
+
+    def _call_responses_api(self, chat_params: Dict[str, Any]) -> Any:
+        """
+        Convert Chat Completions params to Responses API format and make the call.
+        
+        The Responses API uses a different parameter structure:
+        - 'messages' -> 'input' (can be array of messages)
+        - System message in 'messages' -> 'instructions' parameter
+        - 'max_tokens'/'max_completion_tokens' -> 'max_output_tokens'
+        - 'reasoning_effort' -> 'reasoning: {"effort": ...}'
+        
+        Args:
+            chat_params: Parameters in Chat Completions format
+            
+        Returns:
+            Response object from client.responses.create()
+        """
+        messages = chat_params["messages"]
+
+        # Extract system message as instructions, keep other messages as input
+        instructions = None
+        input_messages = []
+        for msg in messages:
+            if msg["role"] == "system":
+                instructions = msg["content"]
+            else:
+                input_messages.append(msg)
+
+        # Build Responses API params
+        resp_params = {
+            "model": chat_params["model"],
+            "input": input_messages,
+        }
+
+        if instructions:
+            resp_params["instructions"] = instructions
+
+        # Map token limits (Responses API uses max_output_tokens)
+        if "max_completion_tokens" in chat_params:
+            resp_params["max_output_tokens"] = chat_params["max_completion_tokens"]
+        elif "max_tokens" in chat_params:
+            resp_params["max_output_tokens"] = chat_params["max_tokens"]
+
+        # Map sampling parameters
+        if "temperature" in chat_params:
+            resp_params["temperature"] = chat_params["temperature"]
+        if "top_p" in chat_params:
+            resp_params["top_p"] = chat_params["top_p"]
+        if "seed" in chat_params:
+            resp_params["seed"] = chat_params["seed"]
+
+        # Map reasoning_effort to nested format for Responses API
+        if "reasoning_effort" in chat_params:
+            resp_params["reasoning"] = {"effort": chat_params["reasoning_effort"]}
+
+        # Disable conversation storage (not needed for OpenEvolve's use case)
+        resp_params["store"] = False
+
+        return self.client.responses.create(**resp_params)

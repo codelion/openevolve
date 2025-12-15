@@ -132,6 +132,7 @@ class TestReasoningEffortConfig(unittest.TestCase):
         model_cfg.api_key = "test-key"
         model_cfg.random_seed = None
         model_cfg.reasoning_effort = "high"
+        model_cfg.api_type = "chat_completions"  # Force Chat Completions API for this test
         
         # Mock OpenAI client to avoid actual API calls
         with unittest.mock.patch('openai.OpenAI'):
@@ -140,8 +141,8 @@ class TestReasoningEffortConfig(unittest.TestCase):
         # Verify the reasoning_effort is stored
         self.assertEqual(llm.reasoning_effort, "high")
 
-    def test_reasoning_effort_passed_to_api_params(self):
-        """Test that reasoning_effort is included in API call parameters"""
+    def test_reasoning_effort_passed_to_api_params_chat_completions(self):
+        """Test that reasoning_effort is included in API call parameters (Chat Completions)"""
         model_cfg = Mock()
         model_cfg.name = "gpt-oss-120b" 
         model_cfg.system_message = "system"
@@ -155,6 +156,7 @@ class TestReasoningEffortConfig(unittest.TestCase):
         model_cfg.api_key = "test-key"
         model_cfg.random_seed = None
         model_cfg.reasoning_effort = "medium"
+        model_cfg.api_type = "chat_completions"  # Force Chat Completions API for this test
         
         with unittest.mock.patch('openai.OpenAI'):
             llm = OpenAILLM(model_cfg)
@@ -177,6 +179,51 @@ class TestReasoningEffortConfig(unittest.TestCase):
             
             # Verify the API was called with reasoning_effort
             llm.client.chat.completions.create.assert_called_once_with(**test_params)
+
+    def test_reasoning_effort_passed_to_responses_api(self):
+        """Test that reasoning_effort is converted to nested format for Responses API"""
+        model_cfg = Mock()
+        model_cfg.name = "gpt-oss-120b" 
+        model_cfg.system_message = "system"
+        model_cfg.temperature = 0.7
+        model_cfg.top_p = 0.95
+        model_cfg.max_tokens = 4096
+        model_cfg.timeout = 60
+        model_cfg.retries = 3
+        model_cfg.retry_delay = 5
+        model_cfg.api_base = "https://api.openai.com/v1"
+        model_cfg.api_key = "test-key"
+        model_cfg.random_seed = None
+        model_cfg.reasoning_effort = "medium"
+        model_cfg.api_type = "responses"  # Force Responses API for this test
+        
+        with unittest.mock.patch('openai.OpenAI'):
+            llm = OpenAILLM(model_cfg)
+            
+            # Test the _call_api method directly with mocked client
+            mock_response = Mock()
+            mock_response.output_text = "Test response"
+            llm.client.responses.create.return_value = mock_response
+            
+            # Input params in Chat Completions format
+            test_params = {
+                "model": "gpt-oss-120b",
+                "messages": [{"role": "system", "content": "Test"}, {"role": "user", "content": "Test user"}],
+                "max_completion_tokens": 4096,
+                "reasoning_effort": "medium"
+            }
+            
+            result = asyncio.run(llm._call_api(test_params))
+            
+            # Verify the Responses API was called with nested reasoning format
+            llm.client.responses.create.assert_called_once()
+            call_args = llm.client.responses.create.call_args
+            self.assertEqual(call_args.kwargs["model"], "gpt-oss-120b")
+            self.assertEqual(call_args.kwargs["instructions"], "Test")
+            self.assertEqual(call_args.kwargs["input"], [{"role": "user", "content": "Test user"}])
+            self.assertEqual(call_args.kwargs["reasoning"], {"effort": "medium"})
+            self.assertEqual(call_args.kwargs["max_output_tokens"], 4096)
+            self.assertFalse(call_args.kwargs["store"])
 
     def test_yaml_file_loading_with_reasoning_effort(self):
         """Test loading reasoning_effort from actual YAML file"""

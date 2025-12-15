@@ -13,7 +13,7 @@ authors = [
     {name = "codelion"}
 ]
 dependencies = [
-    "openai>=1.0.0",
+    "openai>=1.80.0",  # Required for Responses API
     "pyyaml>=6.0",
     "numpy>=1.22.0",
     "tqdm>=4.64.0",
