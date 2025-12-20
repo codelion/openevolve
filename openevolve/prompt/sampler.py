@@ -322,11 +322,11 @@ class PromptSampler:
                 for name, value in program.get("metrics", {}).items():
                     if isinstance(value, (int, float)):
                         try:
-                            key_features.append(f"Performs well on {name} ({value:.4f})")
+                            key_features.append(self.template_manager.get_fragment("top_program_metrics_prefix") + f" {name} ({value:.4f})")
                         except (ValueError, TypeError):
-                            key_features.append(f"Performs well on {name} ({value})")
+                            key_features.append(self.template_manager.get_fragment("top_program_metrics_prefix") + f" {name} ({value})")
                     else:
-                        key_features.append(f"Performs well on {name} ({value})")
+                        key_features.append(self.template_manager.get_fragment("top_program_metrics_prefix") + f" {name} ({value})")
 
             key_features_str = ", ".join(key_features)
 
@@ -369,7 +369,7 @@ class PromptSampler:
                     key_features = program.get("key_features", [])
                     if not key_features:
                         key_features = [
-                            f"Alternative approach to {name}"
+                            self.template_manager.get_fragment("diverse_program_metrics_prefix") + f" {name}"
                             for name in list(program.get("metrics", {}).keys())[
                                 :2
                             ]  # Just first 2 metrics
