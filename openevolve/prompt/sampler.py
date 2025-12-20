@@ -263,7 +263,7 @@ class PromptSampler:
 
             # Determine outcome based on comparison with parent (only numeric metrics)
             parent_metrics = program.get("metadata", {}).get("parent_metrics", {})
-            outcome = "Mixed results"
+            outcome = self.template_manager.get_fragment("attempt_mixed_metrics")
 
             # Safely compare only numeric metrics
             program_metrics = program.get("metrics", {})
@@ -290,9 +290,9 @@ class PromptSampler:
 
             # Determine outcome based on numeric comparisons
             if numeric_comparisons_improved and all(numeric_comparisons_improved):
-                outcome = "Improvement in all metrics"
+                outcome = self.template_manager.get_fragment("attempt_all_metrics_improved")
             elif numeric_comparisons_regressed and all(numeric_comparisons_regressed):
-                outcome = "Regression in all metrics"
+                outcome = self.template_manager.get_fragment("attempt_all_metrics_regressed")
 
             previous_attempts_str += (
                 previous_attempt_template.format(
