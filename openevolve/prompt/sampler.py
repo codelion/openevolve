@@ -205,11 +205,13 @@ class PromptSampler:
         # Note feature exploration (not good/bad, just informational)
         if feature_dimensions:
             feature_coords = format_feature_coordinates(metrics, feature_dimensions)
-            if feature_coords != "No feature coordinates":
+            if feature_coords == "":
+                msg = self.template_manager.get_fragment("no_feature_coordinates")
+            else:
                 msg = self.template_manager.get_fragment(
                     "exploring_region", features=feature_coords
                 )
-                improvement_areas.append(msg)
+            improvement_areas.append(msg)
 
         # Code length check (configurable threshold)
         threshold = (

@@ -139,7 +139,7 @@ def format_feature_coordinates(metrics: Dict[str, Any], feature_dimensions: List
             else:
                 feature_values.append(f"{dim}={value}")
 
-    if not feature_values:
-        return "No feature coordinates"
+    if not feature_values:  # No valid feature coordinates found will return empty string
+        return ""
 
     return ", ".join(feature_values)
