@@ -15,5 +15,7 @@
   "metrics_regressed": "Metrics showing changes: {metrics}. Consider different approaches in these areas.",
   "code_simplification": "Consider simplifying the code to improve readability and maintainability",
   "default_improvement": "Focus on improving the fitness score while exploring diverse solutions",
-  "no_feature_coordinates": "No feature coordinates"
+  "no_feature_coordinates": "No feature coordinates",
+  "artifact_title": "Last Execution Output",
+  "diverse_programs_title": "Diverse Programs"
 }

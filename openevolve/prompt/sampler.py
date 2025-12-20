@@ -356,7 +356,7 @@ class PromptSampler:
                 # Use random sampling to get diverse programs
                 diverse_programs = random.sample(remaining_programs, num_diverse)
 
-                diverse_programs_str += "\n\n## Diverse Programs\n\n"
+                diverse_programs_str += "\n\n## " + self.template_manager.get_fragment("diverse_programs_title") + "\n\n"
 
                 for i, program in enumerate(diverse_programs):
                     # Use the full program code
@@ -589,7 +589,7 @@ class PromptSampler:
             sections.append(f"### {key}\n```\n{content}\n```")
 
         if sections:
-            return "## Last Execution Output\n\n" + "\n\n".join(sections)
+            return "## " + self.template_manager.get_fragment("artifact_title") + "\n\n" + "\n\n".join(sections)
         else:
             return ""
 
