@@ -247,7 +247,7 @@ class PromptSampler:
 
         for i, program in enumerate(reversed(selected_previous)):
             attempt_number = len(previous_programs) - i
-            changes = program.get("metadata", {}).get("changes", "Unknown changes")
+            changes = program.get("metadata", {}).get("changes", self.template_manager.get_fragment("attempt_no_changes"))
 
             # Format performance metrics using safe formatting
             performance_parts = []

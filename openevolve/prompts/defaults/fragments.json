@@ -18,6 +18,7 @@
   "no_feature_coordinates": "No feature coordinates",
   "artifact_title": "Last Execution Output",
   "diverse_programs_title": "Diverse Programs",
+  "attempt_unknown_changes": "Unknown changes",
   "attempt_all_metrics_improved": "Improvement in all metrics",
   "attempt_all_metrics_regressed": "Regression in all metrics",
   "attempt_mixed_metrics": "Mixed results",
