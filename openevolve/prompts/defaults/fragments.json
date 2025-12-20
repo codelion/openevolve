@@ -22,5 +22,12 @@
   "attempt_all_metrics_regressed": "Regression in all metrics",
   "attempt_mixed_metrics": "Mixed results",
   "top_program_metrics_prefix": "Performs well on",
-  "diverse_program_metrics_prefix": "Alternative approach to"
+  "diverse_program_metrics_prefix": "Alternative approach to",
+  "inspiration_type_diverse": "Diverse",
+  "inspiration_type_migrant": "Migrant",
+  "inspiration_type_random": "Random",
+  "inspiration_type_score_high_performer": "High-Performer",
+  "inspiration_type_score_alternative": "Alternative",
+  "inspiration_type_score_experimental": "Experimental",
+  "inspiration_type_score_exploratory": "Exploratory"
 }

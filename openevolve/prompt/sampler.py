@@ -474,21 +474,20 @@ class PromptSampler:
 
         # Check metadata for explicit type markers
         if metadata.get("diverse", False):
-            return "Diverse"
+            return self.template_manager.get_fragment("inspiration_type_diverse")
         if metadata.get("migrant", False):
-            return "Migrant"
+            return self.template_manager.get_fragment("inspiration_type_migrant")
         if metadata.get("random", False):
-            return "Random"
-
+            return self.template_manager.get_fragment("inspiration_type_random")
         # Classify based on score ranges
         if score >= 0.8:
-            return "High-Performer"
+            return self.template_manager.get_fragment("inspiration_type_score_high_performer")
         elif score >= 0.6:
-            return "Alternative"
+            return self.template_manager.get_fragment("inspiration_type_score_alternative")
         elif score >= 0.4:
-            return "Experimental"
+            return self.template_manager.get_fragment("inspiration_type_score_experimental")
         else:
-            return "Exploratory"
+            return self.template_manager.get_fragment("inspiration_type_score_exploratory")
 
     def _extract_unique_features(self, program: Dict[str, Any]) -> str:
         """
