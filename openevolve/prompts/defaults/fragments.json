@@ -29,5 +29,14 @@
   "inspiration_type_score_high_performer": "High-Performer",
   "inspiration_type_score_alternative": "Alternative",
   "inspiration_type_score_experimental": "Experimental",
-  "inspiration_type_score_exploratory": "Exploratory"
+  "inspiration_type_score_exploratory": "Exploratory",
+  "inspiration_changes_prefix": "Modification:",
+  "inspiration_metrics_excellent": "Excellent {metric_name} ({value:.3f})",
+  "inspiration_metrics_alternative": "Alternative {metric_name} approach",
+  "inspiration_code_with_class": "Object-oriented approach",
+  "inspiration_code_with_numpy": "NumPy-based implementation",
+  "inspiration_code_with_mixed_iteration": "Mixed iteration strategies",
+  "inspiration_code_with_concise_line": "Concise implementation",
+  "inspiration_code_with_comprehensive_line": "Comprehensive implementation",
+  "inspiration_no_features_postfix": "approach to the problem"
 }

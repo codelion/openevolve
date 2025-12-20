@@ -510,42 +510,42 @@ class PromptSampler:
                 and self.config.include_changes_under_chars
                 and len(changes) < self.config.include_changes_under_chars
             ):
-                features.append(f"Modification: {changes}")
+                features.append(self.template_manager.get_fragment("inspiration_changes_prefix").format(changes=changes))
 
         # Analyze metrics for standout characteristics
         metrics = program.get("metrics", {})
         for metric_name, value in metrics.items():
             if isinstance(value, (int, float)):
                 if value >= 0.9:
-                    features.append(f"Excellent {metric_name} ({value:.3f})")
+                    features.append(f"{self.template_manager.get_fragment('inspiration_metrics_excellent').format(metric_name=metric_name, value=value)}")
                 elif value <= 0.3:
-                    features.append(f"Alternative {metric_name} approach")
+                    features.append(f"{self.template_manager.get_fragment('inspiration_metrics_alternative').format(metric_name=metric_name)}")
 
         # Code-based features (simple heuristics)
         code = program.get("code", "")
         if code:
             code_lower = code.lower()
             if "class" in code_lower and "def __init__" in code_lower:
-                features.append("Object-oriented approach")
+                features.append(self.template_manager.get_fragment("inspiration_code_with_class"))
             if "numpy" in code_lower or "np." in code_lower:
-                features.append("NumPy-based implementation")
+                features.append(self.template_manager.get_fragment("inspiration_code_with_numpy"))
             if "for" in code_lower and "while" in code_lower:
-                features.append("Mixed iteration strategies")
+                features.append(self.template_manager.get_fragment("inspiration_code_with_mixed_iteration"))
             if (
                 self.config.concise_implementation_max_lines
                 and len(code.split("\n")) <= self.config.concise_implementation_max_lines
             ):
-                features.append("Concise implementation")
+                features.append(self.template_manager.get_fragment("inspiration_code_with_concise_line"))
             elif (
                 self.config.comprehensive_implementation_min_lines
                 and len(code.split("\n")) >= self.config.comprehensive_implementation_min_lines
             ):
-                features.append("Comprehensive implementation")
+                features.append(self.template_manager.get_fragment("inspiration_code_with_comprehensive_line"))
 
         # Default if no specific features found
         if not features:
             program_type = self._determine_program_type(program)
-            features.append(f"{program_type} approach to the problem")
+            features.append(self.template_manager.get_fragment("inspiration_no_features_postfix").format(program_type=program_type))
 
         # Use num_top_programs as limit for features (similar to how we limit programs)
         feature_limit = self.config.num_top_programs
