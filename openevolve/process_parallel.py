@@ -30,6 +30,7 @@ class SerializableResult:
     iteration_time: float = 0.0
     prompt: Optional[Dict[str, str]] = None
     llm_response: Optional[str] = None
+    llm_reasoning: Optional[str] = None
     artifacts: Optional[Dict[str, Any]] = None
     iteration: int = 0
     error: Optional[str] = None
@@ -186,7 +187,7 @@ def _run_iteration_worker(
 
         # Generate code modification (sync wrapper for async)
         try:
-            llm_response = asyncio.run(
+            llm_content, llm_reasoning = asyncio.run(
                 _worker_llm_ensemble.generate_with_context(
                     system_message=prompt["system"],
                     messages=[{"role": "user", "content": prompt["user"]}],
@@ -197,25 +198,25 @@ def _run_iteration_worker(
             return SerializableResult(error=f"LLM generation failed: {str(e)}", iteration=iteration)
 
         # Check for None response
-        if llm_response is None:
+        if llm_content is None:
             return SerializableResult(error="LLM returned None response", iteration=iteration)
 
         # Parse response based on evolution mode
         if _worker_config.diff_based_evolution:
             from openevolve.utils.code_utils import apply_diff, extract_diffs, format_diff_summary
 
-            diff_blocks = extract_diffs(llm_response, _worker_config.diff_pattern)
+            diff_blocks = extract_diffs(llm_content, _worker_config.diff_pattern)
             if not diff_blocks:
                 return SerializableResult(
                     error=f"No valid diffs found in response", iteration=iteration
                 )
 
-            child_code = apply_diff(parent.code, llm_response, _worker_config.diff_pattern)
+            child_code = apply_diff(parent.code, llm_content, _worker_config.diff_pattern)
             changes_summary = format_diff_summary(diff_blocks)
         else:
             from openevolve.utils.code_utils import parse_full_rewrite
 
-            new_code = parse_full_rewrite(llm_response, _worker_config.language)
+            new_code = parse_full_rewrite(llm_content, _worker_config.language)
             if not new_code:
                 return SerializableResult(
                     error=f"No valid code found in response", iteration=iteration
@@ -258,12 +259,17 @@ def _run_iteration_worker(
 
         iteration_time = time.time() - iteration_start
 
+        # Propagate response and reasoning to controller for logging/persistence
+        llm_response = llm_content
+        llm_reasoning = llm_reasoning
+
         return SerializableResult(
             child_program_dict=child_program.to_dict(),
             parent_id=parent.id,
             iteration_time=iteration_time,
             prompt=prompt,
             llm_response=llm_response,
+            llm_reasoning=llm_reasoning,
             artifacts=artifacts,
             iteration=iteration,
         )
@@ -534,6 +540,9 @@ class ProcessParallelController:
                             program_id=child_program.id,
                             prompt=result.prompt,
                             responses=[result.llm_response] if result.llm_response else [],
+                            reasonings=[result.llm_reasoning]
+                            if getattr(result, "llm_reasoning", None)
+                            else None,
                         )
 
                     # Island management

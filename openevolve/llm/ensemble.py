@@ -55,14 +55,14 @@ class LLMEnsemble:
             )
             logger._ensemble_logged = True
 
-    async def generate(self, prompt: str, **kwargs) -> str:
+    async def generate(self, prompt: str, **kwargs) -> Tuple[str, Optional[str]]:
         """Generate text using a randomly selected model based on weights"""
         model = self._sample_model()
         return await model.generate(prompt, **kwargs)
 
     async def generate_with_context(
         self, system_message: str, messages: List[Dict[str, str]], **kwargs
-    ) -> str:
+    ) -> Tuple[str, Optional[str]]:
         """Generate text using a system message and conversational context"""
         model = self._sample_model()
         return await model.generate_with_context(system_message, messages, **kwargs)
@@ -74,21 +74,21 @@ class LLMEnsemble:
         logger.info(f"Sampled model: {vars(sampled_model)['model']}")
         return sampled_model
 
-    async def generate_multiple(self, prompt: str, n: int, **kwargs) -> List[str]:
+    async def generate_multiple(self, prompt: str, n: int, **kwargs) -> List[Tuple[str, Optional[str]]]:
         """Generate multiple texts in parallel"""
         tasks = [self.generate(prompt, **kwargs) for _ in range(n)]
         return await asyncio.gather(*tasks)
 
-    async def parallel_generate(self, prompts: List[str], **kwargs) -> List[str]:
+    async def parallel_generate(self, prompts: List[str], **kwargs) -> List[Tuple[str, Optional[str]]]:
         """Generate responses for multiple prompts in parallel"""
         tasks = [self.generate(prompt, **kwargs) for prompt in prompts]
         return await asyncio.gather(*tasks)
 
     async def generate_all_with_context(
         self, system_message: str, messages: List[Dict[str, str]], **kwargs
-    ) -> str:
-        """Generate text using a all available models and average their returned metrics"""
-        responses = []
+    ) -> List[Tuple[str, Optional[str]]]:
+        """Generate text using all available models and collect their responses"""
+        responses: List[Tuple[str, Optional[str]]] = []
         for model in self.models:
             responses.append(await model.generate_with_context(system_message, messages, **kwargs))
         return responses

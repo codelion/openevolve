@@ -77,25 +77,25 @@ async def run_iteration_with_shared_db(
         iteration_start = time.time()
 
         # Generate code modification
-        llm_response = await llm_ensemble.generate_with_context(
+        llm_content, llm_reasoning = await llm_ensemble.generate_with_context(
             system_message=prompt["system"],
             messages=[{"role": "user", "content": prompt["user"]}],
         )
 
         # Parse the response
         if config.diff_based_evolution:
-            diff_blocks = extract_diffs(llm_response, config.diff_pattern)
+            diff_blocks = extract_diffs(llm_content, config.diff_pattern)
 
             if not diff_blocks:
                 logger.warning(f"Iteration {iteration+1}: No valid diffs found in response")
                 return None
 
             # Apply the diffs
-            child_code = apply_diff(parent.code, llm_response, config.diff_pattern)
+            child_code = apply_diff(parent.code, llm_content, config.diff_pattern)
             changes_summary = format_diff_summary(diff_blocks)
         else:
             # Parse full rewrite
-            new_code = parse_full_rewrite(llm_response, config.language)
+            new_code = parse_full_rewrite(llm_content, config.language)
 
             if not new_code:
                 logger.warning(f"Iteration {iteration+1}: No valid code found in response")
@@ -141,6 +141,7 @@ async def run_iteration_with_shared_db(
                         "system": prompt["system"],
                         "user": prompt["user"],
                         "responses": [llm_response] if llm_response is not None else [],
+                        "reasonings": [llm_reasoning] if llm_reasoning is not None else [],
                     }
                 }
                 if database.config.log_prompts

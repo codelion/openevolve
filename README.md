@@ -355,6 +355,29 @@ llm:
 ```
 
 </details>
+<details>
+<summary><b>🕵 Aliyun BaiLian(CoT analysis)</b></summary>
+The `enable_thinking` parameter can only be enabled when specifying a model in the `models` list.
+
+```yaml
+# config.yaml
+llm:
+  api_base: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  thinking_budget: 2048
+  models:
+    - name: "qwen-flash"
+      weight: 0.5
+      enable_thinking: false
+    - name: "qwen-plus"
+      weight: 0.5
+      enable_thinking: true
+```
+
+```bash
+export OPENAI_API_KEY="your-bailian-api-key"
+```
+
+</details>
 
 ## Examples Gallery
 
@@ -450,12 +473,18 @@ random_seed: 42  # Full reproducibility
 
 llm:
   # Ensemble configuration
+  api_base: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  thinking_budget: 2048 # budget for thinking models, only work when enable_thinking
   models:
-    - name: "gemini-2.5-pro"
+    - name: "qwen-plus"
       weight: 0.6
-    - name: "gemini-2.5-flash"
+      enable_thinking: true  # important: if the API provider donot provide this paramters, set this will cause fail!
+    - name: "qwen-flash"
       weight: 0.4
+      enable_thinking: false
   temperature: 0.7
+  max_tokens: 16384
+  timeout: 300
 
 database:
   # MAP-Elites quality-diversity
