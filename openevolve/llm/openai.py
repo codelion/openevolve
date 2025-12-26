@@ -53,7 +53,7 @@ class OpenAILLM(LLMInterface):
             logger.info(f"Initialized OpenAI LLM with model: {self.model}")
             logger._initialized_models.add(self.model)
 
-    async def generate(self, prompt: str, **kwargs) -> str:
+    async def generate(self, prompt: str, **kwargs) -> tuple[str, Optional[str]]:
         """Generate text from a prompt"""
         return await self.generate_with_context(
             system_message=self.system_message,
@@ -63,7 +63,7 @@ class OpenAILLM(LLMInterface):
 
     async def generate_with_context(
         self, system_message: str, messages: List[Dict[str, str]], **kwargs
-    ) -> str:
+    ) -> tuple[str, Optional[str]]:
         """Generate text using a system message and conversational context"""
         # Prepare messages with system message
         formatted_messages = [{"role": "system", "content": system_message}]
@@ -120,6 +120,10 @@ class OpenAILLM(LLMInterface):
             if reasoning_effort is not None:
                 params["reasoning_effort"] = reasoning_effort
 
+        # Add extra body to enable thinking capability across providers
+        # This leverages SDK's ability to forward unknown fields
+        params["extra_body"] = {"enable_thinking": True}
+
         # Add seed parameter for reproducibility if configured
         # Skip seed parameter for Google AI Studio endpoint as it doesn't support it
         seed = kwargs.get("seed", self.random_seed)
@@ -139,8 +143,8 @@ class OpenAILLM(LLMInterface):
 
         for attempt in range(retries + 1):
             try:
-                response = await asyncio.wait_for(self._call_api(params), timeout=timeout)
-                return response
+                content, reasoning_content = await asyncio.wait_for(self._call_api(params), timeout=timeout)
+                return content, reasoning_content
             except asyncio.TimeoutError:
                 if attempt < retries:
                     logger.warning(f"Timeout on attempt {attempt + 1}/{retries + 1}. Retrying...")
@@ -158,15 +162,29 @@ class OpenAILLM(LLMInterface):
                     logger.error(f"All {retries + 1} attempts failed with error: {str(e)}")
                     raise
 
-    async def _call_api(self, params: Dict[str, Any]) -> str:
+        # Safety net to satisfy type checkers; the loop above always returns or raises
+        raise RuntimeError("Failed to generate completion after retries")
+
+    async def _call_api(self, params: Dict[str, Any]) -> tuple[str, Optional[str]]:
         """Make the actual API call"""
         # Use asyncio to run the blocking API call in a thread pool
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None, lambda: self.client.chat.completions.create(**params)
         )
+        message = response.choices[0].message
+
+        content = message.content
         # Logging of system prompt, user message and response content
         logger = logging.getLogger(__name__)
         logger.debug(f"API parameters: {params}")
-        logger.debug(f"API response: {response.choices[0].message.content}")
-        return response.choices[0].message.content
+        logger.debug(f"API response: {content}")
+
+        # Extract reasoning content if available
+        reasoning_content = None
+        if hasattr(message, "reasoning_content"):
+            logger.debug(f"API reasoning content: {message.reasoning_content}")
+            reasoning_content = message.reasoning_content
+            print(reasoning_content)
+        
+        return content, reasoning_content

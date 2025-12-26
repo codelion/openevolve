@@ -1002,17 +1002,17 @@ class ProgramDatabase:
                             messages=[{"role": "user", "content": user_msg}],
                         ),
                     )
-                    content: str = future.result()
+                    content, _reasoning = future.result()
             except RuntimeError:
                 # No event loop running, safe to use asyncio.run()
-                content: str = asyncio.run(
+                content, _reasoning = asyncio.run(
                     self.novelty_llm.generate_with_context(
                         system_message=NOVELTY_SYSTEM_MSG,
                         messages=[{"role": "user", "content": user_msg}],
                     )
                 )
 
-            if content is None or content is None:
+            if content is None:
                 logger.warning("Novelty LLM returned empty response")
                 return True
 
@@ -2519,6 +2519,7 @@ class ProgramDatabase:
         template_key: str,
         prompt: Dict[str, str],
         responses: Optional[List[str]] = None,
+        reasonings: Optional[List[str]] = None,
     ) -> None:
         """
         Log a prompt for a program.
@@ -2537,6 +2538,10 @@ class ProgramDatabase:
         if responses is None:
             responses = []
         prompt["responses"] = responses
+
+        # Optionally store model reasoning traces
+        if reasonings:
+            prompt["reasonings"] = reasonings
 
         if self.prompts_by_program is None:
             self.prompts_by_program = {}
