@@ -72,12 +72,16 @@ class LLMModelConfig:
     timeout: int = None
     retries: int = None
     retry_delay: int = None
+    thinking_budget: Optional[int] = None
 
     # Reproducibility
     random_seed: Optional[int] = None
 
     # Reasoning parameters
     reasoning_effort: Optional[str] = None
+
+    # enable_thinking (most used in Chinese providers)
+    enable_thinking: Optional[bool] = None
 
     def __post_init__(self):
         """Post-initialization to resolve ${VAR} env var references in api_key"""
@@ -96,6 +100,7 @@ class LLMConfig(LLMModelConfig):
     temperature: float = 0.7
     top_p: float = 0.95
     max_tokens: int = 4096
+    thinking_budget: Optional[int] = None
 
     # Request parameters
     timeout: int = 60
@@ -125,7 +130,8 @@ class LLMConfig(LLMModelConfig):
         if self.primary_model:
             # Create primary model
             primary_model = LLMModelConfig(
-                name=self.primary_model, weight=self.primary_model_weight or 1.0
+                name=self.primary_model,
+                weight=self.primary_model_weight or 1.0,
             )
             self.models.append(primary_model)
 
@@ -171,6 +177,8 @@ class LLMConfig(LLMModelConfig):
             "retry_delay": self.retry_delay,
             "random_seed": self.random_seed,
             "reasoning_effort": self.reasoning_effort,
+            "enable_thinking": self.enable_thinking,
+            "thinking_budget": self.thinking_budget,
         }
         self.update_model_params(shared_config)
 
@@ -191,7 +199,8 @@ class LLMConfig(LLMModelConfig):
         if self.primary_model:
             # Create primary model
             primary_model = LLMModelConfig(
-                name=self.primary_model, weight=self.primary_model_weight or 1.0
+                name=self.primary_model,
+                weight=self.primary_model_weight or 1.0,
             )
             self.models.append(primary_model)
 
@@ -224,6 +233,8 @@ class LLMConfig(LLMModelConfig):
             "retry_delay": self.retry_delay,
             "random_seed": self.random_seed,
             "reasoning_effort": self.reasoning_effort,
+            "enable_thinking": self.enable_thinking,
+            "thinking_budget": self.thinking_budget,
         }
         self.update_model_params(shared_config)
 

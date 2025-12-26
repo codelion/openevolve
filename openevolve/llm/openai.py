@@ -34,6 +34,8 @@ class OpenAILLM(LLMInterface):
         self.api_key = model_cfg.api_key
         self.random_seed = getattr(model_cfg, "random_seed", None)
         self.reasoning_effort = getattr(model_cfg, "reasoning_effort", None)
+        self.enable_thinking = getattr(model_cfg, "enable_thinking", None)
+        self.thinking_budget = getattr(model_cfg, "thinking_budget", None)
 
         # Set up API client
         # OpenAI client requires max_retries to be int, not None
@@ -120,9 +122,29 @@ class OpenAILLM(LLMInterface):
             if reasoning_effort is not None:
                 params["reasoning_effort"] = reasoning_effort
 
-        # Add extra body to enable thinking capability across providers
-        # This leverages SDK's ability to forward unknown fields
-        params["extra_body"] = {"enable_thinking": True}
+        # Attach provider-specific extras such as enable_thinking/thinking_budget
+        extra_body = dict(kwargs.get("extra_body") or {})
+        enable_thinking = kwargs.get("enable_thinking", self.enable_thinking)
+        thinking_budget = kwargs.get("thinking_budget", self.thinking_budget)
+
+        if enable_thinking is not None:
+            extra_body.setdefault("enable_thinking", enable_thinking)
+            if thinking_budget is not None:
+                extra_body.setdefault("thinking_budget", thinking_budget)
+        else:
+            # Warn once per model if thinking_budget is provided without enable_thinking
+            if thinking_budget is not None:
+                if not hasattr(OpenAILLM, "_warned_budget_without_thinking"):
+                    OpenAILLM._warned_budget_without_thinking = set()
+                if self.model not in OpenAILLM._warned_budget_without_thinking:
+                    logger.warning(
+                        "thinking_budget set for model %s without enable_thinking; skipping extra_body",
+                        self.model,
+                    )
+                    OpenAILLM._warned_budget_without_thinking.add(self.model)
+
+        if extra_body:
+            params["extra_body"] = extra_body
 
         # Add seed parameter for reproducibility if configured
         # Skip seed parameter for Google AI Studio endpoint as it doesn't support it
