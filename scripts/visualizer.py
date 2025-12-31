@@ -134,8 +134,35 @@ def program_page(program_id):
 
     data = load_evolution_data(checkpoint_dir)
     program_data = next((p for p in data["nodes"] if p["id"] == program_id), None)
-    program_data = {"code": "", "prompts": {}, **program_data}
+    if program_data is None:
+        return "Program not found", 404
+        
+    # Ensure program_data has required fields with safe defaults
+    program_data = {
+        "code": "",
+        "prompts": {},
+        "metrics": {},
+        "id": "",
+        "island": "",
+        "generation": 0,
+        "parent_id": None,
+        **program_data
+    }
+    # Ensure prompts is a dictionary
+    if not isinstance(program_data["prompts"], dict):
+        program_data["prompts"] = {}
+        
     artifacts_json = program_data.get("artifacts_json", None)
+
+    # Handle unicode escape for artifacts JSON display - same as in sidebar.js
+    if artifacts_json and isinstance(artifacts_json, str):
+        try:
+            # Parse and stringify to properly escape unicode
+            parsed = json.loads(artifacts_json)
+            artifacts_json = json.dumps(parsed, indent=2, ensure_ascii=False)
+        except (json.JSONDecodeError, TypeError):
+            # If parsing fails, use original value
+            pass
 
     return render_template(
         "program_page.html",
