@@ -38,34 +38,55 @@ def load_evolution_data(checkpoint_folder):
     nodes = []
     id_to_program = {}
     pids = set()
+    
+    # Build a map of program_id -> island_idx from islands data
+    pid_to_island = {}
     for island_idx, id_list in enumerate(meta.get("islands", [])):
         for pid in id_list:
-            prog_path = os.path.join(programs_dir, f"{pid}.json")
+            pid_to_island[pid] = island_idx
+    
+    # Start with programs from archive
+    archive = set(meta.get("archive", []))
+    to_load = list(archive)
+    loaded = set()
+    
+    # Recursively load parent nodes even if they're not in archive
+    while to_load:
+        pid = to_load.pop(0)
+        if pid in loaded:
+            continue
+        loaded.add(pid)
+        
+        prog_path = os.path.join(programs_dir, f"{pid}.json")
+        
+        # Keep track of PIDs and if one is double, append "-copyN" to the PID
+        effective_pid = pid
+        if pid in pids:
+            base_pid = pid
+            if "-copy" in base_pid:
+                base_pid = base_pid.rsplit("-copy", 1)[0]
+            copy_num = 1
+            while f"{base_pid}-copy{copy_num}" in pids:
+                copy_num += 1
+            effective_pid = f"{base_pid}-copy{copy_num}"
+        pids.add(effective_pid)
 
-            # Keep track of PIDs and if one is double, append "-copyN" to the PID
-            if pid in pids:
-                base_pid = pid
-
-                # If base_pid already has a "-copyN" suffix, strip it
-                if "-copy" in base_pid:
-                    base_pid = base_pid.rsplit("-copy", 1)[0]
-
-                # Find the next available copy number
-                copy_num = 1
-                while f"{base_pid}-copy{copy_num}" in pids:
-                    copy_num += 1
-                pid = f"{base_pid}-copy{copy_num}"
-            pids.add(pid)
-
-            if os.path.exists(prog_path):
-                with open(prog_path) as pf:
-                    prog = json.load(pf)
-                prog["id"] = pid
-                prog["island"] = island_idx
-                nodes.append(prog)
-                id_to_program[pid] = prog
-            else:
-                logger.debug(f"Program file not found: {prog_path}")
+        if os.path.exists(prog_path):
+            with open(prog_path) as pf:
+                prog = json.load(pf)
+            prog["id"] = effective_pid
+            # Assign island index if the program is in an active island, otherwise -1
+            # Programs not in archive get island = -1 (historical/removed)
+            prog["island"] = pid_to_island.get(pid, -1) if pid in archive else -1
+            nodes.append(prog)
+            id_to_program[effective_pid] = prog
+            
+            # Add parent to loading queue if it exists and hasn't been processed
+            parent_id = prog.get("parent_id")
+            if parent_id and parent_id not in loaded:
+                to_load.append(parent_id)
+        else:
+            logger.debug(f"Program file not found: {prog_path}")
 
     edges = []
     for prog in nodes:
@@ -113,8 +134,35 @@ def program_page(program_id):
 
     data = load_evolution_data(checkpoint_dir)
     program_data = next((p for p in data["nodes"] if p["id"] == program_id), None)
-    program_data = {"code": "", "prompts": {}, **program_data}
+    if program_data is None:
+        return "Program not found", 404
+        
+    # Ensure program_data has required fields with safe defaults
+    program_data = {
+        "code": "",
+        "prompts": {},
+        "metrics": {},
+        "id": "",
+        "island": "",
+        "generation": 0,
+        "parent_id": None,
+        **program_data
+    }
+    # Ensure prompts is a dictionary
+    if not isinstance(program_data["prompts"], dict):
+        program_data["prompts"] = {}
+        
     artifacts_json = program_data.get("artifacts_json", None)
+
+    # Handle unicode escape for artifacts JSON display - same as in sidebar.js
+    if artifacts_json and isinstance(artifacts_json, str):
+        try:
+            # Parse and stringify to properly escape unicode
+            parsed = json.loads(artifacts_json)
+            artifacts_json = json.dumps(parsed, indent=2, ensure_ascii=False)
+        except (json.JSONDecodeError, TypeError):
+            # If parsing fails, use original value
+            pass
 
     return render_template(
         "program_page.html",

@@ -56,6 +56,7 @@ export function updateGraphNodeSelection() {
 }
 
 export function getNodeColor(d) {
+    if (d.island === -1) return "#ffffff";
     if (d.island !== undefined) return d3.schemeCategory10[d.island % 10];
     return getComputedStyle(document.documentElement)
         .getPropertyValue('--node-default').trim() || "#fff";
@@ -109,6 +110,44 @@ export function selectProgram(programId) {
     window.dispatchEvent(new CustomEvent('node-selected', { detail: { id: programId } }));
     updateGraphEdgeSelection(); // update edge highlight on selection
 }
+
+// Add toggle for showing negative island programs in branching view
+(function() {
+    window.addEventListener('DOMContentLoaded', function() {
+        const branchingDiv = document.getElementById('view-branching');
+        if (!branchingDiv) return;
+        
+        // Check if toggle already exists
+        let toggleDiv = document.getElementById('branching-negative-island-toggle');
+        if (!toggleDiv) {
+            toggleDiv = document.createElement('div');
+            toggleDiv.id = 'branching-negative-island-toggle';
+            toggleDiv.style = 'display:flex;align-items:center;gap:0.7em;margin-left:3em;';
+            toggleDiv.innerHTML = `
+            <label class="toggle-switch">
+                <input type="checkbox" id="show-negative-island-toggle-graph">
+                <span class="toggle-slider"></span>
+            </label>
+            <span style="font-weight:500;font-size:1.08em;color:#fff;background:#0008;padding:0.2em 0.5em;border-radius:4px;">Show Ghost Nodes</span>
+            `;
+            branchingDiv.insertBefore(toggleDiv, branchingDiv.firstChild);
+            
+            // Add event listener for the toggle
+            const toggle = document.getElementById('show-negative-island-toggle-graph');
+            toggle.addEventListener('change', function() {
+                // Re-render the graph when toggle changes
+                let edges = [];
+                if (typeof lastDataStr === 'string') {
+                    try {
+                        const parsed = JSON.parse(lastDataStr);
+                        edges = parsed.edges || [];
+                    } catch {}
+                }
+                renderGraph({ nodes: allNodeData, edges: edges });
+            });
+        }
+    });
+})();
 
 let svg = null;
 let g = null;
@@ -185,6 +224,18 @@ function applyDragHandlersToAllNodes() {
 }
 
 function renderGraph(data, options = {}) {
+    // Filter nodes based on show negative island toggle
+    const showNegativeIsland = document.getElementById('show-negative-island-toggle-graph')?.checked;
+    let filteredData = { nodes: data.nodes, edges: data.edges };
+    if (!showNegativeIsland) {
+        filteredData.nodes = data.nodes.filter(n => n.island !== -1);
+        // Also filter edges to only include edges between filtered nodes
+        const filteredNodeIds = new Set(filteredData.nodes.map(n => n.id));
+        filteredData.edges = data.edges.filter(e => 
+            filteredNodeIds.has(e.source.id || e.source) && filteredNodeIds.has(e.target.id || e.target)
+        );
+    }
+    
     const { svg: svgEl, g: gEl } = ensureGraphSvg();
     svg = svgEl;
     g = gEl;
@@ -206,13 +257,13 @@ function renderGraph(data, options = {}) {
 
     // Keep simulation alive and update nodes/links
     if (!simulation) {
-        simulation = d3.forceSimulation(data.nodes)
-            .force("link", d3.forceLink(data.edges).id(d => d.id).distance(80))
+        simulation = d3.forceSimulation(filteredData.nodes)
+            .force("link", d3.forceLink(filteredData.edges).id(d => d.id).distance(80))
             .force("charge", d3.forceManyBody().strength(-200))
             .force("center", d3.forceCenter(width / 2, height / 2));
     } else {
-        simulation.nodes(data.nodes);
-        simulation.force("link").links(data.edges);
+        simulation.nodes(filteredData.nodes);
+        simulation.force("link").links(filteredData.edges);
         simulation.alpha(0.7).restart();
     }
 
@@ -220,20 +271,20 @@ function renderGraph(data, options = {}) {
         .attr("stroke", "#999")
         .attr("stroke-opacity", 0.6)
         .selectAll("line")
-        .data(data.edges)
+        .data(filteredData.edges)
         .enter().append("line")
         .attr("stroke-width", 2);
 
     const metric = getSelectedMetric();
     const highlightFilter = document.getElementById('highlight-select').value;
-    const highlightNodes = getHighlightNodes(data.nodes, highlightFilter, metric);
+    const highlightNodes = getHighlightNodes(filteredData.nodes, highlightFilter, metric);
     const highlightIds = new Set(highlightNodes.map(n => n.id));
 
     const node = g.append("g")
         .attr("stroke", getComputedStyle(document.documentElement).getPropertyValue('--node-stroke').trim() || "#fff")
         .attr("stroke-width", 1.5)
         .selectAll("circle")
-        .data(data.nodes)
+        .data(filteredData.nodes)
         .enter().append("circle")
         .attr("r", d => getNodeRadius(d))
         .attr("fill", d => getNodeColor(d))
@@ -399,8 +450,17 @@ export function animateGraphNodeAttributes() {
     if (!g) return;
     const metric = getSelectedMetric();
     const filter = document.getElementById('highlight-select').value;
-    const highlightNodes = getHighlightNodes(allNodeData, filter, metric);
+    
+    // Filter nodes based on show negative island toggle
+    const showNegativeIsland = document.getElementById('show-negative-island-toggle-graph')?.checked;
+    let dataToUse = allNodeData;
+    if (!showNegativeIsland) {
+        dataToUse = allNodeData.filter(n => n.island !== -1);
+    }
+    
+    const highlightNodes = getHighlightNodes(dataToUse, filter, metric);
     const highlightIds = new Set(highlightNodes.map(n => n.id));
+    
     g.selectAll('circle')
         .transition().duration(400)
         .attr('r', d => getNodeRadius(d))

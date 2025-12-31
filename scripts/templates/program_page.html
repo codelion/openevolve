@@ -61,12 +61,18 @@
         {% endmacro %}
         {#-- loop over every prompts --#}
         <div class="prompts">
-        {% for key, value in program_data.prompts.items() %}
+        {% if program_data.prompts is defined and program_data.prompts is mapping %}
+            {% for key, value in program_data.prompts.items() %}
+                <section>
+                <h3>{{ key|title }}</h3>
+                {{ display(value) }}
+                </section>
+            {% endfor %}
+        {% else %}
             <section>
-            <h3>{{ key|title }}</h3>
-            {{ display(value) }}
+            <p>No prompts available</p>
             </section>
-        {% endfor %}
+        {% endif %}
         </div>
     </ul>
     {% if artifacts_json %}
