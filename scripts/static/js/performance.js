@@ -21,6 +21,22 @@ import { selectListNodeById } from './list.js';
             `;
             perfDiv.insertBefore(toggleDiv, perfDiv.firstChild);
         }
+        
+        // Add toggle for showing island -1 programs
+        let negativeIslandToggleDiv = document.getElementById('perf-negative-island-toggle');
+        if (!negativeIslandToggleDiv) {
+            negativeIslandToggleDiv = document.createElement('div');
+            negativeIslandToggleDiv.id = 'perf-negative-island-toggle';
+            negativeIslandToggleDiv.style = 'display:flex;align-items:center;gap:0.7em;margin-left:3em;';
+            negativeIslandToggleDiv.innerHTML = `
+            <label class="toggle-switch">
+                <input type="checkbox" id="show-negative-island-toggle">
+                <span class="toggle-slider"></span>
+            </label>
+            <span style="font-weight:500;font-size:1.08em;">Show Ghost Nodes</span>
+            `;
+            perfDiv.insertBefore(negativeIslandToggleDiv, perfDiv.firstChild);
+        }
         function animatePerformanceGraphAttributes() {
             const svg = d3.select('#performance-graph');
             if (svg.empty()) return;
@@ -29,7 +45,11 @@ import { selectListNodeById } from './list.js';
             const metric = getSelectedMetric();
             const highlightFilter = document.getElementById('highlight-select').value;
             const showIslands = document.getElementById('show-islands-toggle')?.checked;
-            const nodes = allNodeData;
+            const showNegativeIsland = document.getElementById('show-negative-island-toggle')?.checked;
+            let nodes = allNodeData;
+            if (!showNegativeIsland) {
+                nodes = allNodeData.filter(n => n.island !== -1);
+            }
             const validNodes = nodes.filter(n => n.metrics && typeof n.metrics[metric] === 'number');
             const undefinedNodes = nodes.filter(n => !n.metrics || n.metrics[metric] == null || isNaN(n.metrics[metric]));
             let islands = [];
@@ -154,6 +174,11 @@ import { selectListNodeById } from './list.js';
         });
         // Show islands yes/no toggle event
         document.getElementById('show-islands-toggle').addEventListener('change', function() {
+            updatePerformanceGraph(allNodeData);
+        });
+        
+        // Show negative island (-1) toggle event
+        document.getElementById('show-negative-island-toggle').addEventListener('change', function() {
             updatePerformanceGraph(allNodeData);
         });
         // Responsive resize
@@ -301,6 +326,13 @@ function autoZoomPerformanceGraph(nodes, x, yScales, islands, graphHeight, margi
 }
 
 function updatePerformanceGraph(nodes, options = {}) {
+    // Filter nodes based on show negative island toggle
+    const showNegativeIsland = document.getElementById('show-negative-island-toggle')?.checked;
+    let filteredNodes = nodes;
+    if (!showNegativeIsland) {
+        filteredNodes = nodes.filter(n => n.island !== -1);
+    }
+    
     // Get or create SVG
     if (!svg) {
         svg = d3.select('#performance-graph');
@@ -371,7 +403,7 @@ function updatePerformanceGraph(nodes, options = {}) {
                 .attr('stroke', function(d) {
                     // Use highlight color if highlighted, else default
                     const highlightFilter = document.getElementById('highlight-select').value;
-                    const highlightNodes = getHighlightNodes(nodes, highlightFilter, getSelectedMetric());
+                    const highlightNodes = getHighlightNodes(filteredNodes, highlightFilter, getSelectedMetric());
                     const highlightIds = new Set(highlightNodes.map(n => n.id));
                     return highlightIds.has(d.id) ? '#2196f3' : '#333';
                 })
@@ -389,16 +421,16 @@ function updatePerformanceGraph(nodes, options = {}) {
     const sidebarWidth = sidebarEl.offsetWidth || 400;
     const width = Math.max(windowWidth - sidebarWidth - padding, 400);
     const metric = getSelectedMetric();
-    const validNodes = nodes.filter(n => n.metrics && typeof n.metrics[metric] === 'number');
-    const undefinedNodes = nodes.filter(n => !n.metrics || n.metrics[metric] == null || isNaN(n.metrics[metric]));
+    const validNodes = filteredNodes.filter(n => n.metrics && typeof n.metrics[metric] === 'number');
+    const undefinedNodes = filteredNodes.filter(n => !n.metrics || n.metrics[metric] == null || isNaN(n.metrics[metric]));
     const showIslands = document.getElementById('show-islands-toggle')?.checked;
     let islands = [];
     if (showIslands) {
-        islands = Array.from(new Set(nodes.map(n => n.island))).sort((a,b)=>a-b);
+        islands = Array.from(new Set(filteredNodes.map(n => n.island))).sort((a,b)=>a-b);
     } else {
         islands = [null];
     }
-    const yExtent = d3.extent(nodes, d => d.generation);
+    const yExtent = d3.extent(filteredNodes, d => d.generation);
     const minGen = 0;
     const maxGen = yExtent[1];
     const margin = {top: 60, right: 40, bottom: 40, left: 60};
@@ -523,8 +555,8 @@ function updatePerformanceGraph(nodes, options = {}) {
         });
     }
     // Data join for edges
-    const nodeById = Object.fromEntries(nodes.map(n => [n.id, n]));
-    const edges = nodes.filter(n => n.parent_id && nodeById[n.parent_id]).map(n => ({ source: nodeById[n.parent_id], target: n }));
+    const nodeById = Object.fromEntries(filteredNodes.map(n => [n.id, n]));
+    const edges = filteredNodes.filter(n => n.parent_id && nodeById[n.parent_id]).map(n => ({ source: nodeById[n.parent_id], target: n }));
     // Remove all old edges before re-adding (fixes missing/incorrect edges after metric change)
     g.selectAll('line.performance-edge').remove();
     // Helper to get x/y for a node (handles NaN and valid nodes)
