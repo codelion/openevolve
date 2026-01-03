@@ -17,6 +17,7 @@ import json
 import subprocess
 import tempfile
 import os
+import sys
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional
 import mlx.core as mx
@@ -53,8 +54,15 @@ class BenchmarkConfig:
 class Qwen3BenchmarkSuite:
     """Comprehensive benchmark suite for Qwen3-0.6B Metal kernel optimization"""
 
-    def __init__(self, model_path: str = "mlx-community/Qwen3-0.6B-bf16"):
+    def __init__(
+        self,
+        model_path: str = "mlx-community/Qwen3-0.6B-bf16",
+        hook_program_path: Optional[str] = None,
+    ):
         self.model_path = model_path
+        # When set, benchmarks will run via `mlx_lm_generate_with_hook.py` so that
+        # the attention monkey-patch is applied inside the subprocess.
+        self.hook_program_path = hook_program_path
         self.results: List[BenchmarkResult] = []
 
     def create_benchmark_configs(self) -> List[BenchmarkConfig]:
@@ -566,17 +574,35 @@ Given this comprehensive overview of the current state and future directions of 
 
         try:
             # Build command
-            cmd = [
-                "python",
-                "-m",
-                "mlx_lm.generate",
-                "--model",
-                self.model_path,
-                "--prompt",
-                config.prompt,
-                "--max-tokens",
-                str(config.max_tokens),
-            ]
+            if self.hook_program_path:
+                wrapper_path = os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)),
+                    "mlx_lm_generate_with_hook.py",
+                )
+                cmd = [
+                    sys.executable,
+                    wrapper_path,
+                    "--hook-program",
+                    self.hook_program_path,
+                    "--model",
+                    self.model_path,
+                    "--prompt",
+                    config.prompt,
+                    "--max-tokens",
+                    str(config.max_tokens),
+                ]
+            else:
+                cmd = [
+                    sys.executable,
+                    "-m",
+                    "mlx_lm.generate",
+                    "--model",
+                    self.model_path,
+                    "--prompt",
+                    config.prompt,
+                    "--max-tokens",
+                    str(config.max_tokens),
+                ]
 
             # Clear MLX cache before starting
             print(f"🧹 Clearing MLX cache...")

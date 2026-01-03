@@ -136,6 +136,7 @@ class BulletproofMetalEvaluator:
                 )
 
             custom_attention_class = extraction_result["class"]
+            program_source = extraction_result["program_text"]
 
             # Step 2: Pre-execution Metal kernel safety validation
             print("\n🔍 STEP 2: Pre-execution Metal Kernel Safety Validation")
@@ -168,7 +169,9 @@ class BulletproofMetalEvaluator:
 
             # Step 5: Command-buffer-protected benchmarking
             print("\n🚀 STEP 5: Command-Buffer-Protected Performance Benchmarking")
-            benchmark_result = self._command_buffer_protected_benchmark(custom_attention_class)
+            benchmark_result = self._command_buffer_protected_benchmark(
+                program_source, custom_attention_class
+            )
             if not benchmark_result["success"]:
                 return self._create_comprehensive_failure_result(
                     f"Command-buffer-protected benchmarking failed: {benchmark_result['error']}"
@@ -191,6 +194,7 @@ class BulletproofMetalEvaluator:
             result = {
                 "success": True,
                 "final_score": final_score,
+                "combined_score": final_score,
                 "performance_metrics": performance_analysis["aggregate_metrics"],
                 "correctness_score": correctness_score,
                 "benchmark_results": [self._result_to_dict(r) for r in custom_results],
@@ -295,7 +299,12 @@ class BulletproofMetalEvaluator:
             print(f"  ✅ Successfully extracted and validated CustomGQAAttention class")
             print(f"  🛡️  Metal safety pre-checks: {metal_validation['safe']}")
 
-            return {"success": True, "class": custom_class, "metal_validation": metal_validation}
+            return {
+                "success": True,
+                "class": custom_class,
+                "metal_validation": metal_validation,
+                "program_text": actual_program_text,
+            }
 
         except Exception as e:
             self.total_metal_errors += 1
@@ -721,7 +730,9 @@ class BulletproofMetalEvaluator:
             else:
                 raise ValueError(f"Sequence test error: {error_msg}")
 
-    def _command_buffer_protected_benchmark(self, custom_attention_class: Any) -> Dict[str, Any]:
+    def _command_buffer_protected_benchmark(
+        self, program_text: str, custom_attention_class: Any
+    ) -> Dict[str, Any]:
         """Command-buffer-protected benchmarking with maximum safety"""
         print("  🚀 Running command-buffer-protected benchmarking...")
 
@@ -748,8 +759,17 @@ class BulletproofMetalEvaluator:
                     }
 
                 original_attention = hook_result["original"]
+                temp_program_path = None
 
                 try:
+                    # Ensure the evolved program is available to the subprocess that runs mlx_lm.generate.
+                    # Monkey-patching in this evaluator process does NOT propagate across subprocess boundaries.
+                    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".py") as f:
+                        f.write(program_text)
+                        temp_program_path = f.name
+
+                    self.benchmark_suite.hook_program_path = temp_program_path
+
                     # Run benchmarks with command buffer protection
                     custom_configs = self._get_safe_benchmark_configs()
                     custom_results = []
@@ -820,6 +840,13 @@ class BulletproofMetalEvaluator:
                         return {"success": False, "error": error_msg}
 
                 finally:
+                    # Always clear subprocess hook settings and clean up temp program
+                    self.benchmark_suite.hook_program_path = None
+                    if temp_program_path:
+                        try:
+                            os.unlink(temp_program_path)
+                        except OSError:
+                            pass
                     # Always restore original attention
                     self._gpu_protected_remove_hook(original_attention)
 
@@ -1333,6 +1360,7 @@ class BulletproofMetalEvaluator:
         return {
             "success": False,
             "final_score": -1000.0,
+            "combined_score": -1000.0,
             "error": error_message,
             "performance_metrics": {},
             "correctness_score": 0.0,
