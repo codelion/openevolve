@@ -377,8 +377,10 @@ class BulletproofMetalEvaluator:
 
             # Mock arguments for safety testing
             class MockArgs:
-                hidden_size = 5120
-                num_attention_heads = 40
+                # NOTE: This should reflect the default model used by this evaluator:
+                # `mlx-community/Qwen3-0.6B-bf16` (16 Q heads : 8 KV heads, head_dim=128).
+                hidden_size = 2048
+                num_attention_heads = 16
                 num_key_value_heads = 8
                 head_dim = 128
                 rms_norm_eps = 1e-06
@@ -396,11 +398,14 @@ class BulletproofMetalEvaluator:
 
                 print("  ✅ Custom attention instantiation successful")
 
-                # Basic parameter validation
-                if hasattr(instance, "n_heads") and instance.n_heads != 40:
-                    return {"success": False, "error": f"Invalid head count: {instance.n_heads}"}
+                # Basic parameter validation (should match the args we instantiated with)
+                if hasattr(instance, "n_heads") and instance.n_heads != args.num_attention_heads:
+                    return {
+                        "success": False,
+                        "error": f"Invalid head count: {instance.n_heads} (expected {args.num_attention_heads})",
+                    }
 
-                if hasattr(instance, "n_kv_heads") and instance.n_kv_heads != 8:
+                if hasattr(instance, "n_kv_heads") and instance.n_kv_heads != args.num_key_value_heads:
                     return {
                         "success": False,
                         "error": f"Invalid KV head count: {instance.n_kv_heads}",
@@ -543,8 +548,9 @@ class BulletproofMetalEvaluator:
         try:
             # Safe test configuration
             class MockArgs:
-                hidden_size = 5120
-                num_attention_heads = 40
+                # Must match the default model `mlx-community/Qwen3-0.6B-bf16`
+                hidden_size = 2048
+                num_attention_heads = 16
                 num_key_value_heads = 8
                 head_dim = 128
                 rms_norm_eps = 1e-06
@@ -556,10 +562,10 @@ class BulletproofMetalEvaluator:
 
             # Conservative test cases (smaller sequences for safety)
             test_cases = [
-                (1, 8, 5120),  # Micro sequence
-                (1, 16, 5120),  # Very short
-                (1, 32, 5120),  # Short sequence
-                (1, 64, 5120),  # Medium sequence
+                (1, 8, 2048),  # Micro sequence
+                (1, 16, 2048),  # Very short
+                (1, 32, 2048),  # Short sequence
+                (1, 64, 2048),  # Medium sequence
             ]
 
             correctness_scores = []
@@ -576,7 +582,10 @@ class BulletproofMetalEvaluator:
                         self._ensure_clean_gpu_state()
 
                         # Create conservative test inputs
-                        x = mx.random.normal((B, L, D)) * 0.1  # Smaller values for safety
+                        # IMPORTANT: Match the real inference dtype used by the default model
+                        # (`mlx-community/Qwen3-0.6B-bf16`), otherwise Metal kernels may compile
+                        # for float32 in correctness tests but fail under bfloat16 in practice.
+                        x = (mx.random.normal((B, L, D)) * 0.1).astype(mx.bfloat16)
                         mask = "causal"
 
                         # Test with maximum GPU protection
@@ -652,6 +661,11 @@ class BulletproofMetalEvaluator:
     ) -> float:
         """Test single sequence with enhanced memory safety"""
         try:
+            # Force bfloat16 to exercise the same kernel template/compilation path as production
+            # inference with `mlx-community/Qwen3-0.6B-bf16`.
+            if x.dtype != mx.bfloat16:
+                x = x.astype(mx.bfloat16)
+
             # Pre-execution safety checks
             if x.shape[1] > self.max_sequence_length_safe:
                 raise MetalKernelSafetyError(
@@ -667,6 +681,12 @@ class BulletproofMetalEvaluator:
             custom_attn = custom_attention_class(args)
             if custom_attn is None:
                 raise ValueError("Failed to instantiate custom attention")
+
+            # Ensure module parameters follow the intended compute dtype as well.
+            # Otherwise, float32 weights can upcast intermediate Q/K/V tensors and
+            # accidentally avoid bfloat16 kernel compilation.
+            if hasattr(custom_attn, "set_dtype"):
+                custom_attn.set_dtype(mx.bfloat16)
 
             # Conservative forward pass with timeout simulation
             start_time = time.time()

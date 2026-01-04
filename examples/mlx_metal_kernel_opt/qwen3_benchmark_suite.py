@@ -8,7 +8,7 @@ discovered by OpenEvolve against MLX's standard attention implementation.
 
 Target Model: mlx-community/Qwen3-0.6B-bf16
 Target Hardware: Apple M4 24GB
-Optimization: Custom Metal kernel for GQA attention (40 query heads : 8 KV heads)
+Optimization: Custom Metal kernel for GQA attention (16 query heads : 8 KV heads)
 Baseline: mx.fast.scaled_dot_product_attention
 """
 

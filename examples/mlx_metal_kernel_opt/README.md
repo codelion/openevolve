@@ -14,7 +14,7 @@ Modern transformer models rely heavily on optimized attention kernels for effici
 
 ### 1.2 Target System
 
-- **Model**: Qwen3-0.6B with Grouped Query Attention (40 query heads : 8 key-value heads)
+- **Model**: Qwen3-0.6B with Grouped Query Attention (16 query heads : 8 key-value heads)
 - **Hardware**: Apple M-series GPUs with unified memory architecture  
 - **Framework**: MLX with custom Metal kernel integration
 - **Baseline**: `mx.fast.scaled_dot_product_attention`
@@ -111,7 +111,7 @@ for (uint key_pos = 0; key_pos < SEQ_LEN; key_pos++) {
 const uint q_base = batch_idx * (NUM_HEADS * SEQ_LEN * HEAD_DIM) + 
                     head_idx * (SEQ_LEN * HEAD_DIM) + 
                     query_pos * HEAD_DIM;
-const uint kv_head_idx = head_idx / HEADS_PER_KV;  // Direct 5:1 mapping
+const uint kv_head_idx = head_idx / HEADS_PER_KV;  // Direct 2:1 mapping
 ```
 
 **Innovation**: Leverages unified memory bandwidth through coalesced access patterns and direct GQA head mapping.
@@ -186,7 +186,7 @@ The evolved kernel shows workload-dependent performance characteristics:
 
 **Algorithm Innovation**: The two-pass online softmax represents a novel contribution, demonstrating that evolutionary approaches can discover algorithmic improvements beyond simple micro-optimizations.
 
-**GQA Specialization**: Direct exploitation of the 5:1 query-to-KV head ratio through specialized indexing patterns shows the value of architecture-specific optimizations.
+**GQA Specialization**: Direct exploitation of the 2:1 query-to-KV head ratio through specialized indexing patterns shows the value of architecture-specific optimizations.
 
 ### 5.3 Evolutionary Process Analysis
 
@@ -211,7 +211,7 @@ Our approach differs by applying evolutionary optimization directly to GPU shade
 ### 7.1 Current Limitations
 
 - **Workload Specificity**: Performance improvements are highly dependent on sequence patterns
-- **Model Scope**: Results specific to Qwen3-0.6B's 40:8 GQA configuration
+- **Model Scope**: Results specific to Qwen3-0.6B's 16:8 GQA configuration
 - **Hardware Scope**: Optimizations specific to Apple Silicon architecture
 
 ### 7.2 Future Directions
