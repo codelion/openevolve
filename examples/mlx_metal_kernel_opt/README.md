@@ -4,7 +4,9 @@
 
 ## Abstract
 
-This work demonstrates the application of evolutionary code optimization to the automatic discovery of custom Metal GPU kernels for transformer attention mechanisms. Using OpenEvolve, we evolved a specialized Metal kernel for Grouped Query Attention (GQA) in Qwen3-0.6B that leverages Apple Silicon's unified memory architecture and vector processing capabilities. Our approach achieved measurable performance improvements over MLX's highly optimized `scaled_dot_product_attention` baseline across diverse inference workloads, with decode speed improvements averaging 12.5% and reaching up to 106% on specific benchmark tasks.
+This example demonstrates evolutionary code optimization for discovering custom Apple Silicon Metal GPU kernels for transformer attention. It targets Grouped Query Attention (GQA) in Qwen3-0.6B using MLX’s `metal_kernel` API, with performance evaluated via `mlx_lm.generate`.
+
+> **Important**: Earlier versions of this example had evaluation validity issues (subprocess benchmarks not using the evolved kernel, correctness tests using float32 while the default model is bfloat16, and docs/tests assuming the wrong head configuration). These issues can lead to misleading “best program” results and invalid performance claims. The example has been updated to address these problems.
 
 ## 1. Introduction
 
@@ -36,8 +38,8 @@ We employ OpenEvolve to automatically optimize the Metal kernel source code resp
 
 Each evolved kernel undergoes comprehensive evaluation:
 
-1. **Correctness Validation**: Numerical accuracy verification against MLX baseline
-2. **Performance Benchmarking**: 20 diverse inference scenarios covering:
+1. **Correctness Validation**: Functional/safety checks and dtype coverage consistent with the target model (bfloat16 by default).
+2. **Performance Benchmarking**: Diverse inference scenarios covering:
    - Short context (16-64 tokens)
    - Long context (512-2048 tokens) 
    - Code generation
@@ -81,7 +83,7 @@ for (uint d_vec = 0; d_vec < HEAD_DIM / 8; d_vec++) {
 }
 ```
 
-**Innovation**: Using 8-element vectors perfectly matches Apple Silicon's SIMD capabilities for 128-dimensional attention heads.
+**Note**: Vectorized kernels must be validated under the target dtype (bfloat16 by default). Some vectorized patterns (e.g. `dot(vec<bfloat, N>)`) may not compile on Metal and should be caught by correctness gating.
 
 #### 3.1.2 Online Softmax Algorithm
 ```metal
@@ -128,57 +130,35 @@ The evolved kernel exploits specific Apple Silicon features:
 
 ### 4.1 Performance Benchmarking
 
-We evaluated the evolved kernel against MLX baseline across 20 comprehensive benchmark scenarios representing real-world inference patterns.
+We evaluate kernels against the MLX baseline across a benchmark suite representing real-world inference patterns.
 
-**Aggregate Performance Improvements**:
-- **Decode Speed**: +12.5% average improvement (σ = 38.3%)
-- **Prefill Speed**: +14.4% average improvement (σ = 17.6%)  
-- **Total Throughput**: +10.4% average improvement (σ = 30.7%)
-- **Memory Usage**: +0.99% average reduction (σ = 1.7%)
+**Note**: If you are comparing results across commits, ensure the benchmarks are actually exercising the custom kernel (subprocess hook) and that correctness covers the target dtype (bfloat16). Otherwise, reported speedups can be noise.
 
-### 4.2 Benchmark Category Analysis
+To reproduce results on your machine:
 
-| **Category** | **Benchmarks** | **Decode Improvement** | **Notable Results** |
-|--------------|----------------|------------------------|-------------------|
-| **Short Context** | 2 | -4.6% ± 3.8% | Mixed results on very short sequences |
-| **Long Context** | 6 | +8.1% ± 42.1% | High variance, strong improvements in some cases |
-| **Code Generation** | 1 | -16.5% | Performance regression |  
-| **General Tasks** | 9 | +24.8% ± 35.4% | Strongest category with 106% peak improvement |
-| **Stress Tests** | 2 | +22.9% ± 31.5% | Robust performance under memory pressure |
+```bash
+cd openevolve/examples/mlx_metal_kernel_opt
+python run_benchmarks.py --mode compare --model mlx-community/Qwen3-0.6B-bf16 --output-dir results
+```
 
-### 4.3 Statistical Analysis
-
-**Distribution of Improvements**:
-- **Significant Gains** (>25%): 7/20 benchmarks
-- **Moderate Gains** (5-25%): 3/20 benchmarks  
-- **Neutral** (±5%): 4/20 benchmarks
-- **Regressions** (<-5%): 6/20 benchmarks
-
-**Peak Performance**: Repetitive pattern generation achieved 106% decode speed improvement, demonstrating the kernel's effectiveness for certain workload characteristics.
+This writes CSV/JSON comparison artifacts into `results/` for analysis.
 
 ### 4.4 Correctness Validation
 
-All evolved kernels maintained numerical correctness:
-- **Accuracy**: 100% correctness score across all test cases
-- **Numerical Stability**: No NaN/Inf values detected
-- **Statistical Validation**: Output distributions within expected ranges
-- **Functional Equivalence**: Attention semantics preserved
+Correctness checks should include:
+- **Target dtype coverage** (bfloat16 by default for `mlx-community/Qwen3-0.6B-bf16`)
+- **Numerical sanity** (no NaN/Inf)
+- **Shape checks**
+- **Safety checks** (GPU command buffer errors / memory violations)
 
 ## 5. Discussion
 
 ### 5.1 Performance Characteristics
 
-The evolved kernel shows workload-dependent performance characteristics:
+Kernel performance is workload-dependent. In particular:
 
-**Strengths**:
-- **Sustained Generation**: +46.6% improvement on dialogue tasks
-- **Long Sequences**: +73.9% improvement on extreme-length generation
-- **Memory Efficiency**: Consistent memory usage reduction
-
-**Limitations**:  
-- **Short Sequences**: Limited improvement due to setup overhead
-- **Code Generation**: -16.5% regression suggesting suboptimal patterns for this workload
-- **Variance**: High performance variance across different sequence patterns
+- **Short sequences**: may see limited gains due to fixed overheads.
+- **Long sequences / sustained decode**: are typically where attention kernels matter most, but must be measured.
 
 ### 5.2 Technical Insights
 
@@ -190,11 +170,7 @@ The evolved kernel shows workload-dependent performance characteristics:
 
 ### 5.3 Evolutionary Process Analysis
 
-**Convergence**: The system converged to the optimal solution within 25 generations, with significant improvements appearing by generation 10.
-
-**Safety**: Zero Metal kernel compilation errors or GPU command buffer failures across all evolution attempts, demonstrating robust evolutionary constraints.
-
-**Diversity**: The evolutionary process explored multiple optimization strategies including different vectorization patterns, memory layouts, and algorithmic approaches.
+With realistic evaluation enabled (subprocess hook + bfloat16 correctness), it is expected that some evolved kernels will be rejected due to bfloat16 Metal compilation/runtime failures. The evaluator should treat these as ordinary candidate failures (not crashes) and continue evolution.
 
 ## 6. Related Work
 
@@ -223,6 +199,6 @@ Our approach differs by applying evolutionary optimization directly to GPU shade
 
 ## 8. Conclusion
 
-We demonstrate that evolutionary code optimization can automatically discover hardware-specific GPU kernel optimizations that outperform expert-engineered baselines. The evolved Metal kernel achieved an average 12.5% decode speed improvement through novel vectorization patterns, algorithmic innovations, and Apple Silicon specializations. While performance gains are workload-dependent, the approach successfully identified genuinely novel optimizations that would be challenging to discover through manual optimization.
+We demonstrate how evolutionary code optimization can be applied to discover hardware-specific Metal kernels for transformer attention. Performance gains are workload-dependent; for credible results, rerun the benchmark suite on your machine with the evaluation validity fixes enabled.
 
 This work establishes evolutionary optimization as a viable approach for automated GPU kernel discovery and suggests significant potential for applying similar techniques to other performance-critical computational kernels.
