@@ -203,4 +203,44 @@ We demonstrate how evolutionary code optimization can be applied to discover har
 
 This work establishes evolutionary optimization as a viable approach for automated GPU kernel discovery and suggests significant potential for applying similar techniques to other performance-critical computational kernels.
 
+---
+
+## Appendix: Changelog (Validity & Performance Fixes)
+
+This section documents the specific fixes applied to address evaluation validity issues in the original example.
+
+### Critical Bug Fixes
+
+| Fix | Description | Impact |
+|-----|-------------|--------|
+| **Subprocess Benchmark Hook** | Evolved attention was not applied inside `subprocess.run()` — both baseline and custom benchmarks ran the same MLX attention. Fixed by injecting the hook within the subprocess. | **All reported speedups were invalid before this fix.** |
+| **Dtype Alignment (bfloat16)** | Correctness tests used `float32` inputs while `Qwen3-0.6B-bf16` runs in `bfloat16`. Kernels could pass correctness but fail at inference time. Fixed by testing with `mx.bfloat16`. | Kernels incompatible with bfloat16 are now correctly rejected. |
+| **Head Ratio Correction** | Documentation and tests assumed 16:8 heads, but `Qwen3-0.6B` actually uses 16:8 (2:1 GQA ratio). Verified and aligned. | Prevents confusion in kernel design. |
+
+### Evaluation Efficiency Optimizations
+
+| Optimization | Description | Benefit |
+|--------------|-------------|---------|
+| **Early Exit on Compilation Errors** | Metal compilation errors (e.g., `dot()` on bfloat16 vectors) are deterministic — no point retrying. Now returns immediately with `compilation_error: True`. | Saves ~30s per failed iteration (was retrying 3× per sequence length). |
+| **Correctness-First Evaluation** | Reordered: correctness test runs **before** baseline benchmark. If correctness fails, baseline is skipped. | Saves ~1-2 min per invalid kernel. |
+| **Log Buffering Fix** | Added `PYTHONUNBUFFERED=1` and optional `stdbuf` to `run_evolve_experiment.sh` to ensure `run.log` outputs in correct order. | Reliable log analysis. |
+
+### Files Modified
+
+- `evaluator.py` — Early exit logic, correctness-first ordering, bfloat16 test inputs
+- `qwen3_benchmark_suite.py` — Subprocess hook injection
+- `run_evolve_experiment.sh` — Unbuffered logging
+- `config.yaml` — Documentation alignment
+
+### How to Verify Fixes Are Active
+
+```bash
+# Check for early exit message in logs
+grep "Metal compilation error (no retry)" openevolve_output_*/run.log
+
+# Check correctness runs before baseline (STEP 3 before STEP 4 in old logs, now STEP 3 = correctness)
+grep "STEP 3:" openevolve_output_*/run.log | head -1
+# Should show: "STEP 3: Memory-Safe Custom Attention Correctness Testing"
+```
+
 

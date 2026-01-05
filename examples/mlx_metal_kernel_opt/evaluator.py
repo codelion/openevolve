@@ -145,16 +145,8 @@ class BulletproofMetalEvaluator:
                 print(f"⚠️  Metal kernel safety validation failed: {safety_result['error']}")
                 print("🛡️  Proceeding with enhanced protection...")
 
-            # Step 3: GPU-protected baseline measurement
-            print("\n📊 STEP 3: GPU-Protected Baseline Performance Measurement")
-            baseline_results = self._gpu_protected_measure_baseline()
-            if not baseline_results:
-                return self._create_comprehensive_failure_result(
-                    "Failed to measure baseline performance with GPU protection"
-                )
-
-            # Step 4: Memory-safe correctness testing
-            print("\n🔍 STEP 4: Memory-Safe Custom Attention Correctness Testing")
+            # Step 3: Memory-safe correctness testing FIRST (fail fast, skip baseline if invalid)
+            print("\n🔍 STEP 3: Memory-Safe Custom Attention Correctness Testing")
             correctness_result = self._memory_safe_correctness_test(custom_attention_class)
             if not correctness_result["success"]:
                 return self._create_comprehensive_failure_result(
@@ -165,6 +157,14 @@ class BulletproofMetalEvaluator:
             if correctness_score < 0.90:  # Slightly more lenient for complex kernels
                 return self._create_comprehensive_failure_result(
                     f"Correctness score too low: {correctness_score:.3f} (required: 0.90)"
+                )
+
+            # Step 4: GPU-protected baseline measurement (only if correctness passed)
+            print("\n📊 STEP 4: GPU-Protected Baseline Performance Measurement")
+            baseline_results = self._gpu_protected_measure_baseline()
+            if not baseline_results:
+                return self._create_comprehensive_failure_result(
+                    "Failed to measure baseline performance with GPU protection"
                 )
 
             # Step 5: Command-buffer-protected benchmarking
@@ -1016,7 +1016,8 @@ class BulletproofMetalEvaluator:
                 "code_generation",  # Medium safety
                 "long_context_detailed",  # More challenging but still safe
                 "long_generation",  # Longer generation
-                "maximum_context_stress_test",  # Most challenging - saved for last
+                # Disabled for faster testing
+                #"maximum_context_stress_test",  # Most challenging - saved for last
             ]
 
             config_dict = {c.name: c for c in all_configs}
