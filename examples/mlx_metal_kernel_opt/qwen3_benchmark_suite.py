@@ -581,6 +581,7 @@ Given this comprehensive overview of the current state and future directions of 
                 )
                 cmd = [
                     sys.executable,
+                    "-W", "ignore::RuntimeWarning",  # Suppress harmless import warnings
                     wrapper_path,
                     "--hook-program",
                     self.hook_program_path,
@@ -594,6 +595,7 @@ Given this comprehensive overview of the current state and future directions of 
             else:
                 cmd = [
                     sys.executable,
+                    "-W", "ignore::RuntimeWarning",  # Suppress harmless import warnings
                     "-m",
                     "mlx_lm.generate",
                     "--model",
@@ -615,12 +617,21 @@ Given this comprehensive overview of the current state and future directions of 
                     print(f"   Warmup run {i+1}/{WARMUP_RUNS}...")
                     warmup_result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
                     if warmup_result.returncode != 0:
-                        print(f"   ⚠️  Warmup run {i+1} failed: {warmup_result.stderr[:100]}...")
+                        # Filter out harmless warnings from stderr
+                        stderr_clean = "\n".join(
+                            line for line in warmup_result.stderr.split("\n")
+                            if "RuntimeWarning" not in line and line.strip()
+                        )
+                        if stderr_clean:
+                            print(f"   ⚠️  Warmup run {i+1} failed (code {warmup_result.returncode}): {stderr_clean[:200]}...")
+                        else:
+                            print(f"   ⚠️  Warmup run {i+1} failed (code {warmup_result.returncode})")
                     else:
                         print(f"   ✅ Warmup run {i+1} completed")
 
-                    # Clear cache between warmup runs
+                    # Clear cache and add small delay between runs to reduce GPU contention
                     mx.clear_cache()
+                    time.sleep(0.5)
 
                 except subprocess.TimeoutExpired:
                     print(f"   ⏰ Warmup run {i+1} timed out")
@@ -645,7 +656,16 @@ Given this comprehensive overview of the current state and future directions of 
                     end_time = time.perf_counter()
 
                     if result.returncode != 0:
-                        print(f"   ❌ Measurement run {run_idx+1} failed: {result.stderr[:100]}...")
+                        # Filter out harmless warnings from stderr
+                        stderr_clean = "\n".join(
+                            line for line in result.stderr.split("\n")
+                            if "RuntimeWarning" not in line and line.strip()
+                        )
+                        if stderr_clean:
+                            print(f"   ❌ Measurement run {run_idx+1} failed (code {result.returncode}): {stderr_clean[:200]}...")
+                        else:
+                            print(f"   ❌ Measurement run {run_idx+1} failed (code {result.returncode})")
+                        time.sleep(0.5)  # Small delay before retry
                         continue
 
                     # Parse output
