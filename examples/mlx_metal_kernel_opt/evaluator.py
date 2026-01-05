@@ -608,6 +608,20 @@ class BulletproofMetalEvaluator:
                             elif "memory violation" in error_msg.lower():
                                 local_memory_violations += 1
 
+                            # EARLY EXIT: Metal compilation errors are deterministic - no retry
+                            if "unable to build metal library" in error_msg.lower():
+                                self.metal_compilation_errors += 1
+                                print(f"      ❌ Metal compilation error (no retry): {error_msg[:200]}...")
+                                # Return early - compilation errors won't be fixed by retrying
+                                return {
+                                    "success": False,
+                                    "score": 0.0,
+                                    "error": "Metal kernel compilation failed - bfloat16 incompatible code",
+                                    "command_buffer_errors": local_command_buffer_errors,
+                                    "memory_violations": local_memory_violations,
+                                    "compilation_error": True,
+                                }
+
                             if retry_count < self.max_retry_attempts:
                                 print(
                                     f"      🔄 Retry {retry_count + 1} for length {L}: {error_msg}"
@@ -623,6 +637,19 @@ class BulletproofMetalEvaluator:
                     except Exception as e:
                         error_msg = str(e)
                         print(f"      ❌ Exception for length {L}: {error_msg}")
+
+                        # EARLY EXIT: Metal compilation errors are deterministic - no retry
+                        if "unable to build metal library" in error_msg.lower():
+                            self.metal_compilation_errors += 1
+                            print(f"      ❌ Metal compilation error (no retry): {error_msg[:200]}...")
+                            return {
+                                "success": False,
+                                "score": 0.0,
+                                "error": "Metal kernel compilation failed - bfloat16 incompatible code",
+                                "command_buffer_errors": local_command_buffer_errors,
+                                "memory_violations": local_memory_violations,
+                                "compilation_error": True,
+                            }
 
                         if retry_count < self.max_retry_attempts:
                             retry_count += 1
