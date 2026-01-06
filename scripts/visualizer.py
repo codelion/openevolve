@@ -1,10 +1,13 @@
 import os
 import json
 import glob
-import logging
 import shutil
+import logging
 import re as _re
-from flask import Flask, render_template, render_template_string, jsonify
+
+from flask import Flask, render_template, jsonify
+
+from manual import create_manual_blueprint
 
 
 logger = logging.getLogger(__name__)
@@ -113,7 +116,7 @@ def program_page(program_id):
 
     data = load_evolution_data(checkpoint_dir)
     program_data = next((p for p in data["nodes"] if p["id"] == program_id), None)
-    program_data = {"code": "", "prompts": {}, **program_data}
+    program_data = {"code": "", "prompts": {}, **(program_data or {})}
     artifacts_json = program_data.get("artifacts_json", None)
 
     return render_template(
@@ -165,8 +168,14 @@ def run_static_export(args):
     shutil.copytree(static_src, static_dst)
 
     logger.info(
-        f"Static export written to {output_dir}/\nNote: This will only work correctly with a web server, not by opening the HTML file directly in a browser. Try $ python3 -m http.server --directory {output_dir} 8080"
+        f"Static export written to {output_dir}/\n"
+        f"Note: use a web server, not file://. "
+        f"Try: python3 -m http.server --directory {output_dir} 8080"
     )
+
+
+# Manual mode blueprint mounted at /manual
+app.register_blueprint(create_manual_blueprint(lambda: os.environ.get("EVOLVE_OUTPUT", "examples/")))
 
 
 if __name__ == "__main__":
@@ -177,7 +186,7 @@ if __name__ == "__main__":
         "--path",
         type=str,
         default="examples/",
-        help="Path to openevolve_output or checkpoints folder",
+        help="Path to OpenEvolve run output directory (e.g. openevolve_output) or its checkpoints/checkpoint_*.",
     )
     parser.add_argument("--host", type=str, default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
@@ -204,7 +213,6 @@ if __name__ == "__main__":
         run_static_export(args)
 
     os.environ["EVOLVE_OUTPUT"] = args.path
-    logger.info(
-        f"Starting server at http://{args.host}:{args.port} with log level {args.log_level.upper()}"
-    )
+    logger.info(f"Starting server at http://{args.host}:{args.port} with log level {args.log_level.upper()}")
+    logger.info(f"Manual UI: http://{args.host}:{args.port}/manual")
     app.run(host=args.host, port=args.port, debug=True)
