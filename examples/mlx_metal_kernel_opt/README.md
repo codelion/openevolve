@@ -1,77 +1,98 @@
-# MLX Metal Kernel Optimization (Qwen3-0.6B-bf16)
+# MLX Metal Kernel Optimization Example
 
-This example demonstrates evolutionary optimization of a custom Apple Silicon **Metal** attention kernel using OpenEvolve and MLX’s `metal_kernel` API. The target workload is **Grouped Query Attention (GQA)** for the MLX‑LM model `mlx-community/Qwen3-0.6B-bf16`.
+This example uses OpenEvolve to automatically discover optimized Metal GPU kernels for Grouped Query Attention (GQA) in Qwen3-0.6B on Apple Silicon.
 
-## Target
+## Target Configuration
 
-- **Model**: `mlx-community/Qwen3-0.6B-bf16`
-- **Attention**: GQA **16 query heads : 8 KV heads** (2:1), **head_dim=128**, **hidden_size=2048**
-- **Dtype**: `bfloat16` (bf16) by default for this model
-- **Baseline**: `mx.fast.scaled_dot_product_attention`
-- **Hardware**: Apple Silicon (Metal)
+- **Model**: Qwen3-0.6B-bf16
+- **Architecture**: 16 query heads : 8 KV heads (2:1 ratio), 2048 hidden size, 128 head dimension
+- **Hardware**: Apple M-series GPUs with unified memory
+- **Baseline**: `mx.fast.scaled_dot_product_attention` via `mlx_lm.generate`
+- **Goal**: Evolve custom Metal kernel source code to outperform baseline
 
-## Key files
+## Quick Start
 
-- `initial_program.py`: starting point (contains `create_metal_qwen3_optimization_hook()` and the EVOLVE‑BLOCK)
-- `evaluator.py`: correctness + benchmarking + safety checks for candidates
-- `qwen3_benchmark_suite.py`: benchmark definitions and subprocess runner
-- `mlx_lm_generate_with_hook.py`: wrapper to apply the attention hook **inside** the `mlx_lm.generate` subprocess
-- `run_benchmarks.py`: convenience benchmark runner (baseline vs optimized)
-- `config.yaml`: OpenEvolve config and optimization prompt
-- `run_evolve_experiment.sh`: convenience script for isolated runs (`output_dir` + `db_path`)
-
-## Important: evaluation validity (before vs after)
-
-Earlier versions of this example could produce misleading “best program” artifacts and invalid performance comparisons. The main issues and the fixes:
-
-| Area | Before | After |
-|------|--------|-------|
-| **Subprocess benchmark hook** | Benchmarks ran `python -m mlx_lm.generate ...` via `subprocess.run(...)`, so any monkey‑patch in the parent process was **not applied** in the child process (baseline and “optimized” could run the same attention). | Benchmarks can run via `mlx_lm_generate_with_hook.py --hook-program ...` so the patch is applied **inside the subprocess**. |
-| **bf16 correctness** | Correctness used `float32` inputs; candidates could pass tests but fail in real bf16 inference (Metal compilation/runtime errors). | Correctness covers **bf16**, and deterministic Metal compilation errors are treated as normal candidate failures. |
-| **Architecture alignment** | Docs/prompt/MockArgs assumed **40:8** heads and **hidden_size=5120** (incorrect for Qwen3‑0.6B). | Docs/prompt/MockArgs aligned to **16:8** and **hidden_size=2048**. |
-
-Because of these fixes, we intentionally avoid hard-coded performance claims here. **Rerun the benchmarks on your own machine** and record results in your environment.
-
-## Run evolution
-
-From this directory:
+### Prerequisites
 
 ```bash
-export OPENAI_API_KEY="..."  # or set GEMINI_API_KEY; see the runner script
-bash run_evolve_experiment.sh --foreground
+pip install mlx mlx-lm openevolve
+
+# Set API key (Gemini via OpenAI-compatible endpoint)
+export OPENAI_API_KEY="your-gemini-key"
 ```
 
-This writes a new `openevolve_output_<timestamp>/` directory containing logs, checkpoints, best programs, and an isolated database.
-
-If you prefer running the CLI directly:
+### Run Evolution
 
 ```bash
-export OPENAI_API_KEY="..."
-python -m openevolve.cli ./initial_program.py ./evaluator.py -c ./config.yaml -o ./openevolve_output
+cd openevolve/examples/mlx_metal_kernel_opt
+
+# Using the experiment runner script
+./run_evolve_experiment.sh --name test_run --iterations 25
+
+# Or directly
+python -m openevolve.cli \
+    --initial-program initial_program.py \
+    --evaluator evaluator.py \
+    --config config.yaml \
+    --iterations 25 \
+    --output ./openevolve_output
 ```
 
-## Run benchmarks (baseline vs optimized)
-
-To compare the MLX baseline against the best evolved program:
+### Verify Evaluation Validity
 
 ```bash
-python run_benchmarks.py --mode compare --model mlx-community/Qwen3-0.6B-bf16 --output-dir results
+# Run a single benchmark with verbose output
+python -c "
+from evaluator import Qwen3GQAEvaluator
+e = Qwen3GQAEvaluator()
+result = e.evaluate('initial_program.py')
+print(result['summary'])
+"
 ```
 
-## How to verify the validity fixes are active
+## Files
 
-When the hook is enabled, the optimized path should execute via the wrapper:
+| File | Purpose |
+| ---- | ------- |
+| `initial_program.py` | Starting Metal kernel (to be evolved) |
+| `evaluator.py` | Correctness + performance evaluation |
+| `config.yaml` | Evolution configuration |
+| `qwen3_benchmark_suite.py` | Benchmark definitions |
+| `mlx_lm_generate_with_hook.py` | Subprocess hook wrapper |
+| `run_evolve_experiment.sh` | Experiment runner script |
 
-- `mlx_lm_generate_with_hook.py --hook-program <best_program.py> --model ...`
+## Validity Fixes (This PR)
 
-You can also sanity-check that correctness is exercising bf16 by running evolution on a machine where bf16 Metal compilation errors are expected for invalid kernels: such candidates should be rejected early by correctness gating rather than becoming “best programs”.
+This PR corrects critical issues that invalidated prior evaluation results:
 
-## Limitations & potential improvements (follow-up work)
+1. **Subprocess Kernel Hook**: Evolved kernels are now properly applied in benchmark subprocesses via `mlx_lm_generate_with_hook.py`
 
-This example intentionally uses **end-to-end generation benchmarks** (`mlx_lm.generate`) to measure real workloads, but that comes with trade-offs:
+2. **bfloat16 Correctness Gate**: Correctness tests now use `mx.bfloat16` inputs to match actual inference dtype
 
-- **Benchmark noise & overhead**: subprocess startup, model loading, and generation variability can dwarf small kernel deltas (especially for short prompts). A complementary **microbenchmark** that times only the attention kernel would provide a cleaner signal.
-- **Serial evaluation by default**: candidates are evaluated sequentially (`parallel_evaluations: 1`) to keep GPU memory predictable. More parallelism may be possible with careful isolation, but it needs engineering.
-- **Compile-time dominates early search**: bf16 compilation failures are common and deterministic; caching compilation outcomes or factoring compilation into a cheaper gating stage may speed up evolution.
+3. **Architecture Alignment**: Fixed head ratio from 40:8 to correct 16:8 (2:1 GQA pattern)
 
-We plan to open follow-up issues to track improvements to the benchmarking/evolution signal and workflow.
+4. **Evaluation Flow Optimizations**: Early exit on compilation errors, correctness-before-baseline ordering, GPU state cleanup between runs
+
+## Current Status
+
+After fixing validity issues, we ran 25 evolution iterations.
+
+**Result: The best evolved kernel is 3.2% SLOWER than MLX's baseline implementation.**
+
+The evolution improved from an initial -11.5% regression to -3.2%, but never exceeded baseline. This indicates fundamental limitations in the current evolution mechanism that require further investigation.
+
+For detailed experiment results and analysis, see [EVOLUTION_ANALYSIS.md](./EVOLUTION_ANALYSIS.md).
+
+### Known Limitations
+
+1. MAP-Elites selection uses abstract `combined_score` instead of direct speedup ratios
+2. LLM context underutilized (only 1 parent + 5 samples per iteration)
+3. No GPU profiling data to guide optimization
+4. 32% bf16 compilation failure rate
+
+## References
+
+- [OpenEvolve](https://github.com/codelion/openevolve)
+- [MLX](https://github.com/ml-explore/mlx)
+- [MLX-LM](https://github.com/ml-explore/mlx-examples)
+- [KernelBench](https://github.com/ScalingIntelligence/KernelBench)

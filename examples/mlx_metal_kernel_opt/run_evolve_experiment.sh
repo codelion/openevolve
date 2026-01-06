@@ -50,6 +50,8 @@ USAGE
 # Force unbuffered Python output for reliable logging
 export PYTHONUNBUFFERED=1
 
+export OPENAI_API_KEY=$GEMINI_API_KEY
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 RUN_NAME=""

@@ -26,6 +26,12 @@ from typing import List, Optional, Tuple, Any
 
 
 def _load_module_from_path(module_path: str) -> ModuleType:
+    """
+    Dynamically load a Python module from an arbitrary filesystem path.
+
+    This is used to load the evolved/optimized hook program at runtime without
+    requiring it to be installed or on sys.path.
+    """
     spec = importlib.util.spec_from_file_location("openevolve_mlx_metal_hook_program", module_path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Failed to load hook program from: {module_path}")
@@ -35,6 +41,28 @@ def _load_module_from_path(module_path: str) -> ModuleType:
 
 
 def _apply_hook_from_program(module_path: str) -> Tuple[Any, Any]:
+    """
+    Load an evolved hook program and apply its attention optimization.
+
+    The hook program must expose a `create_metal_qwen3_optimization_hook()` factory
+    function that returns a tuple of (apply_hook, remove_hook) callables. Calling
+    `apply_hook()` monkey-patches `mlx_lm.models.qwen3.Attention` with the optimized
+    implementation and returns the original class for later restoration.
+
+    Args:
+        module_path: Path to the evolved program file (e.g., best_program.py).
+
+    Returns:
+        A tuple of (original_attention, remove_hook):
+            - original_attention: The original Attention class before patching,
+              needed to restore state later.
+            - remove_hook: A callable that accepts original_attention and undoes
+              the monkey-patch.
+
+    Raises:
+        RuntimeError: If the hook factory function is not found in the program,
+            or if applying the hook fails.
+    """
     program = _load_module_from_path(module_path)
 
     hook_factory = getattr(program, "create_metal_qwen3_optimization_hook", None)
@@ -52,6 +80,31 @@ def _apply_hook_from_program(module_path: str) -> Tuple[Any, Any]:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    """
+    Entry point: parse CLI arguments, apply the hook, and run mlx_lm.generate.
+
+    This function orchestrates the entire flow:
+    1. Parse command-line arguments (hook program path, model, prompt, max tokens).
+    2. Load and apply the attention optimization hook from the specified program.
+    3. Invoke `mlx_lm.generate` as if running `python -m mlx_lm.generate ...`.
+    4. Clean up by removing the hook after generation completes (or fails).
+
+    The hook is applied in the same process, ensuring the monkey-patch is effective
+    (unlike subprocess-based invocations where patches don't propagate).
+
+    Args:
+        argv: Command-line arguments. If None, sys.argv[1:] is used by argparse.
+
+    Returns:
+        Exit code (0 for success, non-zero for failure). This value is typically
+        passed to sys.exit() or raised via SystemExit.
+
+    CLI Arguments:
+        --hook-program: Path to the evolved program containing the hook factory.
+        --model: Model identifier or path for mlx_lm.generate.
+        --prompt: The text prompt to generate from.
+        --max-tokens: Maximum number of tokens to generate.
+    """
     parser = argparse.ArgumentParser(
         description="Run `mlx_lm.generate` with a custom attention hook applied in-process."
     )
