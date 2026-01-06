@@ -65,7 +65,7 @@ class OpenAILLM(LLMInterface):
         self.reasoning_effort = getattr(model_cfg, "reasoning_effort", None)
 
         # Manual mode: enabled via llm.manual_mode in config.yaml
-        self.manual_mode = bool(getattr(model_cfg, "manual_mode", False))
+        self.manual_mode = (getattr(model_cfg, "manual_mode", False) is True)
         self.manual_queue_dir: Optional[Path] = None
 
         if self.manual_mode:
