@@ -450,11 +450,17 @@ class ProcessParallelController:
         if early_stopping_enabled:
             best_score = float("-inf")
             iterations_without_improvement = 0
-            logger.info(
-                f"Early stopping enabled: patience={self.config.early_stopping_patience}, "
-                f"threshold={self.config.convergence_threshold}, "
-                f"metric={self.config.early_stopping_metric}"
-            )
+            if self.config.early_stopping_patience < 0:
+                logger.info(
+                    f"Early stopping patience is set to a negative value, running event-based early-stopping, "
+                    f"Early stop when metric '{self.config.early_stopping_metric}' reaches {self.config.convergence_threshold}"
+                )
+            else:
+                logger.info(
+                    f"Early stopping enabled: patience={self.config.early_stopping_patience}, "
+                    f"threshold={self.config.convergence_threshold}, "
+                    f"metric={self.config.early_stopping_metric}"
+                )
         else:
             logger.info("Early stopping disabled")
 
@@ -633,31 +639,43 @@ class ProcessParallelController:
 
                         if current_score is not None and isinstance(current_score, (int, float)):
                             # Check for improvement
-                            improvement = current_score - best_score
-                            if improvement >= self.config.convergence_threshold:
-                                best_score = current_score
-                                iterations_without_improvement = 0
-                                logger.debug(
-                                    f"New best score: {best_score:.4f} (improvement: {improvement:+.4f})"
-                                )
-                            else:
-                                iterations_without_improvement += 1
-                                logger.debug(
-                                    f"No improvement: {iterations_without_improvement}/{self.config.early_stopping_patience}"
-                                )
+                            if self.config.early_stopping_patience > 0:
+                                improvement = current_score - best_score
+                                if improvement >= self.config.convergence_threshold:
+                                    best_score = current_score
+                                    iterations_without_improvement = 0
+                                    logger.debug(
+                                        f"New best score: {best_score:.4f} (improvement: {improvement:+.4f})"
+                                    )
+                                else:
+                                    iterations_without_improvement += 1
+                                    logger.debug(
+                                        f"No improvement: {iterations_without_improvement}/{self.config.early_stopping_patience}"
+                                    )
 
-                            # Check if we should stop
-                            if (
-                                iterations_without_improvement
-                                >= self.config.early_stopping_patience
-                            ):
-                                self.early_stopping_triggered = True
-                                logger.info(
-                                    f"🛑 Early stopping triggered at iteration {completed_iteration}: "
-                                    f"No improvement for {iterations_without_improvement} iterations "
-                                    f"(best score: {best_score:.4f})"
-                                )
-                                break
+                                # Check if we should stop
+                                if (
+                                    iterations_without_improvement
+                                    >= self.config.early_stopping_patience
+                                ):
+                                    self.early_stopping_triggered = True
+                                    logger.info(
+                                        f"🛑 Early stopping triggered at iteration {completed_iteration}: "
+                                        f"No improvement for {iterations_without_improvement} iterations "
+                                        f"(best score: {best_score:.4f})"
+                                    )
+                                    break
+                                
+                            else:
+                                # Event-based early stopping
+                                if current_score == self.config.convergence_threshold:
+                                    best_score = current_score
+                                    logger.info(
+                                        f"🛑 Early stopping (event-based) triggered at iteration {completed_iteration}: "
+                                        f"Task successfully solved with score {best_score:.4f}."
+                                    )
+                                    self.early_stopping_triggered = True
+                                    break
 
             except FutureTimeoutError:
                 logger.error(
