@@ -262,6 +262,7 @@ class OpenEvolve:
             initial_program = Program(
                 id=initial_program_id,
                 code=self.initial_program_code,
+                changes_description=self.config.prompt.initial_changes_description,
                 language=self.config.language,
                 metrics=initial_metrics,
                 iteration_found=start_iteration,

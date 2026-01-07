@@ -236,6 +236,11 @@ class PromptConfig:
     system_message: str = "system_message"
     evaluator_system_message: str = "evaluator_system_message"
 
+    # Large-codebase mode: represent programs in prompts via compact changes descriptions
+    programs_as_changes_description: bool = False
+    system_message_changes_description: Optional[str] = None
+    initial_changes_description: str = ""
+
     # Number of examples to include in the prompt
     num_top_programs: int = 3
     num_diverse_programs: int = 2
@@ -433,6 +438,12 @@ class Config:
 
         if config.database.random_seed is None and config.random_seed is not None:
             config.database.random_seed = config.random_seed
+
+        if config.prompt.programs_as_changes_description and not config.diff_based_evolution:
+            raise ValueError(
+                "prompt.programs_as_changes_description=true requires diff_based_evolution=true "
+                "(full rewrites cannot reliably update code and changes_description together)"
+            )
 
         return config
 

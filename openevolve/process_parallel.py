@@ -168,6 +168,16 @@ def _run_iteration_worker(
         best_programs_only = island_programs[: _worker_config.prompt.num_top_programs]
 
         # Build prompt
+        if _worker_config.prompt.programs_as_changes_description:
+            parent_changes_desc = (
+                parent.changes_description
+                or _worker_config.prompt.initial_changes_description
+            )
+            child_changes_desc = parent_changes_desc
+        else:
+            parent_changes_desc = None
+            child_changes_desc = None
+
         prompt = _worker_prompt_sampler.build_prompt(
             current_program=parent.code,
             parent_program=parent.code,
@@ -180,6 +190,7 @@ def _run_iteration_worker(
             diff_based_evolution=_worker_config.diff_based_evolution,
             program_artifacts=parent_artifacts,
             feature_dimensions=db_snapshot.get("feature_dimensions", []),
+            current_changes_description=parent_changes_desc,
         )
 
         iteration_start = time.time()
@@ -202,16 +213,43 @@ def _run_iteration_worker(
 
         # Parse response based on evolution mode
         if _worker_config.diff_based_evolution:
-            from openevolve.utils.code_utils import apply_diff, extract_diffs, format_diff_summary
+            from openevolve.utils.code_utils import (
+                apply_diff,
+                apply_diff_blocks,
+                extract_diffs,
+                format_diff_summary,
+                split_diffs_by_target,
+            )
 
             diff_blocks = extract_diffs(llm_response, _worker_config.diff_pattern)
             if not diff_blocks:
-                return SerializableResult(
-                    error=f"No valid diffs found in response", iteration=iteration
-                )
+                return SerializableResult(error="No valid diffs found in response", iteration=iteration)
 
-            child_code = apply_diff(parent.code, llm_response, _worker_config.diff_pattern)
-            changes_summary = format_diff_summary(diff_blocks)
+            if _worker_config.prompt.programs_as_changes_description:
+                try:
+                    code_blocks, desc_blocks, _unmatched = split_diffs_by_target(
+                        diff_blocks,
+                        code_text=parent.code,
+                        changes_description_text=parent_changes_desc,
+                    )
+                except Exception as e:
+                    return SerializableResult(error=str(e), iteration=iteration)
+
+                child_code, _ = apply_diff_blocks(parent.code, code_blocks)
+                child_changes_desc, desc_applied = apply_diff_blocks(parent_changes_desc, desc_blocks)
+
+                # Must update the previous changes description
+                if desc_applied == 0 or not child_changes_desc.strip() or child_changes_desc.strip() == parent_changes_desc.strip():
+                    return SerializableResult(
+                        error="changes_description was not updated or empty, program is discarded",
+                        iteration=iteration,
+                    )
+
+                changes_summary = format_diff_summary(code_blocks)
+            else:
+                # All diffs applied only to code
+                child_code = apply_diff(parent.code, llm_response, _worker_config.diff_pattern)
+                changes_summary = format_diff_summary(diff_blocks)
         else:
             from openevolve.utils.code_utils import parse_full_rewrite
 
@@ -244,6 +282,7 @@ def _run_iteration_worker(
         child_program = Program(
             id=child_id,
             code=child_code,
+            changes_description=child_changes_desc,
             language=_worker_config.language,
             parent_id=parent.id,
             generation=parent.generation + 1,
