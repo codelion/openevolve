@@ -85,15 +85,12 @@ For detailed experiment results and analysis, see [EVOLUTION_ANALYSIS.md](./EVOL
 
 ### Demo Results (Committed)
 
-For review and reproducibility, this example repo includes one demo run output directory (curated subset of artifacts):
+For review and reproducibility, this example repo includes a committed snapshot of one post-fix evolution run:
 
-- `demo_output_20260105_180918/`
+- `best_program.py`: best evolved program (iteration 23)
+- `best_program_info.json`: metrics + baseline comparisons (includes the -3.2% result)
 
-The key artifacts in that folder are:
-
-- `best/best_program.py`: best evolved program (iteration 23)
-- `best/best_program_info.json`: metrics and baseline comparisons (includes the -3.2% result)
-- `run.log` and `logs/openevolve_20260105_180918.log`: full run logs
+The full run output directory is intentionally git-ignored (see `.gitignore`) to avoid committing large run artifacts.
 
 ### Known Limitations
 
