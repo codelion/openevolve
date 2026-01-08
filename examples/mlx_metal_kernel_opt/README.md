@@ -27,7 +27,7 @@ export OPENAI_API_KEY="your-gemini-key"
 cd openevolve/examples/mlx_metal_kernel_opt
 
 # Using the experiment runner script
-./run_evolve_experiment.sh --name test_run --iterations 25
+./run_evolve_experiment.sh --run-name test_run --iterations 25
 
 # Or directly
 python -m openevolve.cli \
@@ -82,6 +82,18 @@ After fixing validity issues, we ran 25 evolution iterations.
 The evolution improved from an initial -11.5% regression to -3.2%, but never exceeded baseline. This indicates fundamental limitations in the current evolution mechanism that require further investigation.
 
 For detailed experiment results and analysis, see [EVOLUTION_ANALYSIS.md](./EVOLUTION_ANALYSIS.md).
+
+### Demo Results (Committed)
+
+For review and reproducibility, this example repo includes one demo run output directory (curated subset of artifacts):
+
+- `demo_output_20260105_180918/`
+
+The key artifacts in that folder are:
+
+- `best/best_program.py`: best evolved program (iteration 23)
+- `best/best_program_info.json`: metrics and baseline comparisons (includes the -3.2% result)
+- `run.log` and `logs/openevolve_20260105_180918.log`: full run logs
 
 ### Known Limitations
 
