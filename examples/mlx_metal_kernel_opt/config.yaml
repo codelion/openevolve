@@ -4,9 +4,9 @@ log_level: "INFO"
 
 # LLM configuration for Metal kernel optimization
 llm:
-  primary_model: "gemini-2.5-flash-preview-05-20"
+  primary_model: "gemini-2.5-flash"
   primary_model_weight: 0.6
-  secondary_model: "gemini-2.5-pro-preview-06-05"
+  secondary_model: "gemini-2.5-pro"
   secondary_model_weight: 0.4
   api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
   temperature: 0.6
@@ -78,7 +78,7 @@ prompt:
     // CURRENT: Basic kv_head_idx = head_idx / HEADS_PER_KV
     // OPTIMIZE: Leverage the specific 2:1 ratio pattern
     
-    // Example: Process 5 query heads together for each KV head
+    // Example: Process 2 query heads together for each KV head
     // Example: Optimize memory layout for the 16:8 pattern
     // Example: Reduce broadcast overhead through clever indexing
     ```
@@ -181,7 +181,7 @@ prompt:
     **Strategy 4: GQA Pattern Exploitation**
     ```metal
     // Optimize for the specific 2:1 query:KV ratio
-    // Process query heads in groups of 5
+    // Process query heads in groups of 2
     // Reduce KV head indexing overhead
     ```
     
@@ -226,6 +226,8 @@ database:
 evaluator:
   timeout: 900  # 15 minutes for Metal kernel compilation and testing
   parallel_evaluations: 1
+  # This example's evaluator does not implement evaluate_stage1.
+  cascade_evaluation: false
 
 # Evolution settings
 diff_based_evolution: true

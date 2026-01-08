@@ -50,8 +50,6 @@ USAGE
 # Force unbuffered Python output for reliable logging
 export PYTHONUNBUFFERED=1
 
-export OPENAI_API_KEY=$GEMINI_API_KEY
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 RUN_NAME=""
@@ -209,20 +207,20 @@ LOG_FILE="$RUN_DIR/run.log"
 # Truncate log file to ensure clean start (especially important for --resume)
 : > "$LOG_FILE"
 
-# Check if stdbuf is available for line-buffered output
-if command -v stdbuf &>/dev/null; then
-  # Use stdbuf to force line buffering on both stdout and stderr
-  STDBUF_PREFIX=(stdbuf -oL -eL)
-else
-  STDBUF_PREFIX=()
-fi
-
 if [[ "$FOREGROUND" -eq 1 ]]; then
   # Stream to console and persist logs with line buffering.
-  "${STDBUF_PREFIX[@]}" "${CMD[@]}" 2>&1 | tee "$LOG_FILE"
+  if command -v stdbuf &>/dev/null; then
+    stdbuf -oL -eL "${CMD[@]}" 2>&1 | tee "$LOG_FILE"
+  else
+    "${CMD[@]}" 2>&1 | tee "$LOG_FILE"
+  fi
 else
   # Run in background with line-buffered output for reliable log ordering.
-  nohup "${STDBUF_PREFIX[@]}" "${CMD[@]}" > "$LOG_FILE" 2>&1 &
+  if command -v stdbuf &>/dev/null; then
+    nohup stdbuf -oL -eL "${CMD[@]}" > "$LOG_FILE" 2>&1 &
+  else
+    nohup "${CMD[@]}" > "$LOG_FILE" 2>&1 &
+  fi
   echo "[run_evolve_experiment] Started PID: $!"
   echo "[run_evolve_experiment] Log: $LOG_FILE"
   echo "[run_evolve_experiment] Tail: tail -f \"$LOG_FILE\""
