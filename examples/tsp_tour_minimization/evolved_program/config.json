@@ -1,9 +1,7 @@
 {
     "cities_number": 1000,
-    "input_path": "/Users/dark-creator/solomon/self/UTSP-alpha_evolve/src/input.txt",
-    "output_path": "/Users/dark-creator/solomon/self/UTSP-alpha_evolve/src/output.txt",
-    "logging_best_solutions_path": "/Users/dark-creator/solomon/self/UTSP-alpha_evolve/src/best_solutions.log",
-    "logging_restarts_solutions_path": "/Users/dark-creator/solomon/self/UTSP-alpha_evolve/src/restarts_solutions.log",
+    "input_path": "input.txt",
+    "output_path": "output.txt",
     "use_heat_map_as_initial_weights": false,
     "candidates_source": "knn",
     "candidates_number": 10,

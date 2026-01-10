@@ -241,52 +241,52 @@ void solve(const Config& config, Context& context) {  // the found solution will
         if (i % 100 == 0) { std::cout << "# --------- Iteration: " << i << '\n'; }
         int improved_times = 0;
 
-        // Optimized restart strategy with better time-quality tradeoff
-        start_time = high_resolution_clock::now();
-        double time_elapsed = duration_cast<duration<double>>(high_resolution_clock::now() - start_total_time).count();
+    // Optimized restart strategy with better time-quality tradeoff
+    start_time = high_resolution_clock::now();
+    double time_elapsed = duration_cast<duration<double>>(high_resolution_clock::now() - start_total_time).count();
+    
+    // Time-aware restart strategy with progressive intensification
+    if (time_elapsed > 40.0 && i > 60) {
+        double quality_ratio = context.path_distance_double / context.best_path_distance_double;
         
-        // Time-aware restart strategy with progressive intensification
-        if (time_elapsed > 40.0 && i > 60) {
-            double quality_ratio = context.path_distance_double / context.best_path_distance_double;
-            
-            // More aggressive exploitation strategy
-            if (quality_ratio < 1.006) {
-                // Elite solution - intensive local search
-                if (i % 3 == 0) {
-                    shake_from_best(config, context, 1); // Light perturbation
-                } else {
-                    restore_best_path(config, context);
-                }
-            } else if (quality_ratio < 1.020) {
-                // Good solution - balanced approach
-                if (i % 4 == 0) {
-                    shake_from_best(config, context, 3); // Moderate perturbation
-                } else {
-                    generate_greedy_solution(config, context, i);
-                    convert_solution_to_path(config, context);
-                }
+        // More aggressive exploitation strategy
+        if (quality_ratio < 1.006) {
+            // Elite solution - intensive local search
+            if (i % 3 == 0) {
+                shake_from_best(config, context, 1); // Light perturbation
             } else {
-                // Poor solution - fresh start with greedy
+                restore_best_path(config, context);
+            }
+        } else if (quality_ratio < 1.020) {
+            // Good solution - balanced approach
+            if (i % 4 == 0) {
+                shake_from_best(config, context, 3); // Moderate perturbation
+            } else {
                 generate_greedy_solution(config, context, i);
                 convert_solution_to_path(config, context);
             }
-        } else if (i <= 50 || context.best_path_distance_double == inf_double) {
-            // Early phase: rapid exploration
-            if (i % 3 == 0) {
-                generate_random_solution(config, context);
-            } else {
-                generate_greedy_solution(config, context, i);
-            }
-            convert_solution_to_path(config, context);
         } else {
-            // Middle phase: balanced exploration
-            if (i % 8 == 0) {
-                generate_random_solution(config, context);
-            } else {
-                generate_greedy_solution(config, context, i);
-            }
+            // Poor solution - fresh start with greedy
+            generate_greedy_solution(config, context, i);
             convert_solution_to_path(config, context);
         }
+    } else if (i <= 50 || context.best_path_distance_double == inf_double) {
+        // Early phase: rapid exploration
+        if (i % 3 == 0) {
+            generate_random_solution(config, context);
+        } else {
+            generate_greedy_solution(config, context, i);
+        }
+        convert_solution_to_path(config, context);
+    } else {
+        // Middle phase: balanced exploration
+        if (i % 8 == 0) {
+            generate_random_solution(config, context);
+        } else {
+            generate_greedy_solution(config, context, i);
+        }
+        convert_solution_to_path(config, context);
+    }
         end_time = high_resolution_clock::now();
 
         calc_and_save_total_distance(config, context);
@@ -297,7 +297,7 @@ void solve(const Config& config, Context& context) {  // the found solution will
 
         // local 2opt search
         start_time = high_resolution_clock::now();
-        improved_times = local_2_opt_search(config, context);
+		improved_times = local_2_opt_search(config, context);
         end_time = high_resolution_clock::now();
 
         if (config.distance_type != DistanceType::Double) {
@@ -385,37 +385,37 @@ void solve(const Config& config, Context& context) {  // the found solution will
             store_path_as_best(config, context);  // also updates best path distance
         }
 
-        if (config.random_k_opt_depth_after_first_iteration) {
-            // More aggressive depth adaptation for better solution quality
-            double progress = static_cast<double>(i) / config.restarts_number;
-            double quality_factor = context.path_distance_double / context.best_path_distance_double;
-            double time_elapsed = duration_cast<duration<double>>(high_resolution_clock::now() - start_total_time).count();
-            double time_remaining = 159.0 - time_elapsed;
-            
-            // More aggressive time utilization for solution quality
-            double time_factor = std::min(1.0, time_remaining / 60.0);
-            
-            if (progress < 0.3) {
-                // Early phase - deeper exploration
-                max_k_opt_depth = 22 + (rand() % (10 + static_cast<int>(8 * time_factor)));
-            } else if (progress < 0.7) {
-                // Middle phase - balanced depth
-                if (quality_factor < 1.006) {
-                    max_k_opt_depth = 26 + (rand() % (12 + static_cast<int>(6 * time_factor)));
-                } else {
-                    max_k_opt_depth = 24 + (rand() % (10 + static_cast<int>(5 * time_factor)));
-                }
+    if (config.random_k_opt_depth_after_first_iteration) {
+        // More aggressive depth adaptation for better solution quality
+        double progress = static_cast<double>(i) / config.restarts_number;
+        double quality_factor = context.path_distance_double / context.best_path_distance_double;
+        double time_elapsed = duration_cast<duration<double>>(high_resolution_clock::now() - start_total_time).count();
+        double time_remaining = 159.0 - time_elapsed;
+        
+        // More aggressive time utilization for solution quality
+        double time_factor = std::min(1.0, time_remaining / 60.0);
+        
+        if (progress < 0.3) {
+            // Early phase - deeper exploration
+            max_k_opt_depth = 22 + (rand() % (10 + static_cast<int>(8 * time_factor)));
+        } else if (progress < 0.7) {
+            // Middle phase - balanced depth
+            if (quality_factor < 1.006) {
+                max_k_opt_depth = 26 + (rand() % (12 + static_cast<int>(6 * time_factor)));
             } else {
-                // Late phase - focused depth for elite solutions
-                if (quality_factor < 1.004 && time_remaining > 30.0) {
-                    max_k_opt_depth = 28 + (rand() % (10 + static_cast<int>(6 * time_factor)));
-                } else {
-                    max_k_opt_depth = 24 + (rand() % (8 + static_cast<int>(4 * time_factor)));
-                }
+                max_k_opt_depth = 24 + (rand() % (10 + static_cast<int>(5 * time_factor)));
             }
-            max_k_opt_depth = std::min(max_k_opt_depth, config.max_k_opt_depth);
-            max_k_opt_depth = std::max(18, max_k_opt_depth);
+        } else {
+            // Late phase - focused depth for elite solutions
+            if (quality_factor < 1.004 && time_remaining > 30.0) {
+                max_k_opt_depth = 28 + (rand() % (10 + static_cast<int>(6 * time_factor)));
+            } else {
+                max_k_opt_depth = 24 + (rand() % (8 + static_cast<int>(4 * time_factor)));
+            }
         }
+        max_k_opt_depth = std::min(max_k_opt_depth, config.max_k_opt_depth);
+        max_k_opt_depth = std::max(18, max_k_opt_depth);
+    }
 
         if (i % 100 == 0) { std::cout << '\n'; }
 	}

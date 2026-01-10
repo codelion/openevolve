@@ -23,8 +23,6 @@ struct Config {
     int cities_number;
     std::string input_path;
     std::string output_path;
-    std::string logging_best_solutions_path;
-    std::string logging_restarts_solutions_path;
     bool use_heat_map_as_initial_weights;
     CandidatesSource candidates_source;
     int candidates_number;
@@ -44,8 +42,6 @@ struct Config {
         cities_number = config["cities_number"];
         input_path = config["input_path"];
         output_path = config["output_path"];
-        logging_best_solutions_path = config["logging_best_solutions_path"];
-        logging_restarts_solutions_path = config["logging_restarts_solutions_path"];
         use_heat_map_as_initial_weights = config["use_heat_map_as_initial_weights"];
 
         if (config["candidates_source"].get<std::string>() == "knn") {
